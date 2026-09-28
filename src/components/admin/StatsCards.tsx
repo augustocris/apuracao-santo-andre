@@ -1,7 +1,6 @@
 "use client";
 
 import { CheckCheck, Percent, Vote } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
 import { formatPercent, formatVotes } from "@/lib/utils";
 
 interface StatsCardsProps {
@@ -34,7 +33,12 @@ export function StatsCards({
             / {formatVotes(totalSecoes)}
           </span>
         </p>
-        <Progress value={pct} className="mt-3 h-2 bg-slate-700" />
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-700">
+          <div
+            className="h-full rounded-full bg-teal-400 transition-all duration-700"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
         <p className="mt-1 text-xs text-slate-400">
           {formatPercent(pct, 0)} das seções
         </p>

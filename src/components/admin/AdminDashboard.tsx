@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Radio, RefreshCw } from "lucide-react";
 import { StatsCards } from "@/components/admin/StatsCards";
 import { Rankings } from "@/components/admin/Rankings";
@@ -23,32 +23,35 @@ export function AdminDashboard() {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string>("—");
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
-  const reload = useCallback(() => {
-    startTransition(async () => {
-      try {
-        const data = await fetchDashboard("Prefeito");
-        setSnapshot(data);
-        setUpdatedAt(
-          new Intl.DateTimeFormat("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          }).format(new Date())
-        );
-        setError(null);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Falha ao carregar o painel."
-        );
-      }
-    });
+  const reload = useCallback(async () => {
+    setPending(true);
+    try {
+      const data = await fetchDashboard("Prefeito");
+      setSnapshot(data);
+      setUpdatedAt(
+        new Intl.DateTimeFormat("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).format(new Date())
+      );
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Falha ao carregar o painel."
+      );
+    } finally {
+      setPending(false);
+    }
   }, []);
 
   useEffect(() => {
-    reload();
-    return subscribeDashboard(reload, 4000);
+    void reload();
+    return subscribeDashboard(() => {
+      void reload();
+    }, 4000);
   }, [reload]);
 
   return (
@@ -73,7 +76,7 @@ export function AdminDashboard() {
           type="button"
           variant="outline"
           className="border-white/20 bg-white/5 text-white hover:bg-white/10"
-          onClick={reload}
+          onClick={() => void reload()}
           disabled={pending}
         >
           <RefreshCw className={`size-4 ${pending ? "animate-spin" : ""}`} />

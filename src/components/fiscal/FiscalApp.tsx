@@ -2,10 +2,10 @@
 
 import { useCallback, useState } from "react";
 import { CheckCircle2, Loader2, QrCode, Sun } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BuScanner } from "@/components/fiscal/BuScanner";
 import { BuPasteForm } from "@/components/fiscal/BuPasteForm";
 import { ConfirmTransmitModal } from "@/components/fiscal/ConfirmTransmitModal";
+import { Button } from "@/components/ui/button";
 import {
   dataModeLabel,
   findLocal,
@@ -14,8 +14,10 @@ import {
 } from "@/lib/data";
 import { parseBuQrText } from "@/lib/parser/bu-qr";
 import type { ConfirmVoteRow, LocalVotacao, ParsedBu } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export function FiscalApp() {
+  const [tab, setTab] = useState<"scan" | "paste">("scan");
   const [processing, setProcessing] = useState(false);
   const [transmitting, setTransmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,26 +146,52 @@ export function FiscalApp() {
         </p>
       )}
 
-      <Tabs defaultValue="scan" className="w-full">
-        <TabsList className="grid h-12 w-full grid-cols-2 bg-slate-200/80">
-          <TabsTrigger value="scan" className="text-sm font-semibold">
+      <div className="w-full space-y-4">
+        <div
+          role="tablist"
+          className="grid h-12 w-full grid-cols-2 gap-1 rounded-xl bg-slate-200/80 p-1"
+        >
+          <Button
+            type="button"
+            role="tab"
+            aria-selected={tab === "scan"}
+            variant="ghost"
+            className={cn(
+              "h-full rounded-lg text-sm font-semibold",
+              tab === "scan"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:bg-white/50"
+            )}
+            onClick={() => setTab("scan")}
+          >
             <QrCode className="size-4" />
             Escanear
-          </TabsTrigger>
-          <TabsTrigger value="paste" className="text-sm font-semibold">
+          </Button>
+          <Button
+            type="button"
+            role="tab"
+            aria-selected={tab === "paste"}
+            variant="ghost"
+            className={cn(
+              "h-full rounded-lg text-sm font-semibold",
+              tab === "paste"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:bg-white/50"
+            )}
+            onClick={() => setTab("paste")}
+          >
             Colar Texto do BU
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="scan" className="mt-4">
+          </Button>
+        </div>
+        {tab === "scan" ? (
           <BuScanner onScan={(text) => void handleRawText(text)} busy={processing} />
-        </TabsContent>
-        <TabsContent value="paste" className="mt-4">
+        ) : (
           <BuPasteForm
             onSubmit={(text) => void handleRawText(text)}
             busy={processing}
           />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
 
       <ConfirmTransmitModal
         open={confirmOpen}

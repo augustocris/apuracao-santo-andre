@@ -7,8 +7,10 @@ PWA for parallel ballot-box counting (~140 fiscales scan BU QR codes; admin TV d
 ```bash
 npm install
 cp .env.example .env.local   # optional — without Supabase keys the app uses mock data
-npm run dev                  # http://127.0.0.1:43127
+npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigins)
 ```
+
+> Dev note: `next.config.ts` sets `allowedDevOrigins` for `127.0.0.1` / `localhost` so the client bundle hydrates when you open those hosts.
 
 - Fiscal (mobile): [http://127.0.0.1:43127/fiscal](http://127.0.0.1:43127/fiscal)
 - Admin telão: [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)

@@ -6,12 +6,14 @@ import { formatPercent, formatVotes } from "@/lib/utils";
 interface StatsCardsProps {
   urnasApuradas: number;
   totalSecoes: number;
+  secoesFaltam: number;
   totalVotosValidos: number;
 }
 
 export function StatsCards({
   urnasApuradas,
   totalSecoes,
+  secoesFaltam,
   totalVotosValidos,
 }: StatsCardsProps) {
   const pct =
@@ -23,7 +25,7 @@ export function StatsCards({
         <div className="mb-2 flex items-center gap-2 text-teal-300">
           <CheckCheck className="size-5" />
           <h2 className="text-sm font-semibold uppercase tracking-wide">
-            Urnas apuradas
+            Enviadas / faltam
           </h2>
         </div>
         <p className="text-3xl font-bold tabular-nums text-white md:text-4xl">
@@ -40,7 +42,7 @@ export function StatsCards({
           />
         </div>
         <p className="mt-1 text-xs text-slate-400">
-          {formatPercent(pct, 0)} das seções
+          {formatVotes(secoesFaltam)} seções faltando
         </p>
       </article>
 
@@ -55,7 +57,7 @@ export function StatsCards({
           {formatPercent(pct, 1)}
         </p>
         <p className="mt-2 text-sm text-slate-400">
-          Total de seções = locais de votação cadastrados
+          Com base nas seções esperadas do cadastro
         </p>
       </article>
 
@@ -69,7 +71,9 @@ export function StatsCards({
         <p className="text-3xl font-bold tabular-nums text-white md:text-4xl">
           {formatVotes(totalVotosValidos)}
         </p>
-        <p className="mt-2 text-sm text-slate-400">Soma dos boletins transmitidos</p>
+        <p className="mt-2 text-sm text-slate-400">
+          Soma dos cargos do relatório selecionado
+        </p>
       </article>
     </div>
   );

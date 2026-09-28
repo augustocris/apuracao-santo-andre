@@ -68,13 +68,13 @@ export function parseBuQrText(raw: string): ParsedBu {
   };
 }
 
-/** Sample BU text for demos / paste fallback testing. */
+/** Sample BU text for demos / paste fallback testing (cargos estaduais). */
 export const SAMPLE_BU_TEXT = `ZONA:001
 SECAO:0001
 CAND:13 QTVO:142
 CAND:45 QTVO:98
-CAND:22 QTVO:41
-CAND:13001 QTVO:55
-CAND:45002 QTVO:33
-CAND:22003 QTVO:21
-CAND:15015 QTVO:18`;
+CAND:131 QTVO:110
+CAND:456 QTVO:87
+CAND:1313 QTVO:64
+CAND:13131 QTVO:51
+CAND:99999 QTVO:3`;

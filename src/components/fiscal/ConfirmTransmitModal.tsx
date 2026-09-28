@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CARGOS_OFICIAIS } from "@/lib/cargos";
 import type { ConfirmVoteRow, LocalVotacao } from "@/lib/types";
 import { formatVotes } from "@/lib/utils";
 
@@ -40,10 +41,13 @@ export function ConfirmTransmitModal({
   onConfirm,
   transmitting,
 }: ConfirmTransmitModalProps) {
-  const prefeitos = rows.filter((r) => r.candidato.cargo === "Prefeito");
-  const vereadores = rows.filter((r) => r.candidato.cargo === "Vereador");
+  const byCargo = CARGOS_OFICIAIS.map((cargo) => ({
+    cargo,
+    items: rows.filter((r) => r.candidato.cargo === cargo),
+  })).filter((g) => g.items.length > 0);
+
   const others = rows.filter(
-    (r) => r.candidato.cargo !== "Prefeito" && r.candidato.cargo !== "Vereador"
+    (r) => !(CARGOS_OFICIAIS as readonly string[]).includes(r.candidato.cargo)
   );
 
   function Section({
@@ -89,24 +93,32 @@ export function ConfirmTransmitModal({
         <DialogHeader>
           <DialogTitle>Confirmar boletim</DialogTitle>
           <DialogDescription>
-            Revise os votos antes de transmitir para a apuração paralela.
+            Revise zona, seção e votos dos candidatos cadastrados antes de
+            enviar.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3">
             <p className="text-sm font-medium text-teal-900">
-              {local?.nome_escola ?? `Zona ${zona} · Seção ${secao}`}
+              Zona {zona} · Seção {secao}
             </p>
             <p className="text-xs text-teal-800/80">
-              Zona {zona} · Seção {secao}
+              {local?.nome_escola ?? "Local não cadastrado (envio permitido)"}
               {local?.bairro ? ` · ${local.bairro}` : ""}
             </p>
           </div>
 
-          <Section title="Prefeito" items={prefeitos} />
-          <Section title="Vereador" items={vereadores} />
+          {byCargo.map((g) => (
+            <Section key={g.cargo} title={g.cargo} items={g.items} />
+          ))}
           <Section title="Outros" items={others} />
+
+          {rows.length === 0 && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              Nenhum voto corresponde a candidatos cadastrados.
+            </p>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="fiscal-nome">Nome do fiscal (opcional)</Label>
@@ -140,7 +152,7 @@ export function ConfirmTransmitModal({
             ) : (
               <Send className="size-4" />
             )}
-            Confirmar e Transmitir Votos
+            Enviar
           </Button>
         </DialogFooter>
       </DialogContent>

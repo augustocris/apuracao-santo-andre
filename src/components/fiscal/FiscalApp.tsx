@@ -36,26 +36,28 @@ export function FiscalApp() {
       await new Promise((r) => setTimeout(r, 350));
       const result = parseBuQrText(raw);
       const found = await findLocal(result.zona, result.secao);
-      if (!found) {
-        throw new Error(
-          `Escola não encontrada para Zona ${result.zona} / Seção ${result.secao}. Verifique o cadastro de locais.`
-        );
-      }
       const resolved = await resolveConfirmRows(result.votes);
       if (resolved.rows.length === 0) {
         throw new Error(
-          "Nenhum candidato cadastrado corresponde aos números do BU."
+          "Nenhum candidato cadastrado corresponde aos números do BU. Cadastre os números na aba Cadastro do admin."
         );
       }
       setParsed(result);
       setLocal(found);
       setRows(resolved.rows);
       setConfirmOpen(true);
+      const hints: string[] = [];
+      if (!found) {
+        hints.push(
+          `Local Zona ${result.zona} / Seção ${result.secao} ainda não está no cadastro de seções (envio permitido).`
+        );
+      }
       if (resolved.unknown.length > 0) {
-        setError(
+        hints.push(
           `Números sem cadastro ignorados: ${resolved.unknown.join(", ")}`
         );
       }
+      setError(hints.length > 0 ? hints.join(" ") : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao processar o BU.");
     } finally {

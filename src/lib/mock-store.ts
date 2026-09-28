@@ -1,53 +1,53 @@
-import type { BoletimUrna, Candidato, LocalVotacao } from "@/lib/types";
+import type {
+  ApuracaoConfig,
+  BoletimUrna,
+  Candidato,
+  LocalVotacao,
+  ZonaConfigRow,
+} from "@/lib/types";
+import { CARGOS_OFICIAIS, DEFAULT_RELATORIO_CARGOS } from "@/lib/cargos";
 
 export const MOCK_CANDIDATOS: Candidato[] = [
   {
-    id: "11111111-1111-1111-1111-111111111101",
+    id: "22222222-2222-2222-2222-222222222201",
     numero: "13",
     nome: "Maria Silva",
-    cargo: "Prefeito",
+    cargo: "Governador",
     foto_url: null,
   },
   {
-    id: "11111111-1111-1111-1111-111111111102",
+    id: "22222222-2222-2222-2222-222222222202",
     numero: "45",
     nome: "João Santos",
-    cargo: "Prefeito",
+    cargo: "Governador",
     foto_url: null,
   },
   {
-    id: "11111111-1111-1111-1111-111111111103",
-    numero: "22",
-    nome: "Ana Costa",
-    cargo: "Prefeito",
-    foto_url: null,
-  },
-  {
-    id: "11111111-1111-1111-1111-111111111201",
-    numero: "13001",
+    id: "22222222-2222-2222-2222-222222222211",
+    numero: "131",
     nome: "Carlos Oliveira",
-    cargo: "Vereador",
+    cargo: "Senador",
     foto_url: null,
   },
   {
-    id: "11111111-1111-1111-1111-111111111202",
-    numero: "45002",
+    id: "22222222-2222-2222-2222-222222222212",
+    numero: "456",
     nome: "Patricia Lima",
-    cargo: "Vereador",
+    cargo: "Senador",
     foto_url: null,
   },
   {
-    id: "11111111-1111-1111-1111-111111111203",
-    numero: "22003",
+    id: "22222222-2222-2222-2222-222222222221",
+    numero: "1313",
+    nome: "Ana Costa",
+    cargo: "Deputado Federal",
+    foto_url: null,
+  },
+  {
+    id: "22222222-2222-2222-2222-222222222231",
+    numero: "13131",
     nome: "Roberto Alves",
-    cargo: "Vereador",
-    foto_url: null,
-  },
-  {
-    id: "11111111-1111-1111-1111-111111111204",
-    numero: "15015",
-    nome: "Fernanda Souza",
-    cargo: "Vereador",
+    cargo: "Deputado Estadual",
     foto_url: null,
   },
 ];
@@ -125,13 +125,12 @@ export const MOCK_LOCAIS: LocalVotacao[] = [
   },
 ];
 
-/** In-memory bulletin store for demos without Supabase credentials. */
 const mockBoletins: BoletimUrna[] = [
   {
     id: "bu-seed-1",
     zona: "002",
     secao: "0010",
-    candidato_id: "11111111-1111-1111-1111-111111111101",
+    candidato_id: "22222222-2222-2222-2222-222222222201",
     quantidade_votos: 120,
     raw_text: "SEED",
     fiscal_nome: "Demo",
@@ -141,7 +140,7 @@ const mockBoletins: BoletimUrna[] = [
     id: "bu-seed-2",
     zona: "002",
     secao: "0010",
-    candidato_id: "11111111-1111-1111-1111-111111111102",
+    candidato_id: "22222222-2222-2222-2222-222222222202",
     quantidade_votos: 95,
     raw_text: "SEED",
     fiscal_nome: "Demo",
@@ -151,8 +150,18 @@ const mockBoletins: BoletimUrna[] = [
     id: "bu-seed-3",
     zona: "002",
     secao: "0010",
-    candidato_id: "11111111-1111-1111-1111-111111111103",
-    quantidade_votos: 40,
+    candidato_id: "22222222-2222-2222-2222-222222222211",
+    quantidade_votos: 88,
+    raw_text: "SEED",
+    fiscal_nome: "Demo",
+    created_at: new Date(Date.now() - 120_000).toISOString(),
+  },
+  {
+    id: "bu-seed-4",
+    zona: "002",
+    secao: "0010",
+    candidato_id: "22222222-2222-2222-2222-222222222221",
+    quantidade_votos: 70,
     raw_text: "SEED",
     fiscal_nome: "Demo",
     created_at: new Date(Date.now() - 120_000).toISOString(),
@@ -161,6 +170,20 @@ const mockBoletins: BoletimUrna[] = [
 
 const mockLocais = [...MOCK_LOCAIS];
 const mockCandidatos = [...MOCK_CANDIDATOS];
+let mockConfig: ApuracaoConfig = {
+  id: 1,
+  secoes_esperadas: MOCK_LOCAIS.length,
+  relatorio_cargos: [...DEFAULT_RELATORIO_CARGOS],
+  zonas_config: [
+    { zona: "001", secoes: 3 },
+    { zona: "002", secoes: 2 },
+    { zona: "003", secoes: 2 },
+    { zona: "004", secoes: 2 },
+    { zona: "005", secoes: 1 },
+  ],
+  updated_at: new Date().toISOString(),
+};
+
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -184,6 +207,24 @@ export function getMockBoletins(): BoletimUrna[] {
   return [...mockBoletins].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
+}
+
+export function getMockConfig(): ApuracaoConfig {
+  return { ...mockConfig, zonas_config: [...mockConfig.zonas_config] };
+}
+
+export function setMockConfig(
+  patch: Partial<
+    Pick<ApuracaoConfig, "secoes_esperadas" | "relatorio_cargos" | "zonas_config">
+  >
+): ApuracaoConfig {
+  mockConfig = {
+    ...mockConfig,
+    ...patch,
+    updated_at: new Date().toISOString(),
+  };
+  notify();
+  return getMockConfig();
 }
 
 export function findMockLocal(
@@ -214,6 +255,34 @@ export function upsertMockLocais(rows: Omit<LocalVotacao, "id">[]): number {
   return count;
 }
 
+export function replaceMockLocaisForZonas(
+  zonas: ZonaConfigRow[],
+  replaceExisting: boolean
+): number {
+  if (replaceExisting) {
+    const zonaSet = new Set(zonas.map((z) => z.zona));
+    for (let i = mockLocais.length - 1; i >= 0; i -= 1) {
+      if (zonaSet.has(mockLocais[i].zona)) {
+        mockLocais.splice(i, 1);
+      }
+    }
+  }
+
+  const rows: Omit<LocalVotacao, "id">[] = [];
+  for (const z of zonas) {
+    for (let i = 1; i <= z.secoes; i += 1) {
+      const secao = String(i).padStart(4, "0");
+      rows.push({
+        zona: z.zona,
+        secao,
+        nome_escola: `Zona ${z.zona} · Seção ${secao}`,
+        bairro: null,
+      });
+    }
+  }
+  return upsertMockLocais(rows);
+}
+
 export function upsertMockCandidatos(
   rows: Omit<Candidato, "id">[]
 ): number {
@@ -235,6 +304,25 @@ export function upsertMockCandidatos(
   }
   notify();
   return count;
+}
+
+export function updateMockCandidato(
+  id: string,
+  patch: Partial<Pick<Candidato, "numero" | "nome" | "cargo" | "foto_url">>
+): Candidato | null {
+  const existing = mockCandidatos.find((c) => c.id === id);
+  if (!existing) return null;
+  Object.assign(existing, patch);
+  notify();
+  return existing;
+}
+
+export function deleteMockCandidato(id: string): boolean {
+  const idx = mockCandidatos.findIndex((c) => c.id === id);
+  if (idx < 0) return false;
+  mockCandidatos.splice(idx, 1);
+  notify();
+  return true;
 }
 
 export function insertMockBoletins(
@@ -267,4 +355,10 @@ export function insertMockBoletins(
   }
   notify();
   return { ok: true };
+}
+
+export function mockActiveRaceCandidatos(): Candidato[] {
+  return mockCandidatos.filter((c) =>
+    (CARGOS_OFICIAIS as readonly string[]).includes(c.cargo)
+  );
 }

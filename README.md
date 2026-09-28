@@ -1,6 +1,6 @@
 # Apuração Eleitoral Paralela — Santo André
 
-PWA for parallel ballot-box counting (~140 fiscales scan BU QR codes; admin TV dashboard shows live results). Built with Next.js App Router, TypeScript, Tailwind CSS, Supabase, and a mock fallback for local demos without credentials.
+PWA for parallel ballot-box counting (fiscais scan BU QR codes; admin TV dashboard shows live results). Built with Next.js App Router, TypeScript, Tailwind CSS, Supabase, and a mock fallback for local demos without credentials.
 
 ## Quick start
 
@@ -13,7 +13,7 @@ npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigi
 > Dev note: `next.config.ts` sets `allowedDevOrigins` for `127.0.0.1` / `localhost` so the client bundle hydrates when you open those hosts.
 
 - Fiscal (mobile): [http://127.0.0.1:43127/fiscal](http://127.0.0.1:43127/fiscal)
-- Admin telão: [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
+- Admin telão + cadastro: [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
 - `/dashboard` redirects to `/admin`
 
 ## Environment
@@ -23,43 +23,41 @@ npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigi
 | `NEXT_PUBLIC_SUPABASE_URL` | for production | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | for production | Supabase anon/public key |
 
-If either variable is missing, the app runs in **mock mode**: in-memory locais, candidatos, and boletins so `/fiscal` and `/admin` remain fully demoable.
+If either variable is missing, the app runs in **mock mode**: in-memory locais, candidatos, config, and boletins so `/fiscal` and `/admin` remain fully demoable.
 
 ## Supabase setup
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open the SQL editor and run [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql).
-   - Creates `locais_votacao`, `candidatos`, `boletins_urna`
-   - Enables Realtime on `boletins_urna`
-   - Adds demo-friendly RLS (anon select/insert)
-   - Seeds sample schools + Prefeito/Vereador candidates for Santo André
-3. Copy Project URL + anon key into `.env.local`.
+2. Open the SQL editor and run, **in order**:
+   - [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql) — tables, Realtime, seed Prefeito/Vereador
+   - [`supabase/migrations/002_admin_config.sql`](supabase/migrations/002_admin_config.sql) — `apuracao_config`, cargos estaduais, realtime idempotente
+3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
-### Import helpers
+### Migration 002 (obrigatória após o deploy deste release)
 
-```bash
-# JSON array
-curl -X POST http://127.0.0.1:43127/api/import-locais \
-  -H 'Content-Type: application/json' \
-  -d '[{"zona":"006","secao":"0050","nome_escola":"EMEF Exemplo","bairro":"Centro"}]'
+Se o app já está no ar com só a `001`, rode a `002` manualmente no SQL Editor do Supabase. Sem ela, o cadastro admin cai em fallback e o progresso/relatório podem não sincronizar entre TVs.
 
-# CSV text
-curl -X POST http://127.0.0.1:43127/api/import-locais \
-  -H 'Content-Type: text/csv' \
-  --data-binary $'zona,secao,nome_escola,bairro\n006,0051,EMEF Exemplo 2,Centro'
+### Segurança (demo)
 
-curl -X POST http://127.0.0.1:43127/api/import-candidatos \
-  -H 'Content-Type: application/json' \
-  -d '[{"numero":"55","nome":"Exemplo","cargo":"Prefeito"}]'
-```
+As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em config e candidatos). Adequado para demo interna; em produção restrinja writes (service role / auth admin).
+
+## Cadastro admin (`/admin` → aba **Cadastro**)
+
+1. **Candidatos** — cargos e dígitos:
+   - Deputado Estadual → 5 dígitos (1)
+   - Deputado Federal → 4 dígitos (1)
+   - Senador → 3 dígitos (2)
+   - Governador → 2 dígitos (1)
+2. **Zonas / Seções** — total esperado e/ou “Zona X tem N seções” (gera `locais_votacao`). Progresso do telão = enviadas / esperadas.
+3. **Relatório telão** — quais cargos aparecem no ranking/gráfico (`apuracao_config.relatorio_cargos` + localStorage).
 
 ## Fiscal flow
 
 1. Open `/fiscal` on a phone (installable PWA).
-2. Tap **Escanear Boletim de Urna (BU)** or use **Colar Texto do BU**.
-3. Parser extracts `ZONA`, `SECA/SECAO`, and `CAND… QTVO…` / `CANDIDATO… VOTOS…`.
-4. Confirmation modal shows school + votes → **Confirmar e Transmitir Votos**.
+2. Tap **Escanear** or **Colar Texto do BU**.
+3. Parser extracts `ZONA`, `SECA/SECAO`, and votes; **only registered candidate numbers** are kept.
+4. Confirmation shows zona, seção, número + nome + votos → **Enviar**.
 5. Duplicate urnas return: *Urna já cadastrada anteriormente*.
 
 Sample paste text is available via **Usar exemplo** on the paste tab.
@@ -68,17 +66,17 @@ Sample paste text is available via **Usar exemplo** on the paste tab.
 
 Dark high-contrast layout for TV:
 
-- Progress: urnas apuradas / total seções (`count` of `locais_votacao`)
-- Rankings + Recharts bar chart (Prefeito)
-- Live feed of latest BUs (pulse on new inserts)
-- Supabase Realtime when configured; otherwise polling every ~4s (also as fallback)
+- Progress: **enviadas / faltam** (vs `secoes_esperadas` do cadastro)
+- Rankings + Recharts por cargo selecionado no relatório
+- Live feed of latest BUs
+- Supabase Realtime when configured; otherwise polling every ~4s
 
 ## Deploy (Vercel + Supabase)
 
-1. Push this repo and import it in Vercel.
-2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-3. Run the SQL migration on Supabase.
-4. Deploy. Point fiscales to `/fiscal` and the telão to `/admin`.
+1. Push to `main` — Vercel auto-deploys if the project is connected.
+2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set.
+3. Run SQL migrations `001` then `002` on Supabase (002 is manual if already live).
+4. Point fiscales to `/fiscal` and the telão to `/admin`.
 
 ## Stack
 
@@ -89,10 +87,11 @@ Dark high-contrast layout for TV:
 ## Project layout
 
 ```
-src/app/fiscal          Mobile fiscal UI
-src/app/admin           TV dashboard
-src/app/api/import-*    Upsert locais / candidatos
-src/lib/parser/bu-qr.ts BU QR parser
-src/lib/data.ts         Supabase + mock data layer
-supabase/migrations/    SQL schema + seed
+src/app/fiscal                 Mobile fiscal UI
+src/app/admin                  TV dashboard + Cadastro
+src/components/admin/          Telão, cadastro, rankings
+src/lib/cargos.ts              Digit rules per cargo
+src/lib/parser/bu-qr.ts        BU QR parser
+src/lib/data.ts                Supabase + mock data layer
+supabase/migrations/           001 init · 002 admin config
 ```

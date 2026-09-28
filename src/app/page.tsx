@@ -36,7 +36,7 @@ export default function HomePage() {
             <MonitorPlay className="mb-3 size-8 text-amber-300" />
             <h2 className="text-xl font-bold">Telão / Admin</h2>
             <p className="mt-1 text-sm text-slate-300">
-              Ranking ao vivo, progresso e feed de urnas.
+              Cadastro, ranking ao vivo, relatório e feed de urnas.
             </p>
           </Link>
         </div>

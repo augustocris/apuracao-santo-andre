@@ -1,4 +1,11 @@
-export type Cargo = "Prefeito" | "Vereador" | string;
+export type Cargo =
+  | "Governador"
+  | "Senador"
+  | "Deputado Federal"
+  | "Deputado Estadual"
+  | "Prefeito"
+  | "Vereador"
+  | string;
 
 export interface LocalVotacao {
   id: string;
@@ -27,6 +34,19 @@ export interface BoletimUrna {
   created_at: string;
 }
 
+export interface ZonaConfigRow {
+  zona: string;
+  secoes: number;
+}
+
+export interface ApuracaoConfig {
+  id: number;
+  secoes_esperadas: number;
+  relatorio_cargos: string[];
+  zonas_config: ZonaConfigRow[];
+  updated_at: string;
+}
+
 export interface ParsedCandidateVote {
   numero: string;
   quantidade: number;
@@ -50,6 +70,12 @@ export interface RankingRow {
   percentual: number;
 }
 
+export interface CargoRanking {
+  cargo: string;
+  rankings: RankingRow[];
+  totalVotos: number;
+}
+
 export interface FeedItem {
   id: string;
   created_at: string;
@@ -62,9 +88,14 @@ export interface FeedItem {
 
 export interface DashboardSnapshot {
   totalSecoes: number;
+  secoesEsperadas: number;
   urnasApuradas: number;
+  secoesFaltam: number;
   totalVotosValidos: number;
+  /** Flat rankings for the first/primary cargo (compat). */
   rankings: RankingRow[];
+  rankingsByCargo: CargoRanking[];
+  relatorioCargos: string[];
   feed: FeedItem[];
   mode: "supabase" | "mock";
 }

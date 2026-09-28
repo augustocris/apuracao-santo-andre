@@ -92,7 +92,8 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       }
       const isTodos =
         cfg.relatorio_cargos.includes("todos") ||
-        cfg.relatorio_cargos.length === 0;
+        cfg.relatorio_cargos.length === 0 ||
+        CARGOS_OFICIAIS.every((c) => cfg.relatorio_cargos.includes(c));
       setRelatorioTodos(isTodos);
       setRelatorioCargos(
         isTodos

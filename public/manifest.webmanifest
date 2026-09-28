@@ -1,0 +1,25 @@
+{
+  "name": "Apuração Eleitoral Paralela — Santo André",
+  "short_name": "Apuração SA",
+  "description": "Apuração paralela de Boletins de Urna para fiscais e telão ao vivo.",
+  "start_url": "/fiscal",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f766e",
+  "lang": "pt-BR",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

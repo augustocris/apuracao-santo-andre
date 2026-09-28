@@ -65,7 +65,7 @@ export function BuScanner({ onScan, busy }: BuScannerProps) {
         err instanceof Error ? err.message : "Não foi possível abrir a câmera.";
       if (/NotAllowedError|Permission/i.test(message)) {
         setError(
-          "Permissão de câmera negada. Libere o acesso ou use a aba Colar Texto."
+          "Permissão de câmera negada. Libere o acesso ou use a aba Digitar."
         );
       } else if (/NotFoundError|DevicesNotFound/i.test(message)) {
         setError("Nenhuma câmera encontrada neste dispositivo.");

@@ -6,6 +6,14 @@ export const CARGOS_OFICIAIS = [
   "Governador",
 ] as const;
 
+/** Ordem de exibição no formulário manual do fiscal. */
+export const CARGOS_FISCAL_ORDEM = [
+  "Deputado Federal",
+  "Deputado Estadual",
+  "Senador",
+  "Governador",
+] as const;
+
 export type CargoOficial = (typeof CARGOS_OFICIAIS)[number];
 
 /** Quantidade esperada de candidatos por cargo no cadastro admin. */

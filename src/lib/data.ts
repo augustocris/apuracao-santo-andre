@@ -397,6 +397,30 @@ export async function findLocal(
   return data as LocalVotacao | null;
 }
 
+/** Pre-check: already transmitted for this zona+seção. */
+export async function urnaJaCadastrada(
+  zona: string,
+  secao: string
+): Promise<boolean> {
+  const z = padZona(zona);
+  const s = padSecao(secao);
+  const supabase = getSupabase();
+
+  if (!supabase) {
+    return getMockBoletins().some((b) => b.zona === z && b.secao === s);
+  }
+
+  const { data, error } = await supabase
+    .from("boletins_urna")
+    .select("id")
+    .eq("zona", z)
+    .eq("secao", s)
+    .limit(1);
+
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
+}
+
 export async function resolveConfirmRows(
   votes: Array<{ numero: string; quantidade: number }>
 ): Promise<{ rows: ConfirmVoteRow[]; unknown: string[] }> {

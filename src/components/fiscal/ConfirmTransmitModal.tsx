@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CARGOS_OFICIAIS } from "@/lib/cargos";
+import { CARGOS_FISCAL_ORDEM, CARGOS_OFICIAIS } from "@/lib/cargos";
 import type { ConfirmVoteRow, LocalVotacao } from "@/lib/types";
 import { formatVotes } from "@/lib/utils";
 
@@ -41,7 +41,7 @@ export function ConfirmTransmitModal({
   onConfirm,
   transmitting,
 }: ConfirmTransmitModalProps) {
-  const byCargo = CARGOS_OFICIAIS.map((cargo) => ({
+  const byCargo = CARGOS_FISCAL_ORDEM.map((cargo) => ({
     cargo,
     items: rows.filter((r) => r.candidato.cargo === cargo),
   })).filter((g) => g.items.length > 0);

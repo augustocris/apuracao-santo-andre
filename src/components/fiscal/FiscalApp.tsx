@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { CheckCircle2, Loader2, QrCode, Sun } from "lucide-react";
+import { CheckCircle2, ClipboardList, Loader2, QrCode, Sun } from "lucide-react";
 import { BuScanner } from "@/components/fiscal/BuScanner";
-import { BuPasteForm } from "@/components/fiscal/BuPasteForm";
+import { ManualBuForm, type ManualBuSubmit } from "@/components/fiscal/ManualBuForm";
 import { ConfirmTransmitModal } from "@/components/fiscal/ConfirmTransmitModal";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,13 +11,18 @@ import {
   findLocal,
   resolveConfirmRows,
   transmitVotes,
+  urnaJaCadastrada,
+  padZona,
+  padSecao,
 } from "@/lib/data";
 import { parseBuQrText } from "@/lib/parser/bu-qr";
 import type { ConfirmVoteRow, LocalVotacao, ParsedBu } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+const DUPLICATE_MSG = "Urna já cadastrada anteriormente";
+
 export function FiscalApp() {
-  const [tab, setTab] = useState<"scan" | "paste">("scan");
+  const [tab, setTab] = useState<"scan" | "manual">("scan");
   const [processing, setProcessing] = useState(false);
   const [transmitting, setTransmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,48 +33,119 @@ export function FiscalApp() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [fiscalNome, setFiscalNome] = useState("");
 
-  const handleRawText = useCallback(async (raw: string) => {
-    setError(null);
-    setSuccess(null);
-    setProcessing(true);
-    try {
-      await new Promise((r) => setTimeout(r, 350));
-      const result = parseBuQrText(raw);
-      const found = await findLocal(result.zona, result.secao);
-      const resolved = await resolveConfirmRows(result.votes);
-      if (resolved.rows.length === 0) {
-        throw new Error(
-          "Nenhum candidato cadastrado corresponde aos números do BU. Cadastre os números na aba Cadastro do admin."
+  const openConfirm = useCallback(
+    async (opts: {
+      zona: string;
+      secao: string;
+      votes: Array<{ numero: string; quantidade: number }>;
+      rawText: string;
+    }) => {
+      setError(null);
+      setSuccess(null);
+      setProcessing(true);
+      try {
+        const zona = padZona(opts.zona);
+        const secao = padSecao(opts.secao);
+
+        if (await urnaJaCadastrada(zona, secao)) {
+          setError(DUPLICATE_MSG);
+          return;
+        }
+
+        const found = await findLocal(zona, secao);
+        const resolved = await resolveConfirmRows(opts.votes);
+        if (resolved.rows.length === 0) {
+          throw new Error(
+            "Nenhum candidato cadastrado corresponde aos votos informados. Verifique o cadastro no admin."
+          );
+        }
+
+        setParsed({
+          zona,
+          secao,
+          votes: opts.votes,
+          rawText: opts.rawText,
+        });
+        setLocal(found);
+        setRows(resolved.rows);
+        setConfirmOpen(true);
+
+        const hints: string[] = [];
+        if (!found) {
+          hints.push(
+            `Local Zona ${zona} / Seção ${secao} ainda não está no cadastro de seções (envio permitido).`
+          );
+        }
+        if (resolved.unknown.length > 0) {
+          hints.push(
+            `Números sem cadastro ignorados: ${resolved.unknown.join(", ")}`
+          );
+        }
+        setError(hints.length > 0 ? hints.join(" ") : null);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Falha ao preparar o envio."
         );
+      } finally {
+        setProcessing(false);
       }
-      setParsed(result);
-      setLocal(found);
-      setRows(resolved.rows);
-      setConfirmOpen(true);
-      const hints: string[] = [];
-      if (!found) {
-        hints.push(
-          `Local Zona ${result.zona} / Seção ${result.secao} ainda não está no cadastro de seções (envio permitido).`
-        );
+    },
+    []
+  );
+
+  const handleRawText = useCallback(
+    async (raw: string) => {
+      try {
+        await new Promise((r) => setTimeout(r, 200));
+        const result = parseBuQrText(raw);
+        await openConfirm({
+          zona: result.zona,
+          secao: result.secao,
+          votes: result.votes,
+          rawText: result.rawText,
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Falha ao processar o BU.");
+        setProcessing(false);
       }
-      if (resolved.unknown.length > 0) {
-        hints.push(
-          `Números sem cadastro ignorados: ${resolved.unknown.join(", ")}`
-        );
-      }
-      setError(hints.length > 0 ? hints.join(" ") : null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao processar o BU.");
-    } finally {
-      setProcessing(false);
-    }
-  }, []);
+    },
+    [openConfirm]
+  );
+
+  const handleManual = useCallback(
+    async (payload: ManualBuSubmit) => {
+      await openConfirm({
+        zona: payload.zona,
+        secao: payload.secao,
+        votes: payload.votes.map((v) => ({
+          numero: v.numero,
+          quantidade: v.quantidade,
+        })),
+        rawText: [
+          `MANUAL`,
+          `ZONA:${payload.zona}`,
+          `SECAO:${payload.secao}`,
+          ...payload.votes.map(
+            (v) => `CAND:${v.numero} QTVO:${v.quantidade}`
+          ),
+        ].join("\n"),
+      });
+    },
+    [openConfirm]
+  );
 
   async function handleConfirm() {
     if (!parsed) return;
     setTransmitting(true);
     setError(null);
     try {
+      // Re-check duplicate right before insert
+      if (await urnaJaCadastrada(parsed.zona, parsed.secao)) {
+        setError(DUPLICATE_MSG);
+        setConfirmOpen(false);
+        return;
+      }
+
       const result = await transmitVotes({
         zona: parsed.zona,
         secao: parsed.secao,
@@ -111,7 +187,8 @@ export function FiscalApp() {
           Apuração Paralela
         </h1>
         <p className="text-sm text-slate-600">
-          Santo André — escaneie o QR do Boletim de Urna e transmita os votos.
+          Santo André — escaneie o QR ou digite zona, seção e votos dos
+          candidatos cadastrados.
         </p>
         <p className="text-xs text-slate-500">
           Fonte de dados:{" "}
@@ -125,7 +202,7 @@ export function FiscalApp() {
           className="flex items-center gap-3 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-4 text-teal-900"
         >
           <Loader2 className="size-5 animate-spin" />
-          <span className="font-semibold">Processando QR Code...</span>
+          <span className="font-semibold">Preparando envio…</span>
         </div>
       )}
 
@@ -172,25 +249,26 @@ export function FiscalApp() {
           <Button
             type="button"
             role="tab"
-            aria-selected={tab === "paste"}
+            aria-selected={tab === "manual"}
             variant="ghost"
             className={cn(
               "h-full rounded-lg text-sm font-semibold",
-              tab === "paste"
+              tab === "manual"
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-600 hover:bg-white/50"
             )}
-            onClick={() => setTab("paste")}
+            onClick={() => setTab("manual")}
           >
-            Colar Texto do BU
+            <ClipboardList className="size-4" />
+            Digitar
           </Button>
         </div>
         {tab === "scan" ? (
           <BuScanner onScan={(text) => void handleRawText(text)} busy={processing} />
         ) : (
-          <BuPasteForm
-            onSubmit={(text) => void handleRawText(text)}
-            busy={processing}
+          <ManualBuForm
+            onSubmit={(payload) => void handleManual(payload)}
+            busy={processing || transmitting}
           />
         )}
       </div>

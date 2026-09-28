@@ -55,12 +55,10 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 ## Fiscal flow
 
 1. Open `/fiscal` on a phone (installable PWA).
-2. Tap **Escanear** or **Colar Texto do BU**.
-3. Parser extracts `ZONA`, `SECA/SECAO`, and votes; **only registered candidate numbers** are kept.
+2. Tap **Escanear** (QR) or **Digitar** (formulário manual: zona, seção e votos).
+3. QR parser extracts `ZONA`, `SECA/SECAO`, and votes; only registered candidate numbers are kept. The manual form lists cadastrados by cargo.
 4. Confirmation shows zona, seção, número + nome + votos → **Enviar**.
-5. Duplicate urnas return: *Urna já cadastrada anteriormente*.
-
-Sample paste text is available via **Usar exemplo** on the paste tab.
+5. Duplicate urnas return: *Urna já cadastrada anteriormente* (pre-check + UNIQUE).
 
 ## Admin telão
 

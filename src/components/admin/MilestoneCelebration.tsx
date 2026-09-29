@@ -64,24 +64,26 @@ export function MilestoneCelebration({
     const params = new URLSearchParams(window.location.search);
     if (params.get("demoCelebrate") !== "1") return;
     const threshold = Number(params.get("demoThreshold") || "50000");
-    const key = `demo:${Number.isFinite(threshold) ? threshold : 50_000}`;
-    if (firedRef.current.has(key)) return;
-    firedRef.current.add(key);
+    const value = Number.isFinite(threshold) ? threshold : 50_000;
+    let cancelled = false;
     const t = window.setTimeout(() => {
+      if (cancelled) return;
       showingRef.current = true;
       setActive({
-        id: key,
-        message: milestoneMessage(
-          Number.isFinite(threshold) ? threshold : 50_000
-        ),
+        id: `demo:${value}`,
+        message: milestoneMessage(value),
       });
       fireConfettiBurst();
       window.setTimeout(() => {
+        if (cancelled) return;
         setActive(null);
         showingRef.current = false;
       }, 4200);
     }, 700);
-    return () => window.clearTimeout(t);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
   }, []);
 
   useEffect(() => {

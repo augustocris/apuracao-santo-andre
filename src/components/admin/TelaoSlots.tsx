@@ -138,7 +138,7 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
       data-candidato-id={slot.row?.candidato.id ?? ""}
       data-celebrating={celebrating ? "1" : "0"}
       className={cn(
-        "relative flex h-full min-h-0 overflow-hidden rounded-2xl border border-white/15 bg-[#002a5c]/95 shadow-lg shadow-black/35",
+        "relative flex h-full min-h-0 overflow-hidden rounded-xl border border-white/15 bg-[#002a5c]/95 shadow-lg shadow-black/35 md:rounded-2xl",
         empty && "border-dashed border-white/20 bg-[#001a3a]/70",
         celebrating && "ring-2 ring-[#FFDE00]/80"
       )}
@@ -154,15 +154,15 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
             role="status"
             aria-live="polite"
             className={cn(
-              "pointer-events-none absolute inset-x-3 top-3 z-30",
+              "pointer-events-none absolute inset-x-2 top-1.5 z-30 md:inset-x-3 md:top-3",
               "animate-in fade-in zoom-in-95 duration-500",
-              "rounded-xl border border-[#FFDE00]/55 bg-[#001530]/92 px-3 py-2.5 text-center shadow-[0_0_28px_rgba(255,222,0,0.35)] backdrop-blur-md"
+              "rounded-lg border border-[#FFDE00]/55 bg-[#001530]/92 px-2 py-1.5 text-center shadow-[0_0_28px_rgba(255,222,0,0.35)] backdrop-blur-md md:rounded-xl md:px-3 md:py-2.5"
             )}
           >
-            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#FFDE00] md:text-xs">
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-[#FFDE00] md:text-xs">
               {celebration!.candidateName}
             </p>
-            <p className="mt-1 text-sm font-bold leading-snug text-white md:text-base">
+            <p className="mt-0.5 text-xs font-bold leading-snug text-white md:mt-1 md:text-base">
               {celebration!.message}
             </p>
           </div>
@@ -172,15 +172,19 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
       {/* Content column (left) + photo column (right) */}
       <div
         className={cn(
-          "relative z-10 flex min-h-0 min-w-0 flex-1",
-          size === "tall" ? "gap-3 p-4 md:gap-4 md:p-5" : "gap-2.5 p-3 md:p-4"
+          "relative z-10 flex min-h-0 min-w-0 flex-1 items-stretch",
+          size === "tall"
+            ? "gap-2 p-2 md:gap-4 md:p-5"
+            : "gap-2 p-1.5 md:gap-2.5 md:p-4"
         )}
       >
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center">
           <p
             className={cn(
               "font-semibold uppercase tracking-[0.14em] text-[#00ADEF]",
-              size === "tall" ? "text-xs md:text-sm" : "text-[10px] md:text-xs",
+              size === "tall"
+                ? "text-[10px] md:text-sm"
+                : "text-[9px] md:text-xs",
               celebrating && "opacity-40"
             )}
           >
@@ -188,15 +192,19 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
           </p>
 
           {empty ? (
-            <div className="mt-3 flex flex-1 flex-col items-center justify-center gap-2 text-white/40">
-              <UserRound className={size === "tall" ? "size-10" : "size-7"} />
-              <p className="text-sm">Sem candidato cadastrado</p>
+            <div className="mt-1 flex flex-1 flex-col items-center justify-center gap-1 text-white/40 md:mt-3 md:gap-2">
+              <UserRound
+                className={
+                  size === "tall" ? "size-6 md:size-10" : "size-5 md:size-7"
+                }
+              />
+              <p className="text-[11px] md:text-sm">Sem candidato cadastrado</p>
             </div>
           ) : (
             <div
               className={cn(
-                "mt-2 flex min-h-0 flex-1 flex-col justify-between gap-2",
-                celebrating && "pt-14"
+                "mt-0.5 flex min-h-0 flex-1 flex-col justify-between gap-1 md:mt-2 md:gap-2",
+                celebrating && "pt-10 md:pt-14"
               )}
             >
               <div className="min-w-0">
@@ -204,16 +212,18 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
                   className={cn(
                     "truncate font-bold leading-tight text-white",
                     size === "tall"
-                      ? "text-2xl md:text-3xl lg:text-4xl"
-                      : "text-lg md:text-xl lg:text-2xl"
+                      ? "text-base md:text-3xl lg:text-4xl"
+                      : "text-sm md:text-xl lg:text-2xl"
                   )}
                 >
                   {slot.row!.candidato.nome}
                 </p>
                 <p
                   className={cn(
-                    "mt-0.5 tabular-nums text-white/55",
-                    size === "tall" ? "text-sm md:text-base" : "text-xs md:text-sm"
+                    "mt-0 tabular-nums text-white/55 md:mt-0.5",
+                    size === "tall"
+                      ? "text-[11px] md:text-base"
+                      : "text-[10px] md:text-sm"
                   )}
                 >
                   Nº {slot.row!.candidato.numero}
@@ -221,20 +231,22 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
               </div>
 
               <div className="mt-auto">
-                <div className="flex items-end justify-between gap-2">
+                <div className="flex items-end justify-between gap-1.5">
                   <p
                     className={cn(
-                      "font-bold tabular-nums text-[#FFDE00]",
+                      "font-bold tabular-nums leading-none text-[#FFDE00]",
                       size === "tall"
-                        ? "text-3xl md:text-4xl lg:text-5xl"
-                        : "text-2xl md:text-3xl"
+                        ? "text-xl md:text-4xl lg:text-5xl"
+                        : "text-lg md:text-3xl"
                     )}
                   >
                     {formatVotes(votos)}
                     <span
                       className={cn(
                         "ml-1 font-medium text-white/55",
-                        size === "tall" ? "text-base md:text-lg" : "text-sm"
+                        size === "tall"
+                          ? "text-[11px] md:text-lg"
+                          : "text-[10px] md:text-sm"
                       )}
                     >
                       votos
@@ -243,10 +255,10 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
                   {showPctStrong && (
                     <p
                       className={cn(
-                        "shrink-0 font-bold tabular-nums text-[#00ADEF]",
+                        "shrink-0 font-bold tabular-nums leading-none text-[#00ADEF]",
                         size === "tall"
-                          ? "text-2xl md:text-3xl"
-                          : "text-xl md:text-2xl"
+                          ? "text-base md:text-3xl"
+                          : "text-sm md:text-2xl"
                       )}
                     >
                       {formatPercent(pct)}
@@ -256,7 +268,9 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
                     <p
                       className={cn(
                         "shrink-0 tabular-nums text-white/40",
-                        size === "tall" ? "text-sm md:text-base" : "text-xs"
+                        size === "tall"
+                          ? "text-[11px] md:text-base"
+                          : "text-[10px] md:text-xs"
                       )}
                     >
                       {formatPercent(pct)}
@@ -265,8 +279,8 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
                 </div>
                 <div
                   className={cn(
-                    "mt-2 overflow-hidden rounded-full bg-[#001a3a]",
-                    size === "tall" ? "h-2.5" : "h-1.5"
+                    "mt-1 overflow-hidden rounded-full bg-[#001a3a] md:mt-2",
+                    size === "tall" ? "h-1.5 md:h-2.5" : "h-1 md:h-1.5"
                   )}
                 >
                   <div
@@ -281,33 +295,44 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
           )}
         </div>
 
-        {/* Photo column — full card height on the right */}
+        {/*
+          Photo column: height = card content (self-stretch).
+          Width from aspect-ratio so thin cards get a smaller portrait/square
+          instead of a wide strip that only shows the top of the head.
+          Desktop/TV tall cards keep a wider % column for impact.
+        */}
         <div
           className={cn(
-            "relative shrink-0 self-stretch overflow-hidden rounded-xl",
+            "relative shrink-0 self-stretch overflow-hidden rounded-lg md:rounded-xl",
             size === "tall"
-              ? "w-[32%] min-w-[5.5rem] max-w-[11rem] md:min-w-[7rem]"
-              : "w-[30%] min-w-[4.25rem] max-w-[7.5rem] md:min-w-[5rem]",
+              ? "aspect-[3/4] h-auto w-auto max-w-[36%] md:aspect-auto md:w-[32%] md:min-w-[7rem] md:max-w-[11rem]"
+              : "aspect-[4/5] h-auto w-auto max-w-[32%] sm:max-w-[5.5rem] md:max-w-[7.5rem]",
             empty && "bg-[#001a3a]/50"
           )}
           aria-hidden={empty}
         >
           {empty ? (
             <div className="flex h-full items-center justify-center text-white/25">
-              <UserRound className={size === "tall" ? "size-12" : "size-8"} />
+              <UserRound
+                className={
+                  size === "tall" ? "size-7 md:size-12" : "size-5 md:size-8"
+                }
+              />
             </div>
           ) : fotoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={fotoUrl}
               alt=""
-              className="h-full w-full object-cover object-top"
+              className="h-full w-full object-cover object-[center_20%]"
             />
           ) : (
             <div
               className={cn(
                 "flex h-full w-full items-center justify-center bg-gradient-to-b from-[#004a9e] to-[#002a5c] font-bold text-white",
-                size === "tall" ? "text-3xl md:text-4xl" : "text-xl md:text-2xl"
+                size === "tall"
+                  ? "text-lg md:text-4xl"
+                  : "text-sm md:text-2xl"
               )}
             >
               {slot.row!.candidato.numero}
@@ -333,8 +358,12 @@ export function TelaoSlots({ groups, celebration = null }: TelaoSlotsProps) {
     slots.filter((s) => s.cargo === cargo && s.row).length;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="grid min-h-0 flex-[1.35] grid-cols-1 gap-3 md:grid-cols-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5 md:gap-3">
+      {/*
+        Mobile: flex-[2]/[3] ≈ equal height per stacked card (2 deps + 3 short).
+        Desktop/TV: keep taller deputy row + 3-up short row.
+      */}
+      <div className="grid min-h-0 flex-[2] grid-cols-1 gap-1.5 md:flex-[1.35] md:grid-cols-2 md:gap-3">
         {tall.map((slot) => (
           <SlotCard
             key={slot.key}
@@ -345,7 +374,7 @@ export function TelaoSlots({ groups, celebration = null }: TelaoSlotsProps) {
           />
         ))}
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid min-h-0 flex-[3] grid-cols-1 gap-1.5 sm:grid-cols-3 sm:flex-1 md:gap-3">
         {short.map((slot) => (
           <SlotCard
             key={slot.key}

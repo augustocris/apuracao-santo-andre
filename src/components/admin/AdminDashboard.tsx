@@ -81,29 +81,29 @@ export function AdminDashboard() {
   return (
     <div
       className={cn(
-        "mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-3 py-3 md:px-5 md:py-4",
+        "mx-auto flex w-full max-w-[1600px] flex-col px-3 py-2 md:px-5 md:py-4",
         view === "telao"
-          ? "h-[100dvh] min-h-0 overflow-hidden"
+          ? "h-[100dvh] min-h-0 gap-1.5 overflow-hidden md:gap-3"
           : "min-h-full gap-5 px-4 py-5 md:px-6 lg:px-8"
       )}
     >
       <header
         className={cn(
-          "flex flex-wrap items-center justify-between gap-2 border-b border-white/10",
-          view === "telao" ? "shrink-0 pb-2" : "items-end gap-3 pb-4"
+          "flex flex-wrap items-center justify-between gap-1.5 border-b border-white/10 md:gap-2",
+          view === "telao" ? "shrink-0 pb-1.5 md:pb-2" : "items-end gap-3 pb-4"
         )}
       >
         <div className="min-w-0">
           <p
             className={cn(
-              "inline-flex items-center gap-2 font-semibold uppercase tracking-[0.2em] text-[#00ADEF]",
-              view === "telao" ? "mb-0.5 text-[10px]" : "mb-1 text-xs"
+              "inline-flex items-center gap-1.5 font-semibold uppercase tracking-[0.2em] text-[#00ADEF] md:gap-2",
+              view === "telao" ? "mb-0 text-[9px] md:mb-0.5 md:text-[10px]" : "mb-1 text-xs"
             )}
           >
             <Radio
               className={cn(
                 "animate-pulse",
-                view === "telao" ? "size-3" : "size-3.5"
+                view === "telao" ? "size-2.5 md:size-3" : "size-3.5"
               )}
             />
             Ao vivo
@@ -112,7 +112,7 @@ export function AdminDashboard() {
             className={cn(
               "font-bold tracking-tight text-white",
               view === "telao"
-                ? "text-lg leading-tight md:text-2xl lg:text-3xl"
+                ? "text-base leading-tight md:text-2xl lg:text-3xl"
                 : "text-2xl md:text-4xl"
             )}
           >
@@ -121,7 +121,9 @@ export function AdminDashboard() {
           <p
             className={cn(
               "text-slate-400",
-              view === "telao" ? "mt-0.5 text-xs" : "mt-1 text-sm"
+              view === "telao"
+                ? "mt-0 truncate text-[10px] md:mt-0.5 md:text-xs"
+                : "mt-1 text-sm"
             )}
           >
             Relatório: {cargoLabel} · atualizado às {updatedAt} · modo{" "}

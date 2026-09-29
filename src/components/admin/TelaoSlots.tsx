@@ -324,7 +324,7 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
             <img
               src={fotoUrl}
               alt=""
-              className="h-full w-full object-cover object-[center_20%]"
+              className="h-full w-full object-cover object-[center_15%]"
             />
           ) : (
             <div

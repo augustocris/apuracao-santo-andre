@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   Check,
+  ImagePlus,
   Loader2,
   Pencil,
   Plus,
@@ -17,6 +18,7 @@ import {
   Users,
   MapPinned,
   MonitorPlay,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +31,10 @@ import {
   labelCargoCurto,
   type CargoOficial,
 } from "@/lib/cargos";
+import {
+  isProbablyImageUrl,
+  uploadCandidatoFoto,
+} from "@/lib/candidato-foto";
 import {
   applyZonasExpectativa,
   dataModeLabel,
@@ -65,6 +71,8 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   const [formCargo, setFormCargo] = useState<CargoOficial>("Governador");
   const [formNumero, setFormNumero] = useState("");
   const [formNome, setFormNome] = useState("");
+  const [formFotoUrl, setFormFotoUrl] = useState("");
+  const [uploadingFoto, setUploadingFoto] = useState(false);
 
   // Sections form
   const [totalEsperado, setTotalEsperado] = useState("10");
@@ -129,6 +137,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     setFormCargo("Governador");
     setFormNumero("");
     setFormNome("");
+    setFormFotoUrl("");
   }
 
   function startEdit(c: Candidato) {
@@ -136,7 +145,27 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     setFormCargo(c.cargo as CargoOficial);
     setFormNumero(c.numero);
     setFormNome(c.nome);
+    setFormFotoUrl(c.foto_url ?? "");
     setTab("candidatos");
+  }
+
+  async function handleFotoFile(file: File | null) {
+    if (!file) return;
+    setUploadingFoto(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const url = await uploadCandidatoFoto(file, {
+        candidatoId: editId ?? undefined,
+        numero: formNumero || undefined,
+      });
+      setFormFotoUrl(url);
+      setMessage("Foto pronta — salve o candidato para gravar.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha no upload da foto.");
+    } finally {
+      setUploadingFoto(false);
+    }
   }
 
   async function handleSaveCandidato(e: FormEvent) {
@@ -145,11 +174,16 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     setMessage(null);
     setError(null);
     try {
+      const foto = formFotoUrl.trim();
+      if (foto && !isProbablyImageUrl(foto)) {
+        throw new Error("URL da foto inválida. Use http(s) ou faça upload.");
+      }
       await upsertCandidato({
         id: editId ?? undefined,
         numero: formNumero,
         nome: formNome,
         cargo: formCargo,
+        foto_url: foto || null,
       });
       setMessage(editId ? "Candidato atualizado." : "Candidato cadastrado.");
       resetCandForm();
@@ -310,7 +344,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               className={cn(
                 "h-10 flex-1 min-w-[8rem] rounded-lg text-sm font-semibold",
                 tab === t.id
-                  ? "bg-teal-600 text-white hover:bg-teal-600"
+                  ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
                   : "text-slate-300 hover:bg-white/5 hover:text-white"
               )}
               onClick={() => setTab(t.id)}
@@ -410,11 +444,92 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                 disabled={busy}
               />
             </div>
+            <div className="space-y-2">
+              <Label className="text-slate-300">Foto</Label>
+              <div className="flex items-start gap-3">
+                <div className="relative size-20 shrink-0 overflow-hidden rounded-xl border border-white/15 bg-[#001a3a]">
+                  {formFotoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={formFotoUrl}
+                      alt="Prévia da foto"
+                      className="size-full object-cover object-top"
+                    />
+                  ) : (
+                    <div className="flex size-full items-center justify-center text-white/35">
+                      <ImagePlus className="size-7" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Input
+                    id="cand-foto-url"
+                    type="url"
+                    value={formFotoUrl.startsWith("data:") ? "" : formFotoUrl}
+                    onChange={(e) => setFormFotoUrl(e.target.value)}
+                    placeholder="URL pública da foto (https://…)"
+                    className="border-white/15 bg-slate-950 text-white"
+                    disabled={busy || uploadingFoto}
+                  />
+                  {formFotoUrl.startsWith("data:") && (
+                    <p className="text-xs text-[#00ADEF]">
+                      Foto carregada localmente (data URL) — salve o candidato.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <label className="inline-flex cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="sr-only"
+                        disabled={busy || uploadingFoto}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
+                          e.target.value = "";
+                          void handleFotoFile(f);
+                        }}
+                      />
+                      <span
+                        className={cn(
+                          "inline-flex h-9 items-center gap-2 rounded-lg border border-white/20 bg-white/5 px-3 text-sm font-medium text-white hover:bg-white/10",
+                          (busy || uploadingFoto) && "pointer-events-none opacity-50"
+                        )}
+                      >
+                        {uploadingFoto ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <ImagePlus className="size-4" />
+                        )}
+                        Enviar arquivo
+                      </span>
+                    </label>
+                    {formFotoUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-300 hover:text-red-200"
+                        disabled={busy || uploadingFoto}
+                        onClick={() => setFormFotoUrl("")}
+                      >
+                        <X className="size-4" />
+                        Remover foto
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Preferência: upload para o bucket Supabase{" "}
+                    <code className="text-[#00ADEF]">candidatos</code> (SQL
+                    migration 003). Alternativa: colar URL pública.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="submit"
-                disabled={busy}
-                className="bg-teal-600 text-white hover:bg-teal-500"
+                disabled={busy || uploadingFoto}
+                className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
               >
                 {busy ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -462,13 +577,29 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                     key={c.id}
                     className="flex items-center justify-between gap-3 bg-slate-900/40 px-3 py-2.5"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-white">
-                        {c.nome}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        {labelCargoCurto(c.cargo)} · Nº {c.numero}
-                      </p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="size-11 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-[#001a3a]">
+                        {c.foto_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={c.foto_url}
+                            alt=""
+                            className="size-full object-cover object-top"
+                          />
+                        ) : (
+                          <div className="flex size-full items-center justify-center text-xs font-bold text-white/70">
+                            {c.numero}
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-white">
+                          {c.nome}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {labelCargoCurto(c.cargo)} · Nº {c.numero}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex shrink-0 gap-1">
                       <Button
@@ -549,7 +680,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
             </div>
             <p className="text-xs text-slate-400">
               “Zona X tem N seções” gera linhas em{" "}
-              <code className="text-teal-300">locais_votacao</code> (nome
+              <code className="text-[#00ADEF]">locais_votacao</code> (nome
               placeholder) para o fiscal encontrar a escola.
             </p>
             <div className="space-y-2">
@@ -627,7 +758,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
           <Button
             type="submit"
             disabled={busy}
-            className="bg-teal-600 text-white hover:bg-teal-500"
+            className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
           >
             {busy ? (
               <Loader2 className="size-4 animate-spin" />
@@ -660,7 +791,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                   setRelatorioCargos([...CARGOS_OFICIAIS]);
                 }
               }}
-              className="size-4 accent-teal-500"
+              className="size-4 accent-[#00ADEF]"
               disabled={busy}
             />
             <span className="font-semibold text-white">Todos os cargos</span>
@@ -676,7 +807,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                   className={cn(
                     "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5",
                     checked
-                      ? "border-teal-500/40 bg-teal-950/30"
+                      ? "border-[#00ADEF]/40 bg-[#003B7E]/40"
                       : "border-white/10 bg-slate-950/40",
                     relatorioTodos && "opacity-70"
                   )}
@@ -692,7 +823,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                           : prev.filter((c) => c !== cargo)
                       );
                     }}
-                    className="size-4 accent-teal-500"
+                    className="size-4 accent-[#00ADEF]"
                   />
                   <span className="text-sm font-medium text-white">
                     {cargo}
@@ -705,7 +836,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
           <Button
             type="submit"
             disabled={busy || (!relatorioTodos && relatorioCargos.length === 0)}
-            className="bg-teal-600 text-white hover:bg-teal-500"
+            className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
           >
             {busy ? (
               <Loader2 className="size-4 animate-spin" />

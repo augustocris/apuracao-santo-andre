@@ -81,6 +81,7 @@ function fireCardConfetti(canvas: HTMLCanvasElement) {
     spread: 62,
     startVelocity: 28,
     origin: { x: 0.5, y: 0.55 },
+    colors: ["#FFDE00", "#00ADEF", "#FFFFFF", "#003B7E"],
     ticks: 180,
   });
   fire({
@@ -89,6 +90,7 @@ function fireCardConfetti(canvas: HTMLCanvasElement) {
     spread: 50,
     startVelocity: 24,
     origin: { x: 0.15, y: 0.7 },
+    colors: ["#FFDE00", "#00ADEF", "#FFFFFF"],
     ticks: 180,
   });
   fire({
@@ -97,6 +99,7 @@ function fireCardConfetti(canvas: HTMLCanvasElement) {
     spread: 50,
     startVelocity: 24,
     origin: { x: 0.85, y: 0.7 },
+    colors: ["#FFDE00", "#00ADEF", "#FFFFFF"],
     ticks: 180,
   });
 }
@@ -113,6 +116,7 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
   const votos = slot.row?.votos ?? 0;
   const pct = slot.row?.percentual ?? 0;
   const showPctStrong = !singleInCargo && !empty;
+  const fotoUrl = slot.row?.candidato.foto_url?.trim() || null;
   const celebrating =
     !!celebration &&
     !!slot.row &&
@@ -134,10 +138,9 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
       data-candidato-id={slot.row?.candidato.id ?? ""}
       data-celebrating={celebrating ? "1" : "0"}
       className={cn(
-        "relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/85 shadow-lg shadow-black/25",
-        size === "tall" ? "p-4 md:p-5" : "p-3 md:p-4",
-        empty && "border-dashed border-white/15 bg-slate-950/40",
-        celebrating && "ring-2 ring-amber-300/70"
+        "relative flex h-full min-h-0 overflow-hidden rounded-2xl border border-white/15 bg-[#002a5c]/95 shadow-lg shadow-black/35",
+        empty && "border-dashed border-white/20 bg-[#001a3a]/70",
+        celebrating && "ring-2 ring-[#FFDE00]/80"
       )}
     >
       {celebrating ? (
@@ -153,10 +156,10 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
             className={cn(
               "pointer-events-none absolute inset-x-3 top-3 z-30",
               "animate-in fade-in zoom-in-95 duration-500",
-              "rounded-xl border border-amber-300/50 bg-slate-950/90 px-3 py-2.5 text-center shadow-[0_0_28px_rgba(251,191,36,0.35)] backdrop-blur-md"
+              "rounded-xl border border-[#FFDE00]/55 bg-[#001530]/92 px-3 py-2.5 text-center shadow-[0_0_28px_rgba(255,222,0,0.35)] backdrop-blur-md"
             )}
           >
-            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300 md:text-xs">
+            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#FFDE00] md:text-xs">
               {celebration!.candidateName}
             </p>
             <p className="mt-1 text-sm font-bold leading-snug text-white md:text-base">
@@ -166,128 +169,152 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
         </>
       ) : null}
 
-      <p
+      {/* Content column (left) + photo column (right) */}
+      <div
         className={cn(
-          "relative z-10 font-semibold uppercase tracking-[0.14em] text-teal-300/90",
-          size === "tall" ? "text-xs md:text-sm" : "text-[10px] md:text-xs",
-          celebrating && "opacity-40"
+          "relative z-10 flex min-h-0 min-w-0 flex-1",
+          size === "tall" ? "gap-3 p-4 md:gap-4 md:p-5" : "gap-2.5 p-3 md:p-4"
         )}
       >
-        {slot.label}
-      </p>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <p
+            className={cn(
+              "font-semibold uppercase tracking-[0.14em] text-[#00ADEF]",
+              size === "tall" ? "text-xs md:text-sm" : "text-[10px] md:text-xs",
+              celebrating && "opacity-40"
+            )}
+          >
+            {slot.label}
+          </p>
 
-      {empty ? (
-        <div className="relative z-10 mt-3 flex flex-1 flex-col items-center justify-center gap-2 text-slate-500">
-          <UserRound className={size === "tall" ? "size-10" : "size-7"} />
-          <p className="text-sm">Sem candidato cadastrado</p>
+          {empty ? (
+            <div className="mt-3 flex flex-1 flex-col items-center justify-center gap-2 text-white/40">
+              <UserRound className={size === "tall" ? "size-10" : "size-7"} />
+              <p className="text-sm">Sem candidato cadastrado</p>
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "mt-2 flex min-h-0 flex-1 flex-col justify-between gap-2",
+                celebrating && "pt-14"
+              )}
+            >
+              <div className="min-w-0">
+                <p
+                  className={cn(
+                    "truncate font-bold leading-tight text-white",
+                    size === "tall"
+                      ? "text-2xl md:text-3xl lg:text-4xl"
+                      : "text-lg md:text-xl lg:text-2xl"
+                  )}
+                >
+                  {slot.row!.candidato.nome}
+                </p>
+                <p
+                  className={cn(
+                    "mt-0.5 tabular-nums text-white/55",
+                    size === "tall" ? "text-sm md:text-base" : "text-xs md:text-sm"
+                  )}
+                >
+                  Nº {slot.row!.candidato.numero}
+                </p>
+              </div>
+
+              <div className="mt-auto">
+                <div className="flex items-end justify-between gap-2">
+                  <p
+                    className={cn(
+                      "font-bold tabular-nums text-[#FFDE00]",
+                      size === "tall"
+                        ? "text-3xl md:text-4xl lg:text-5xl"
+                        : "text-2xl md:text-3xl"
+                    )}
+                  >
+                    {formatVotes(votos)}
+                    <span
+                      className={cn(
+                        "ml-1 font-medium text-white/55",
+                        size === "tall" ? "text-base md:text-lg" : "text-sm"
+                      )}
+                    >
+                      votos
+                    </span>
+                  </p>
+                  {showPctStrong && (
+                    <p
+                      className={cn(
+                        "shrink-0 font-bold tabular-nums text-[#00ADEF]",
+                        size === "tall"
+                          ? "text-2xl md:text-3xl"
+                          : "text-xl md:text-2xl"
+                      )}
+                    >
+                      {formatPercent(pct)}
+                    </p>
+                  )}
+                  {singleInCargo && !empty && (
+                    <p
+                      className={cn(
+                        "shrink-0 tabular-nums text-white/40",
+                        size === "tall" ? "text-sm md:text-base" : "text-xs"
+                      )}
+                    >
+                      {formatPercent(pct)}
+                    </p>
+                  )}
+                </div>
+                <div
+                  className={cn(
+                    "mt-2 overflow-hidden rounded-full bg-[#001a3a]",
+                    size === "tall" ? "h-2.5" : "h-1.5"
+                  )}
+                >
+                  <div
+                    className="h-full rounded-full bg-[#00ADEF] transition-all duration-700"
+                    style={{
+                      width: `${Math.max(votos > 0 ? pct : 0, votos > 0 ? 2 : 0)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      ) : (
+
+        {/* Photo column — full card height on the right */}
         <div
           className={cn(
-            "relative z-10 mt-2 flex min-h-0 flex-1 flex-col justify-between gap-2",
-            celebrating && "pt-14"
+            "relative shrink-0 self-stretch overflow-hidden rounded-xl",
+            size === "tall"
+              ? "w-[32%] min-w-[5.5rem] max-w-[11rem] md:min-w-[7rem]"
+              : "w-[30%] min-w-[4.25rem] max-w-[7.5rem] md:min-w-[5rem]",
+            empty && "bg-[#001a3a]/50"
           )}
+          aria-hidden={empty}
         >
-          <div className="flex items-start gap-3">
+          {empty ? (
+            <div className="flex h-full items-center justify-center text-white/25">
+              <UserRound className={size === "tall" ? "size-12" : "size-8"} />
+            </div>
+          ) : fotoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={fotoUrl}
+              alt=""
+              className="h-full w-full object-cover object-top"
+            />
+          ) : (
             <div
               className={cn(
-                "flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 font-bold text-white",
-                size === "tall"
-                  ? "size-16 text-lg md:size-20 md:text-xl"
-                  : "size-11 text-sm md:size-12"
+                "flex h-full w-full items-center justify-center bg-gradient-to-b from-[#004a9e] to-[#002a5c] font-bold text-white",
+                size === "tall" ? "text-3xl md:text-4xl" : "text-xl md:text-2xl"
               )}
             >
-              {slot.row!.candidato.foto_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={slot.row!.candidato.foto_url}
-                  alt={slot.row!.candidato.nome}
-                  className="size-full object-cover"
-                />
-              ) : (
-                slot.row!.candidato.numero
-              )}
+              {slot.row!.candidato.numero}
             </div>
-            <div className="min-w-0 flex-1">
-              <p
-                className={cn(
-                  "truncate font-bold leading-tight text-white",
-                  size === "tall"
-                    ? "text-2xl md:text-3xl lg:text-4xl"
-                    : "text-lg md:text-xl lg:text-2xl"
-                )}
-              >
-                {slot.row!.candidato.nome}
-              </p>
-              <p
-                className={cn(
-                  "mt-0.5 tabular-nums text-slate-400",
-                  size === "tall" ? "text-sm md:text-base" : "text-xs md:text-sm"
-                )}
-              >
-                Nº {slot.row!.candidato.numero}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-auto">
-            <div className="flex items-end justify-between gap-2">
-              <p
-                className={cn(
-                  "font-bold tabular-nums text-white",
-                  size === "tall"
-                    ? "text-3xl md:text-4xl lg:text-5xl"
-                    : "text-2xl md:text-3xl",
-                  singleInCargo && "text-amber-200"
-                )}
-              >
-                {formatVotes(votos)}
-                <span
-                  className={cn(
-                    "ml-1 font-medium text-slate-400",
-                    size === "tall" ? "text-base md:text-lg" : "text-sm"
-                  )}
-                >
-                  votos
-                </span>
-              </p>
-              {showPctStrong && (
-                <p
-                  className={cn(
-                    "shrink-0 font-bold tabular-nums text-teal-300",
-                    size === "tall" ? "text-2xl md:text-3xl" : "text-xl md:text-2xl"
-                  )}
-                >
-                  {formatPercent(pct)}
-                </p>
-              )}
-              {singleInCargo && !empty && (
-                <p
-                  className={cn(
-                    "shrink-0 tabular-nums text-slate-500",
-                    size === "tall" ? "text-sm md:text-base" : "text-xs"
-                  )}
-                >
-                  {formatPercent(pct)}
-                </p>
-              )}
-            </div>
-            <div
-              className={cn(
-                "mt-2 overflow-hidden rounded-full bg-slate-700",
-                size === "tall" ? "h-2.5" : "h-1.5"
-              )}
-            >
-              <div
-                className="h-full rounded-full bg-teal-400 transition-all duration-700"
-                style={{
-                  width: `${Math.max(votos > 0 ? pct : 0, votos > 0 ? 2 : 0)}%`,
-                }}
-              />
-            </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </article>
   );
 }

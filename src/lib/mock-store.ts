@@ -53,14 +53,16 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     numero: "1313",
     nome: "Ana Costa",
     cargo: "Deputado Federal",
-    foto_url: null,
+    foto_url:
+      "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&h=500&q=80",
   },
   {
     id: "22222222-2222-2222-2222-222222222231",
     numero: "13131",
     nome: "Roberto Alves",
     cargo: "Deputado Estadual",
-    foto_url: null,
+    foto_url:
+      "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=400&h=500&q=80",
   },
 ];
 

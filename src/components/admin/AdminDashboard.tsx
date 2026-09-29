@@ -33,6 +33,7 @@ export function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string>("—");
   const [pending, setPending] = useState(false);
+  const [dataReady, setDataReady] = useState(false);
 
   const reload = useCallback(async () => {
     setPending(true);
@@ -46,6 +47,7 @@ export function AdminDashboard() {
           second: "2-digit",
         }).format(new Date())
       );
+      setDataReady(true);
       setError(null);
     } catch (err) {
       setError(
@@ -73,6 +75,7 @@ export function AdminDashboard() {
   const celebration = useMilestoneCelebrations({
     rankingsByCargo: snapshot.rankingsByCargo,
     enabled: view === "telao",
+    ready: dataReady,
   });
 
   return (
@@ -93,7 +96,7 @@ export function AdminDashboard() {
         <div className="min-w-0">
           <p
             className={cn(
-              "inline-flex items-center gap-2 font-semibold uppercase tracking-[0.2em] text-teal-300",
+              "inline-flex items-center gap-2 font-semibold uppercase tracking-[0.2em] text-[#00ADEF]",
               view === "telao" ? "mb-0.5 text-[10px]" : "mb-1 text-xs"
             )}
           >
@@ -127,17 +130,17 @@ export function AdminDashboard() {
                 "font-semibold uppercase",
                 snapshot.mode === "supabase"
                   ? "text-emerald-300"
-                  : "text-amber-300"
+                  : "text-[#FFDE00]"
               )}
             >
               {snapshot.mode}
             </span>
           </p>
           {snapshot.mode === "mock" && view === "cadastro" && (
-            <p className="mt-2 max-w-2xl text-xs text-amber-200/90">
+            <p className="mt-2 max-w-2xl text-xs text-[#FFDE00]/90">
               Sem Supabase neste deploy: cadastros ficam só no navegador.
               Configure{" "}
-              <code className="text-amber-100">NEXT_PUBLIC_SUPABASE_*</code> na
+              <code className="text-[#FFDE00]">NEXT_PUBLIC_SUPABASE_*</code> na
               Vercel + Redeploy.
             </p>
           )}
@@ -145,7 +148,7 @@ export function AdminDashboard() {
         <div className="flex flex-wrap items-center gap-2">
           <div
             role="tablist"
-            className="flex gap-1 rounded-xl bg-slate-900/80 p-1"
+            className="flex gap-1 rounded-xl bg-[#001a3a]/80 p-1"
           >
             <Button
               type="button"
@@ -156,8 +159,8 @@ export function AdminDashboard() {
                 "rounded-lg text-sm font-semibold",
                 view === "telao" ? "h-8 px-3" : "h-10",
                 view === "telao"
-                  ? "bg-teal-600 text-white hover:bg-teal-600"
-                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+                  ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
+                  : "text-white/70 hover:bg-white/5 hover:text-white"
               )}
               onClick={() => setView("telao")}
             >
@@ -173,8 +176,8 @@ export function AdminDashboard() {
                 "rounded-lg text-sm font-semibold",
                 view === "telao" ? "h-8 px-3" : "h-10",
                 view === "cadastro"
-                  ? "bg-teal-600 text-white hover:bg-teal-600"
-                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+                  ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
+                  : "text-white/70 hover:bg-white/5 hover:text-white"
               )}
               onClick={() => setView("cadastro")}
             >
@@ -186,7 +189,7 @@ export function AdminDashboard() {
             type="button"
             variant="outline"
             className={cn(
-              "border-white/20 bg-white/5 text-white hover:bg-white/10",
+              "border-white/25 bg-white/5 text-white hover:bg-white/10",
               view === "telao" && "h-8 px-3"
             )}
             onClick={() => void reload()}

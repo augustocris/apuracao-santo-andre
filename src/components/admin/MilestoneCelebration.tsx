@@ -2,8 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  loadFiredMilestones,
+  markMilestoneFired,
+  persistFiredMilestones,
+} from "@/lib/milestone-storage";
+import {
   isMilestoneCargo,
-  milestoneKey,
   milestoneMessage,
   milestonesReached,
   type MilestoneCelebrationEvent,
@@ -13,24 +17,37 @@ import type { CargoRanking } from "@/lib/types";
 interface UseMilestoneCelebrationsArgs {
   rankingsByCargo: CargoRanking[];
   enabled?: boolean;
+  /** True after the first successful dashboard fetch (hydrate). */
+  ready?: boolean;
 }
 
 /**
  * Detects newly crossed Dep. Estadual / Dep. Federal thresholds and exposes
  * a queued celebration. Confetti + label render inside the matching telão card.
- * Never falls back to a generic milestone label — always the candidate name.
+ *
+ * Fired milestones are persisted in sessionStorage so remount / reopen of the
+ * telão does not replay. Celebrations are skipped until the first hydrate
+ * ("armed"); only subsequent live deltas can fire confetti.
  */
 export function useMilestoneCelebrations({
   rankingsByCargo,
   enabled = true,
+  ready = true,
 }: UseMilestoneCelebrationsArgs): MilestoneCelebrationEvent | null {
-  const firedRef = useRef<Set<string>>(new Set());
-  const primedRef = useRef(false);
+  const firedRef = useRef<Set<string> | null>(null);
+  const armedRef = useRef(false);
   const [active, setActive] = useState<MilestoneCelebrationEvent | null>(null);
   const queueRef = useRef<MilestoneCelebrationEvent[]>([]);
   const showingRef = useRef(false);
 
   const demoFiredRef = useRef(false);
+
+  function getFired(): Set<string> {
+    if (firedRef.current === null) {
+      firedRef.current = loadFiredMilestones();
+    }
+    return firedRef.current;
+  }
 
   useEffect(() => {
     if (!enabled || typeof window === "undefined") return;
@@ -96,7 +113,8 @@ export function useMilestoneCelebrations({
   }, [enabled, rankingsByCargo]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !ready) return;
+    const fired = getFired();
     const pending: MilestoneCelebrationEvent[] = [];
 
     for (const group of rankingsByCargo) {
@@ -104,26 +122,26 @@ export function useMilestoneCelebrations({
       for (const row of group.rankings) {
         const crossed = milestonesReached(row.votos);
         for (const threshold of crossed) {
-          const key = milestoneKey(row.candidato.id, threshold);
-          if (firedRef.current.has(key)) continue;
-          firedRef.current.add(key);
-          if (primedRef.current) {
-            const name = row.candidato.nome?.trim();
-            if (!name) continue;
-            pending.push({
-              id: key,
-              candidatoId: row.candidato.id,
-              candidateName: name,
-              message: milestoneMessage(threshold),
-              cargo: group.cargo,
-            });
-          }
+          const isNew = markMilestoneFired(fired, row.candidato.id, threshold);
+          if (!isNew) continue;
+          if (!armedRef.current) continue;
+          const name = row.candidato.nome?.trim();
+          if (!name) continue;
+          pending.push({
+            id: `${row.candidato.id}:${threshold}`,
+            candidatoId: row.candidato.id,
+            candidateName: name,
+            message: milestoneMessage(threshold),
+            cargo: group.cargo,
+          });
         }
       }
     }
 
-    if (!primedRef.current) {
-      primedRef.current = true;
+    // First ready pass: seed storage with already-crossed thresholds, no party.
+    if (!armedRef.current) {
+      armedRef.current = true;
+      persistFiredMilestones(fired);
       return;
     }
 
@@ -143,7 +161,7 @@ export function useMilestoneCelebrations({
       }, 4200);
     };
     drain();
-  }, [enabled, rankingsByCargo]);
+  }, [enabled, ready, rankingsByCargo]);
 
   return active;
 }

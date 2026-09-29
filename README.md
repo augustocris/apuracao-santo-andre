@@ -35,12 +35,17 @@ In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows 
 2. Open the SQL editor and run, **in order**:
    - [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql) — tables, Realtime, seed Prefeito/Vereador
    - [`supabase/migrations/002_admin_config.sql`](supabase/migrations/002_admin_config.sql) — `apuracao_config`, cargos estaduais, realtime idempotente
+   - [`supabase/migrations/003_candidatos_storage.sql`](supabase/migrations/003_candidatos_storage.sql) — bucket Storage `candidatos` (fotos públicas) + policies
 3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
 ### Migration 002 (obrigatória após o deploy deste release)
 
 Se o app já está no ar com só a `001`, rode a `002` manualmente no SQL Editor do Supabase. Sem ela, o cadastro admin cai em fallback e o progresso/relatório podem não sincronizar entre TVs.
+
+### Migration 003 (fotos de candidatos)
+
+Necessária para upload de foto no Cadastro → Candidatos. Sem o bucket, ainda dá para colar uma URL pública em `foto_url`. O SQL cria o bucket público `candidatos` (máx. 2 MB, JPEG/PNG/WebP/GIF) com policies de leitura/escrita anon (mesmo estilo demo das migrations anteriores).
 
 ### Segurança (demo)
 
@@ -53,6 +58,7 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
    - Deputado Federal → 4 dígitos (1)
    - Senador → 3 dígitos (2)
    - Governador → 2 dígitos (1)
+   - **Foto** — upload para Storage `candidatos` ou URL pública → `candidatos.foto_url` (coluna direita no telão)
 2. **Zonas / Seções** — total esperado e/ou “Zona X tem N seções” (gera `locais_votacao`). Progresso do telão = enviadas / esperadas.
 3. **Relatório telão** — quais cargos aparecem no ranking/gráfico (`apuracao_config.relatorio_cargos` + localStorage).
 
@@ -66,11 +72,11 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 
 ## Admin telão
 
-Dark high-contrast layout for TV:
+Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 
 - Progress: **enviadas / faltam** (vs `secoes_esperadas` do cadastro)
-- Rankings + Recharts por cargo selecionado no relatório
-- Live feed of latest BUs
+- Cards com conteúdo à esquerda e **coluna de foto à direita** (altura do card; sem foto → número)
+- Marcos Dep. Estadual/Federal: confete só quando o voto **cruza** o limiar ao vivo; marcos já celebrados ficam em `sessionStorage` (não repetem ao reabrir o telão)
 - Supabase Realtime when configured; otherwise polling every ~4s
 
 ## Deploy (Vercel + Supabase)
@@ -78,7 +84,8 @@ Dark high-contrast layout for TV:
 1. Push to `main` — Vercel auto-deploys if the project is connected.
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
-4. Run SQL migrations `001` then `002` on Supabase (002 is manual if already live; includes `candidatos_delete_anon`).
+4. Run migration `003` if you want Storage photo uploads.
+4. Run SQL migrations `001` then `002` then `003` on Supabase (002/003 are manual if already live; 003 = bucket fotos).
 5. Point fiscales to `/fiscal` and the telão to `/admin`.
 
 ## Stack
@@ -97,5 +104,5 @@ src/lib/milestones.ts          Thresholds / PT-BR labels for confetti
 src/lib/cargos.ts              Digit rules per cargo
 src/lib/parser/bu-qr.ts        BU QR parser
 src/lib/data.ts                Supabase + mock data layer
-supabase/migrations/           001 init · 002 admin config
+supabase/migrations/           001 init · 002 admin config · 003 storage fotos
 ```

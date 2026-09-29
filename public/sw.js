@@ -1,5 +1,5 @@
 /* Minimal offline shell for the Apuração PWA */
-const CACHE = "apuracao-shell-v2-confete-card";
+const CACHE = "apuracao-shell-v3-paleta-fotos";
 const ASSETS = ["/", "/fiscal", "/admin", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

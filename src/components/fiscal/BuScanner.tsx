@@ -214,8 +214,17 @@ export function BuScanner({ onScan, busy }: BuScannerProps) {
         className="rounded-xl border border-teal-700/25 bg-teal-50/80 px-3 py-2.5 text-[11px] leading-snug text-teal-950 sm:text-xs"
         role="note"
       >
-        <p className="font-semibold">Dica para QRs densos do BU</p>
+        <p className="font-semibold">QR / foto grava o BU completo</p>
         <ul className="mt-1 list-disc space-y-0.5 pl-4 text-teal-900/90">
+          <li>
+            Todos os candidatos com votos nesta urna entram no banco (não só os
+            5 oficiais do telão).
+          </li>
+          <li>
+            A aba <strong className="font-semibold">Digitar</strong> continua
+            rápida: envia somente os cadastrados oficiais (não há os demais
+            números do BU).
+          </li>
           <li>Segure o celular firme, com boa luz, e preencha o quadro com o QR.</li>
           <li>
             Se o QR estiver no monitor, afaste um pouco (reduz reflexo) ou use{" "}

@@ -82,4 +82,77 @@ export function labelCargoCurto(cargo: string): string {
 
 export const DEFAULT_RELATORIO_CARGOS: CargoOficial[] = [...CARGOS_OFICIAIS];
 
+/** TSE QR `CARG:n` codes (urna eletrônica). */
+export const TSE_CARG_LABEL: Record<string, string> = {
+  "1": "Presidente",
+  "3": "Governador",
+  "5": "Senador",
+  "6": "Deputado Federal",
+  "7": "Deputado Estadual",
+  "8": "Deputado Distrital",
+  "11": "Prefeito",
+  "13": "Vereador",
+};
+
+const HEADER_CARGO_MAP: Array<{ re: RegExp; cargo: string }> = [
+  { re: /DEPUTADO\s+ESTADUAL/i, cargo: "Deputado Estadual" },
+  { re: /DEPUTADO\s+FEDERAL/i, cargo: "Deputado Federal" },
+  { re: /DEPUTADO\s+DISTRITAL/i, cargo: "Deputado Distrital" },
+  { re: /PRESIDENTE/i, cargo: "Presidente" },
+  { re: /GOVERNADOR/i, cargo: "Governador" },
+  { re: /SENADOR/i, cargo: "Senador" },
+  { re: /PREFEITO/i, cargo: "Prefeito" },
+  { re: /VEREADOR/i, cargo: "Vereador" },
+];
+
+export function cargoFromPrintedHeader(header: string): string | null {
+  for (const { re, cargo } of HEADER_CARGO_MAP) {
+    if (re.test(header)) return cargo;
+  }
+  return null;
+}
+
+export function cargoFromTseCarg(code: string): string | null {
+  const digits = code.replace(/\D/g, "");
+  return TSE_CARG_LABEL[digits] ?? null;
+}
+
+/**
+ * Infer cargo from candidate number length when the BU section is unknown.
+ * 2 = Governador, 3 = Senador, 4 = Deputado Federal, 5 = Deputado Estadual.
+ */
+export function inferCargoFromNumero(numero: string): string {
+  const len = numero.replace(/\D/g, "").length;
+  switch (len) {
+    case 2:
+      return "Governador";
+    case 3:
+      return "Senador";
+    case 4:
+      return "Deputado Federal";
+    case 5:
+      return "Deputado Estadual";
+    default:
+      return "Outro";
+  }
+}
+
+export function resolveVoteCargo(
+  numero: string,
+  knownCargo?: string | null
+): string {
+  const known = knownCargo?.trim();
+  if (known) return known;
+  return inferCargoFromNumero(numero);
+}
+
+export function placeholderCandidateName(numero: string): string {
+  return `Candidato ${numero}`;
+}
+
+/** Featured telão/CRUD rows. Missing origem (pre-004) counts as cadastro. */
+export function isFeaturedCandidato(origem?: string | null): boolean {
+  return origem !== "bu";
+}
+
 export const CONFIG_STORAGE_KEY = "apuracao-sa-relatorio-cargos";

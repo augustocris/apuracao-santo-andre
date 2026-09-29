@@ -36,12 +36,21 @@ In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows 
    - [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql) — tables, Realtime, seed Prefeito/Vereador
    - [`supabase/migrations/002_admin_config.sql`](supabase/migrations/002_admin_config.sql) — `apuracao_config`, cargos estaduais, realtime idempotente
    - [`supabase/migrations/003_candidatos_storage.sql`](supabase/migrations/003_candidatos_storage.sql) — bucket Storage `candidatos` (fotos públicas) + policies
+   - [`supabase/migrations/004_bu_completo.sql`](supabase/migrations/004_bu_completo.sql) — `candidatos.origem` (`cadastro`/`bu`) + função `ingest_bu_completo` (grava todos os votos do BU)
 3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
 ### Migration 002 (obrigatória após o deploy deste release)
 
 Se o app já está no ar com só a `001`, rode a `002` manualmente no SQL Editor do Supabase. Sem ela, o cadastro admin cai em fallback e o progresso/relatório podem não sincronizar entre TVs.
+
+### Migration 004 (ingestão completa do BU)
+
+Necessária para gravar **todos** os candidatos que receberam votos na urna (não só os 5 oficiais). Sem ela, o scan ainda tenta o insert cliente-a-cliente; candidatos descobertos só entram se a coluna `origem` existir. Cole o SQL no Editor (a Vercel não roda migrations).
+
+- `candidatos.origem`: `cadastro` (CRUD admin / telão) ou `bu` (descoberto no QR/foto)
+- Unique `(zona, secao, candidato_id)` permanece — urna duplicada é bloqueada no fluxo featured **e** no ingest completo
+- QR oficial do TSE em geral **não traz nomes** — o app grava `Candidato {numero}` até um edit/import posterior
 
 ### Migration 003 (fotos de candidatos)
 
@@ -53,22 +62,23 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 
 ## Cadastro admin (`/admin` → aba **Cadastro**)
 
-1. **Candidatos** — cargos e dígitos:
+1. **Ranking geral** — tabela de todos os candidatos (filtro de cargo, votos, % no cargo) + lista **Candidatos no banco** (`numero`, `nome`, `cargo`, `origem`). Não altera o telão de 5 cards.
+2. **Candidatos** — cargos e dígitos:
    - Deputado Estadual → 5 dígitos (1)
    - Deputado Federal → 4 dígitos (1)
    - Senador → 3 dígitos (2)
    - Governador → 2 dígitos (1)
    - **Foto** — upload para Storage `candidatos` ou URL pública → `candidatos.foto_url` (coluna direita no telão)
-2. **Zonas / Seções** — total esperado e/ou “Zona X tem N seções” (gera `locais_votacao`). Progresso do telão = enviadas / esperadas.
-3. **Relatório telão** — quais cargos aparecem no ranking/gráfico (`apuracao_config.relatorio_cargos` + localStorage).
+3. **Zonas / Seções** — total esperado e/ou “Zona X tem N seções” (gera `locais_votacao`). Progresso do telão = enviadas / esperadas.
+4. **Relatório telão** — quais cargos aparecem no ranking/gráfico (`apuracao_config.relatorio_cargos` + localStorage).
 
 ## Fiscal flow
 
 1. Open `/fiscal` on a phone (installable PWA).
 2. Tap **Escanear** (QR) or **Digitar** (formulário manual: zona, seção e votos).
-3. QR parser aceita formato TSE oficial (`4545:11`), `CAND/QTVO`, `CANDIDATO/VOTOS` e linhas do BU impresso (`Nome  17  0103`); casa só com números cadastrados (zeros à esquerda ok). Sem match: mensagem lista os cadastrados. O formulário **Digitar** lista cadastrados por cargo.
+3. QR/foto parser extrai **todos** os pares `numero:votos` (TSE `4545:11`, `CAND/QTVO`, linhas `Nome  17  0103`). Cargo: cabeçalho/`CARG` se houver; senão 2=Governador, 3=Senador, 4=Dep. Federal, 5=Dep. Estadual. Confirmação: cadastrados oficiais primeiro + bloco recolhível **Demais candidatos neste BU (N)**. **Digitar** lista só os oficiais e, no envio, grava somente esses votos.
 4. Confirmation shows zona, seção, número + nome + votos → **Enviar**.
-5. Duplicate urnas return: *Urna já cadastrada anteriormente* (pre-check + UNIQUE).
+5. Duplicate urnas return: *Urna já cadastrada anteriormente* (pre-check + UNIQUE) — vale para o telão e para o ingest completo daquela zona+seção.
 
 ## Admin telão
 
@@ -85,7 +95,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
 4. Run migration `003` if you want Storage photo uploads.
-4. Run SQL migrations `001` then `002` then `003` on Supabase (002/003 are manual if already live; 003 = bucket fotos).
+4. Run SQL migrations `001` then `002` then `003` then `004` on Supabase (002/003/004 are manual if already live; 004 = ingestão completa do BU).
 5. Point fiscales to `/fiscal` and the telão to `/admin`.
 
 ## Stack
@@ -104,5 +114,5 @@ src/lib/milestones.ts          Thresholds / PT-BR labels for confetti
 src/lib/cargos.ts              Digit rules per cargo
 src/lib/parser/bu-qr.ts        BU QR parser
 src/lib/data.ts                Supabase + mock data layer
-supabase/migrations/           001 init · 002 admin config · 003 storage fotos
+supabase/migrations/           001 init · 002 admin config · 003 storage fotos · 004 BU completo
 ```

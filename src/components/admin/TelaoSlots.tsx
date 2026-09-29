@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import confetti from "canvas-confetti";
 import { UserRound } from "lucide-react";
-import { CARGO_SLOTS, labelCargoCurto, type CargoOficial } from "@/lib/cargos";
+import { CARGO_SLOTS, isFeaturedCandidato, labelCargoCurto, type CargoOficial } from "@/lib/cargos";
 import type { MilestoneCelebrationEvent } from "@/lib/milestones";
 import type { CargoRanking, RankingRow } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
@@ -22,11 +22,13 @@ export function buildTelaoSlots(groups: CargoRanking[]): TelaoSlot[] {
   const pickOrdered = (cargo: CargoOficial): RankingRow[] => {
     const group = byCargo.get(cargo);
     if (!group) return [];
-    return [...group.rankings].sort((a, b) =>
-      a.candidato.numero.localeCompare(b.candidato.numero, "pt-BR", {
-        numeric: true,
-      })
-    );
+    return [...group.rankings]
+      .filter((row) => isFeaturedCandidato(row.candidato.origem))
+      .sort((a, b) =>
+        a.candidato.numero.localeCompare(b.candidato.numero, "pt-BR", {
+          numeric: true,
+        })
+      );
   };
 
   const slots: TelaoSlot[] = [];

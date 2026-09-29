@@ -178,6 +178,10 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
           <ClipboardList className="size-3.5 text-teal-700" />
           Digitar boletim
         </p>
+        <p className="mb-2 text-[11px] leading-snug text-slate-600">
+          Só os cadastrados oficiais. Para gravar todos os candidatos da urna,
+          use a aba Escanear (QR ou foto).
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-0.5">
             <Label htmlFor="manual-zona" className="text-xs text-slate-800">

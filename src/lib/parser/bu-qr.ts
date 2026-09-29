@@ -1,3 +1,9 @@
+import {
+  cargoFromPrintedHeader,
+  cargoFromTseCarg,
+  placeholderCandidateName,
+  resolveVoteCargo,
+} from "@/lib/cargos";
 import type { ParsedBu, ParsedCandidateVote } from "@/lib/types";
 
 /** Known TSE QR metadata keys (never treat as candidate numbers). */
@@ -94,9 +100,10 @@ const TSE_TOKEN_RE = /^(\d{1,5}):(\d+)$/;
 /**
  * Printed BU / OCR dump lines:
  * `JAIR BOLSONARO  17  0103` or tabular `17  0103` after cargo headers.
+ * Capture optional name before the candidate number.
  */
 const LINE_NUM_VOTOS_RE =
-  /(?:^|\s)(\d{2,5})\s+(\d{1,7})\s*$/;
+  /^(?:(.+?)\s+)?(\d{2,5})\s+(\d{1,7})\s*$/;
 
 /** Cargo section markers on printed BUs (ignored structurally; help line parsing). */
 const CARGO_HEADER_RE =
@@ -131,10 +138,22 @@ function firstMatch(text: string, patterns: RegExp[]): string | null {
   return null;
 }
 
+interface VoteAcc {
+  numero: string;
+  quantidade: number;
+  nome?: string;
+  cargo?: string;
+}
+
+function voteKey(numero: string, cargo?: string): string {
+  return `${cargo ?? ""}::${numero}`;
+}
+
 function setVote(
-  map: Map<string, number>,
+  map: Map<string, VoteAcc>,
   numeroRaw: string,
-  quantidadeRaw: string | number
+  quantidadeRaw: string | number,
+  extra?: { nome?: string; cargo?: string }
 ) {
   const numero = normalizeCandidateNumero(numeroRaw);
   const quantidade =
@@ -142,11 +161,50 @@ function setVote(
       ? quantidadeRaw
       : Number.parseInt(String(quantidadeRaw).replace(/\D/g, ""), 10);
   if (!numero || !Number.isFinite(quantidade) || quantidade < 0) return;
-  // Later occurrences win (multi-QR fragments / duplicates).
-  map.set(numero, quantidade);
+
+  const cargo = extra?.cargo?.trim() || undefined;
+  const nome = extra?.nome?.trim() || undefined;
+
+  if (!cargo) {
+    const existingKey = Array.from(map.keys()).find(
+      (k) => map.get(k)!.numero === numero
+    );
+    if (existingKey) {
+      const prev = map.get(existingKey)!;
+      map.set(existingKey, {
+        numero,
+        quantidade,
+        nome: nome || prev.nome,
+        cargo: prev.cargo,
+      });
+      return;
+    }
+  } else {
+    const bareKey = voteKey(numero, undefined);
+    if (map.has(bareKey)) {
+      const prev = map.get(bareKey)!;
+      map.delete(bareKey);
+      map.set(voteKey(numero, cargo), {
+        numero,
+        quantidade,
+        nome: nome || prev.nome,
+        cargo,
+      });
+      return;
+    }
+  }
+
+  const key = voteKey(numero, cargo);
+  const prev = map.get(key);
+  map.set(key, {
+    numero,
+    quantidade,
+    nome: nome || prev?.nome,
+    cargo: cargo || prev?.cargo,
+  });
 }
 
-function collectCandQtvo(text: string, map: Map<string, number>) {
+function collectCandQtvo(text: string, map: Map<string, VoteAcc>) {
   for (const re of [VOTE_CAND_QTVO_RE, VOTE_CANDIDATO_VOTOS_RE]) {
     re.lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -157,51 +215,66 @@ function collectCandQtvo(text: string, map: Map<string, number>) {
 }
 
 /** Parse TSE `chave:valor` tokens; numeric keys are candidate votes. */
-function collectTseNumericPairs(text: string, map: Map<string, number>) {
+function collectTseNumericPairs(text: string, map: Map<string, VoteAcc>) {
   const tokens = text.split(/\s+/);
+  let currentCargo: string | undefined;
+
   for (const token of tokens) {
     const cleaned = token.trim();
     if (!cleaned.includes(":")) continue;
 
-    // Skip known metadata KEY:value (non-numeric keys).
     const colon = cleaned.indexOf(":");
     const key = cleaned.slice(0, colon);
     const value = cleaned.slice(colon + 1);
     if (!key || value === "") continue;
 
     if (/^[A-Za-z]/.test(key)) {
-      // e.g. ZONA:9, PART:91, HASH:...
-      if (METADATA_KEYS.has(key.toUpperCase())) continue;
+      const upper = key.toUpperCase();
+      if (upper === "CARG") {
+        currentCargo = cargoFromTseCarg(value) ?? currentCargo;
+      } else if (!METADATA_KEYS.has(upper)) {
+        // Unknown alphabetic key — still not a candidate number.
+      }
       continue;
     }
 
     const m = cleaned.match(TSE_TOKEN_RE);
     if (!m) continue;
-    setVote(map, m[1], m[2]);
+    setVote(map, m[1], m[2], { cargo: currentCargo });
   }
 }
 
 /**
  * Line-based dumps mimicking the printed BU columns Nome | Num cand | Votos.
- * Skips header lines and cargo separators.
+ * Skips header lines and cargo separators; uses the last cargo header as context.
  */
-function collectLineBasedPairs(text: string, map: Map<string, number>) {
+function collectLineBasedPairs(text: string, map: Map<string, VoteAcc>) {
   const lines = text.split(/\r?\n/);
+  let currentCargo: string | undefined;
+
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
-    if (CARGO_HEADER_RE.test(line)) continue;
+
+    if (CARGO_HEADER_RE.test(line)) {
+      currentCargo = cargoFromPrintedHeader(line) ?? currentCargo;
+      continue;
+    }
     if (/^(nome|num|votos|candidato)/i.test(line)) continue;
-    if (/CAND(?:IDATO)?\s*:/i.test(line)) continue; // handled elsewhere
+    if (/CAND(?:IDATO)?\s*:/i.test(line)) continue;
 
     const m = line.match(LINE_NUM_VOTOS_RE);
     if (!m) continue;
-    const numero = m[1];
-    const votos = m[2];
-    // Heuristic: candidate numbers are 2–5 digits; vote totals rarely share
-    // that exact pattern alone without a name — accept when both present.
+    const nomeRaw = m[1]?.trim();
+    const numero = m[2];
+    const votos = m[3];
     if (numero.length < 2 || numero.length > 5) continue;
-    setVote(map, numero, votos);
+
+    const nome =
+      nomeRaw && !/^\d+$/.test(nomeRaw)
+        ? nomeRaw.replace(/\s+/g, " ")
+        : undefined;
+    setVote(map, numero, votos, { nome, cargo: currentCargo });
   }
 }
 
@@ -212,7 +285,7 @@ function collectLineBasedPairs(text: string, map: Map<string, number>) {
 function collectRegisteredLookups(
   text: string,
   registeredNumeros: string[],
-  map: Map<string, number>
+  map: Map<string, VoteAcc>
 ) {
   for (const raw of registeredNumeros) {
     const canon = normalizeCandidateNumero(raw);
@@ -253,11 +326,27 @@ function collectRegisteredLookups(
   }
 }
 
+function finalizeVotes(map: Map<string, VoteAcc>): ParsedCandidateVote[] {
+  const merged = new Map<string, ParsedCandidateVote>();
+  for (const acc of map.values()) {
+    const cargo = resolveVoteCargo(acc.numero, acc.cargo);
+    const nome = acc.nome?.trim() || placeholderCandidateName(acc.numero);
+    const key = voteKey(acc.numero, cargo);
+    merged.set(key, {
+      numero: acc.numero,
+      quantidade: acc.quantidade,
+      nome,
+      cargo,
+    });
+  }
+  return Array.from(merged.values());
+}
+
 function collectVotes(
   text: string,
   registeredNumeros?: string[]
 ): ParsedCandidateVote[] {
-  const map = new Map<string, number>();
+  const map = new Map<string, VoteAcc>();
 
   collectCandQtvo(text, map);
   collectTseNumericPairs(text, map);
@@ -265,19 +354,15 @@ function collectVotes(
 
   if (registeredNumeros && registeredNumeros.length > 0) {
     collectRegisteredLookups(text, registeredNumeros, map);
-    // Keep only registered numbers.
     const allowed = new Set(
       registeredNumeros.map(normalizeCandidateNumero).filter(Boolean)
     );
-    for (const key of Array.from(map.keys())) {
-      if (!allowed.has(key)) map.delete(key);
+    for (const [key, acc] of Array.from(map.entries())) {
+      if (!allowed.has(acc.numero)) map.delete(key);
     }
   }
 
-  return Array.from(map.entries()).map(([numero, quantidade]) => ({
-    numero,
-    quantidade,
-  }));
+  return finalizeVotes(map);
 }
 
 /** True when decoded payload looks binary / non-text. */
@@ -364,8 +449,9 @@ export class BuParseError extends Error {
  * - Printed BU lines: `NOME  17  0103` under cargo headers
  * - Labels: `Zona Eleitoral: 0001` / `Seção Eleitoral: 0483`
  *
- * When `registeredNumeros` is provided, only those candidates are returned
- * (flexible zero-padding / word-boundary match).
+ * Always returns every `numero:votos` pair found (nome + cargo inferred).
+ * When `registeredNumeros` is provided, filters to those numbers
+ * (flexible zero-padding / word-boundary match) — used by tests / Digitar checks.
  */
 export function parseBuQrText(
   raw: string,
@@ -430,7 +516,11 @@ export function parseBuQrText(
         (r) => normalizeCandidateNumero(r) === v.numero
       );
       return match
-        ? { numero: normalizeCandidateNumero(match), quantidade: v.quantidade }
+        ? {
+            ...v,
+            numero: normalizeCandidateNumero(match),
+            quantidade: v.quantidade,
+          }
         : v;
     });
   } else {

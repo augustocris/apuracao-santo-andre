@@ -26,6 +26,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     nome: "Maria Silva",
     cargo: "Governador",
     foto_url: null,
+    origem: "cadastro",
   },
   {
     id: "22222222-2222-2222-2222-222222222202",
@@ -33,6 +34,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     nome: "João Santos",
     cargo: "Governador",
     foto_url: null,
+    origem: "cadastro",
   },
   {
     id: "22222222-2222-2222-2222-222222222211",
@@ -40,6 +42,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     nome: "Carlos Oliveira",
     cargo: "Senador",
     foto_url: null,
+    origem: "cadastro",
   },
   {
     id: "22222222-2222-2222-2222-222222222212",
@@ -47,6 +50,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     nome: "Patricia Lima",
     cargo: "Senador",
     foto_url: null,
+    origem: "cadastro",
   },
   {
     id: "22222222-2222-2222-2222-222222222221",
@@ -55,6 +59,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Deputado Federal",
     foto_url:
       "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&h=500&q=80",
+    origem: "cadastro",
   },
   {
     id: "22222222-2222-2222-2222-222222222231",
@@ -63,6 +68,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Deputado Estadual",
     foto_url:
       "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=400&h=500&q=80",
+    origem: "cadastro",
   },
 ];
 
@@ -310,7 +316,7 @@ export function replaceMockLocaisForZonas(
 }
 
 export function upsertMockCandidatos(
-  rows: Omit<Candidato, "id">[]
+  rows: Array<Omit<Candidato, "id"> & { id?: string }>
 ): number {
   let count = 0;
   for (const row of rows) {
@@ -318,12 +324,25 @@ export function upsertMockCandidatos(
       (c) => c.numero === row.numero && c.cargo === row.cargo
     );
     if (existing) {
-      existing.nome = row.nome;
-      existing.foto_url = row.foto_url;
+      const keepCadastro = existing.origem !== "bu";
+      if (!keepCadastro) {
+        existing.nome = row.nome;
+        if (row.foto_url !== undefined) existing.foto_url = row.foto_url;
+      } else if (row.origem === "cadastro") {
+        existing.nome = row.nome;
+        if (row.foto_url !== undefined) existing.foto_url = row.foto_url;
+      }
+      if (existing.origem !== "cadastro" && row.origem) {
+        existing.origem = row.origem;
+      }
     } else {
       mockCandidatos.push({
-        id: crypto.randomUUID(),
-        ...row,
+        id: row.id ?? crypto.randomUUID(),
+        numero: row.numero,
+        nome: row.nome,
+        cargo: row.cargo,
+        foto_url: row.foto_url ?? null,
+        origem: row.origem ?? "bu",
       });
     }
     count += 1;

@@ -20,6 +20,7 @@ const EMPTY: DashboardSnapshot = {
   totalVotosValidos: 0,
   rankings: [],
   rankingsByCargo: [],
+  rankingGeralByCargo: [],
   relatorioCargos: [],
   feed: [],
   mode: "mock",

@@ -16,6 +16,9 @@ import {
 import {
   CARGOS_OFICIAIS,
   DEFAULT_RELATORIO_CARGOS,
+  isFeaturedCandidato,
+  placeholderCandidateName,
+  resolveVoteCargo,
   validarNumeroCargo,
 } from "@/lib/cargos";
 import { normalizeCandidateNumero } from "@/lib/parser/bu-qr";
@@ -26,9 +29,11 @@ import type {
   CargoRanking,
   ConfirmVoteRow,
   DashboardSnapshot,
+  DiscoveredVote,
   FeedItem,
   LocalVotacao,
   RankingRow,
+  TransmitBuCompletoPayload,
   TransmitPayload,
   ZonaConfigRow,
 } from "@/lib/types";
@@ -81,6 +86,35 @@ function normalizeConfig(raw: Partial<ApuracaoConfig> | null): ApuracaoConfig {
     zonas_config: normalizeZonasConfig(raw?.zonas_config),
     updated_at: raw?.updated_at ?? new Date().toISOString(),
   };
+}
+
+function uniqueCargosForRanking(candidatos: Candidato[]): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const cargo of CARGOS_OFICIAIS) {
+    if (candidatos.some((c) => c.cargo === cargo)) {
+      ordered.push(cargo);
+      seen.add(cargo);
+    }
+  }
+  const extras = Array.from(
+    new Set(candidatos.map((c) => c.cargo).filter((c) => !seen.has(c)))
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return [...ordered, ...extras];
+}
+
+let origemColumnCache: boolean | null = null;
+
+async function candidatosHasOrigemColumn(): Promise<boolean> {
+  if (origemColumnCache != null) return origemColumnCache;
+  const supabase = getSupabase();
+  if (!supabase) {
+    origemColumnCache = true;
+    return true;
+  }
+  const { error } = await supabase.from("candidatos").select("origem").limit(1);
+  origemColumnCache = !error;
+  return origemColumnCache;
 }
 
 function resolveCargoFilters(
@@ -152,7 +186,12 @@ function buildSnapshot(
     config.relatorio_cargos,
     cargoOverride
   );
+  const featured = candidatos.filter((c) => isFeaturedCandidato(c.origem));
   const rankingsByCargo = cargoFilters.map((cargo) =>
+    buildRankingsForCargo(featured, byCand, cargo)
+  );
+  const geralCargos = uniqueCargosForRanking(candidatos);
+  const rankingGeralByCargo = geralCargos.map((cargo) =>
     buildRankingsForCargo(candidatos, byCand, cargo)
   );
   const totalVotosValidos = rankingsByCargo.reduce(
@@ -225,6 +264,7 @@ function buildSnapshot(
     totalVotosValidos,
     rankings: rankingsByCargo[0]?.rankings ?? [],
     rankingsByCargo,
+    rankingGeralByCargo,
     relatorioCargos: cargoFilters,
     feed,
     mode,
@@ -299,6 +339,7 @@ export async function saveConfig(
 
 export async function listCandidatos(opts?: {
   activeRaceOnly?: boolean;
+  featuredOnly?: boolean;
 }): Promise<Candidato[]> {
   const supabase = getSupabase();
   let list: Candidato[];
@@ -314,6 +355,10 @@ export async function listCandidatos(opts?: {
 
     if (error) throw new Error(error.message);
     list = (data ?? []) as Candidato[];
+  }
+
+  if (opts?.featuredOnly !== false) {
+    list = list.filter((c) => isFeaturedCandidato(c.origem));
   }
 
   if (opts?.activeRaceOnly !== false) {
@@ -339,12 +384,22 @@ export async function upsertCandidato(input: {
   const nome = input.nome.trim();
   if (!nome) throw new Error("Informe o nome do candidato.");
 
-  const row = {
+  const row: {
+    numero: string;
+    nome: string;
+    cargo: string;
+    foto_url: string | null;
+    origem?: "cadastro";
+  } = {
     numero: validated.numero,
     nome,
     cargo: input.cargo.trim(),
     foto_url: input.foto_url?.trim() || null,
   };
+
+  if (await candidatosHasOrigemColumn()) {
+    row.origem = "cadastro";
+  }
 
   const supabase = getSupabase();
   if (!supabase) {
@@ -459,6 +514,289 @@ export async function resolveConfirmRows(
   }
 
   return { rows, unknown };
+}
+
+function matchFeaturedCandidato(
+  featured: Candidato[],
+  numero: string,
+  cargo: string
+): Candidato | undefined {
+  const canon = normalizeCandidateNumero(numero);
+  const exact = featured.find(
+    (c) =>
+      normalizeCandidateNumero(c.numero) === canon && c.cargo === cargo
+  );
+  if (exact) return exact;
+  // Only fall back to numero-only when cargo is generic/unknown.
+  if (cargo === "Outro") {
+    return featured.find((c) => normalizeCandidateNumero(c.numero) === canon);
+  }
+  return undefined;
+}
+
+export async function resolveBuVotes(
+  votes: Array<{
+    numero: string;
+    quantidade: number;
+    nome?: string;
+    cargo?: string;
+  }>
+): Promise<{ featured: ConfirmVoteRow[]; discovered: DiscoveredVote[] }> {
+  const featuredList = await listCandidatos({
+    activeRaceOnly: true,
+    featuredOnly: true,
+  });
+  const featured: ConfirmVoteRow[] = [];
+  const discovered: DiscoveredVote[] = [];
+  const seenFeatured = new Set<string>();
+  const seenDisc = new Set<string>();
+
+  for (const vote of votes) {
+    const numero = normalizeCandidateNumero(vote.numero);
+    if (!numero) continue;
+    const cargo = resolveVoteCargo(vote.numero, vote.cargo);
+    const nome =
+      vote.nome?.trim() || placeholderCandidateName(numero);
+    const featuredCand = matchFeaturedCandidato(featuredList, numero, cargo);
+    if (featuredCand) {
+      if (seenFeatured.has(featuredCand.id)) continue;
+      seenFeatured.add(featuredCand.id);
+      featured.push({ candidato: featuredCand, quantidade: vote.quantidade });
+      continue;
+    }
+    const dkey = `${cargo}::${numero}`;
+    if (seenDisc.has(dkey)) continue;
+    seenDisc.add(dkey);
+    discovered.push({ numero, nome, cargo, quantidade: vote.quantidade });
+  }
+
+  return { featured, discovered };
+}
+
+function dedupeTransmitVotes(payload: TransmitBuCompletoPayload["votes"]) {
+  const map = new Map<string, TransmitBuCompletoPayload["votes"][number]>();
+  for (const v of payload) {
+    const numero = normalizeCandidateNumero(v.numero);
+    const cargo = resolveVoteCargo(v.numero, v.cargo);
+    if (!numero) continue;
+    map.set(`${cargo}::${numero}`, {
+      ...v,
+      numero,
+      cargo,
+      nome: v.nome?.trim() || placeholderCandidateName(numero),
+    });
+  }
+  return Array.from(map.values());
+}
+
+async function ingestBuCompletoClient(
+  zona: string,
+  secao: string,
+  payload: TransmitBuCompletoPayload,
+  votes: TransmitBuCompletoPayload["votes"]
+): Promise<{ ok: true } | { ok: false; duplicate: true; message: string }> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    throw new Error("Supabase indisponível.");
+  }
+
+  if (await urnaJaCadastrada(zona, secao)) {
+    return {
+      ok: false,
+      duplicate: true,
+      message: "Urna já cadastrada anteriormente",
+    };
+  }
+
+  const hasOrigem = await candidatosHasOrigemColumn();
+  const { data: existingCands, error: listError } = await supabase
+    .from("candidatos")
+    .select("*");
+  if (listError) throw new Error(listError.message);
+  const current = (existingCands ?? []) as Candidato[];
+  const byKey = new Map(
+    current.map((c) => [`${c.cargo}::${normalizeCandidateNumero(c.numero)}`, c])
+  );
+
+  const toInsert: Array<{
+    numero: string;
+    nome: string;
+    cargo: string;
+    origem?: "bu";
+  }> = [];
+
+  for (const v of votes) {
+    const key = `${v.cargo}::${v.numero}`;
+    if (byKey.has(key)) continue;
+    if (!hasOrigem) continue;
+    toInsert.push({
+      numero: v.numero,
+      nome: v.nome,
+      cargo: v.cargo,
+      origem: "bu",
+    });
+  }
+
+  if (toInsert.length > 0) {
+    const { data: inserted, error: insErr } = await supabase
+      .from("candidatos")
+      .upsert(toInsert, { onConflict: "numero,cargo" })
+      .select("*");
+    if (insErr) throw new Error(insErr.message);
+    for (const c of (inserted ?? []) as Candidato[]) {
+      byKey.set(`${c.cargo}::${normalizeCandidateNumero(c.numero)}`, c);
+    }
+  }
+
+  const boletimRows = [];
+  for (const v of votes) {
+    const cand = byKey.get(`${v.cargo}::${v.numero}`);
+    if (!cand) continue;
+    boletimRows.push({
+      zona,
+      secao,
+      candidato_id: cand.id,
+      quantidade_votos: v.quantidade,
+      raw_text: payload.rawText,
+      fiscal_nome: payload.fiscalNome ?? null,
+    });
+  }
+
+  if (boletimRows.length === 0) {
+    throw new Error(
+      "Nenhum candidato para gravar. Rode a migration 004 no SQL Editor ou cadastre os oficiais no admin."
+    );
+  }
+
+  const { error } = await supabase.from("boletins_urna").insert(boletimRows);
+  if (error) {
+    if (error.code === "23505") {
+      return {
+        ok: false,
+        duplicate: true,
+        message: "Urna já cadastrada anteriormente",
+      };
+    }
+    throw new Error(error.message);
+  }
+  return { ok: true };
+}
+
+export async function transmitBuCompleto(
+  payload: TransmitBuCompletoPayload
+): Promise<{ ok: true } | { ok: false; duplicate: true; message: string }> {
+  const zona = padZona(payload.zona);
+  const secao = padSecao(payload.secao);
+  const votes = dedupeTransmitVotes(payload.votes);
+  if (votes.length === 0) {
+    throw new Error("Nenhum voto para gravar.");
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    if (
+      getMockBoletins().some((b) => b.zona === zona && b.secao === secao)
+    ) {
+      return {
+        ok: false,
+        duplicate: true,
+        message: "Urna já cadastrada anteriormente",
+      };
+    }
+    const boletimRows: Array<{
+      zona: string;
+      secao: string;
+      candidato_id: string;
+      quantidade_votos: number;
+      raw_text: string | null;
+      fiscal_nome: string | null;
+    }> = [];
+    for (const v of votes) {
+      let id = v.candidatoId;
+      const existing = getMockCandidatos().find(
+        (c) =>
+          normalizeCandidateNumero(c.numero) === v.numero && c.cargo === v.cargo
+      );
+      if (existing) {
+        id = existing.id;
+      } else {
+        upsertMockCandidatos([
+          {
+            numero: v.numero,
+            nome: v.nome,
+            cargo: v.cargo,
+            foto_url: null,
+            origem: "bu",
+          },
+        ]);
+        id = getMockCandidatos().find(
+          (c) =>
+            normalizeCandidateNumero(c.numero) === v.numero &&
+            c.cargo === v.cargo
+        )?.id;
+      }
+      if (!id) continue;
+      boletimRows.push({
+        zona,
+        secao,
+        candidato_id: id,
+        quantidade_votos: v.quantidade,
+        raw_text: payload.rawText,
+        fiscal_nome: payload.fiscalNome ?? null,
+      });
+    }
+    const result = insertMockBoletins(boletimRows);
+    if (!result.ok) {
+      return {
+        ok: false,
+        duplicate: true,
+        message: "Urna já cadastrada anteriormente",
+      };
+    }
+    return { ok: true };
+  }
+
+  if (await candidatosHasOrigemColumn()) {
+    const { data, error } = await supabase.rpc("ingest_bu_completo", {
+      p_zona: zona,
+      p_secao: secao,
+      p_raw_text: payload.rawText,
+      p_fiscal_nome: payload.fiscalNome ?? null,
+      p_votes: votes.map((v) => ({
+        numero: v.numero,
+        nome: v.nome,
+        cargo: v.cargo,
+        quantidade: v.quantidade,
+      })),
+    });
+    if (!error && data && typeof data === "object") {
+      const parsed = data as {
+        ok?: boolean;
+        duplicate?: boolean;
+        message?: string;
+        error?: string;
+      };
+      if (parsed.duplicate) {
+        return {
+          ok: false,
+          duplicate: true,
+          message: parsed.message || "Urna já cadastrada anteriormente",
+        };
+      }
+      if (parsed.ok) return { ok: true };
+      if (parsed.error) throw new Error(parsed.error);
+    }
+    const missingFn =
+      error &&
+      (/ingest_bu_completo/i.test(error.message) ||
+        error.code === "PGRST202" ||
+        error.code === "42883");
+    if (error && !missingFn) {
+      throw new Error(error.message);
+    }
+  }
+
+  return ingestBuCompletoClient(zona, secao, payload, votes);
 }
 
 export async function transmitVotes(

@@ -15,12 +15,16 @@ export interface LocalVotacao {
   bairro: string | null;
 }
 
+export type CandidatoOrigem = "cadastro" | "bu";
+
 export interface Candidato {
   id: string;
   numero: string;
   nome: string;
   cargo: Cargo;
   foto_url: string | null;
+  /** cadastro = featured admin CRUD; bu = discovered on scan. Missing = cadastro. */
+  origem?: CandidatoOrigem | null;
 }
 
 export interface BoletimUrna {
@@ -50,6 +54,8 @@ export interface ApuracaoConfig {
 export interface ParsedCandidateVote {
   numero: string;
   quantidade: number;
+  nome: string;
+  cargo: string;
 }
 
 export interface ParsedBu {
@@ -61,6 +67,14 @@ export interface ParsedBu {
 
 export interface ConfirmVoteRow {
   candidato: Candidato;
+  quantidade: number;
+}
+
+/** Vote for a candidate not (yet) in the featured cadastro. */
+export interface DiscoveredVote {
+  numero: string;
+  nome: string;
+  cargo: string;
   quantidade: number;
 }
 
@@ -95,6 +109,8 @@ export interface DashboardSnapshot {
   /** Flat rankings for the first/primary cargo (compat). */
   rankings: RankingRow[];
   rankingsByCargo: CargoRanking[];
+  /** All candidates (cadastro + bu) grouped by cargo, votes desc. */
+  rankingGeralByCargo: CargoRanking[];
   relatorioCargos: string[];
   feed: FeedItem[];
   mode: "supabase" | "mock";
@@ -106,4 +122,20 @@ export interface TransmitPayload {
   rawText: string;
   fiscalNome?: string;
   votes: Array<{ candidatoId: string; quantidade: number }>;
+}
+
+export interface TransmitBuCompletoVote {
+  numero: string;
+  nome: string;
+  cargo: string;
+  quantidade: number;
+  candidatoId?: string;
+}
+
+export interface TransmitBuCompletoPayload {
+  zona: string;
+  secao: string;
+  rawText: string;
+  fiscalNome?: string;
+  votes: TransmitBuCompletoVote[];
 }

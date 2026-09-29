@@ -9,15 +9,16 @@ import { Button } from "@/components/ui/button";
 import {
   dataModeLabel,
   findLocal,
-  listCandidatos,
+  resolveBuVotes,
   resolveConfirmRows,
+  transmitBuCompleto,
   transmitVotes,
   urnaJaCadastrada,
   padZona,
   padSecao,
 } from "@/lib/data";
-import { parseBuQrText } from "@/lib/parser/bu-qr";
-import type { ConfirmVoteRow, LocalVotacao, ParsedBu } from "@/lib/types";
+import { parseBuQrText, SAMPLE_BU_TEXT } from "@/lib/parser/bu-qr";
+import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao, ParsedBu } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const DUPLICATE_MSG = "Urna já cadastrada anteriormente";
@@ -32,6 +33,8 @@ export function FiscalApp() {
   const [parsed, setParsed] = useState<ParsedBu | null>(null);
   const [local, setLocal] = useState<LocalVotacao | null>(null);
   const [rows, setRows] = useState<ConfirmVoteRow[]>([]);
+  const [discovered, setDiscovered] = useState<DiscoveredVote[]>([]);
+  const [ingestMode, setIngestMode] = useState<"full" | "featured">("full");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formResetKey, setFormResetKey] = useState(0);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
@@ -51,8 +54,14 @@ export function FiscalApp() {
     async (opts: {
       zona: string;
       secao: string;
-      votes: Array<{ numero: string; quantidade: number }>;
+      votes: Array<{
+        numero: string;
+        quantidade: number;
+        nome?: string;
+        cargo?: string;
+      }>;
       rawText: string;
+      mode: "full" | "featured";
     }) => {
       setError(null);
       setNotice(null);
@@ -69,21 +78,67 @@ export function FiscalApp() {
         }
 
         const found = await findLocal(zona, secao);
+        setIngestMode(opts.mode);
+
+        if (opts.mode === "full") {
+          const resolved = await resolveBuVotes(opts.votes);
+          if (resolved.featured.length === 0 && resolved.discovered.length === 0) {
+            throw new Error(
+              "QR lido, mas nenhum voto de candidato foi identificado. Tente a foto do QR ou a aba Digitar."
+            );
+          }
+          setParsed({
+            zona,
+            secao,
+            votes: opts.votes.map((v) => ({
+              numero: v.numero,
+              quantidade: v.quantidade,
+              nome: v.nome ?? `Candidato ${v.numero}`,
+              cargo: v.cargo ?? "Outro",
+            })),
+            rawText: opts.rawText,
+          });
+          setLocal(found);
+          setRows(resolved.featured);
+          setDiscovered(resolved.discovered);
+          setConfirmOpen(true);
+          const hints: string[] = [];
+          if (!found) {
+            hints.push(
+              `Local Zona ${zona} / Seção ${secao} ainda não está no cadastro de seções (envio permitido).`
+            );
+          }
+          if (resolved.discovered.length > 0) {
+            hints.push(
+              `${resolved.discovered.length} candidato(s) além dos oficiais serão gravados no ranking geral.`
+            );
+          }
+          setNotice(hints.length > 0 ? hints.join(" ") : null);
+          setError(null);
+          return;
+        }
+
         const resolved = await resolveConfirmRows(opts.votes);
         if (resolved.rows.length === 0) {
           throw new Error(
-            `QR/formulário lido, mas nenhum número cadastrado corresponde aos votos. Verifique o cadastro no admin ou use Digitar.`
+            `Formulário lido, mas nenhum número cadastrado corresponde aos votos. Verifique o cadastro no admin.`
           );
         }
 
         setParsed({
           zona,
           secao,
-          votes: opts.votes,
+          votes: opts.votes.map((v) => ({
+            numero: v.numero,
+            quantidade: v.quantidade,
+            nome: v.nome ?? `Candidato ${v.numero}`,
+            cargo: v.cargo ?? "Outro",
+          })),
           rawText: opts.rawText,
         });
         setLocal(found);
         setRows(resolved.rows);
+        setDiscovered([]);
         setConfirmOpen(true);
 
         const hints: string[] = [];
@@ -118,19 +173,13 @@ export function FiscalApp() {
         setSuccess(null);
         setProcessing(true);
         await new Promise((r) => setTimeout(r, 200));
-        const cadastrados = await listCandidatos({ activeRaceOnly: true });
-        const registeredNumeros = cadastrados.map((c) => c.numero);
-        if (registeredNumeros.length === 0) {
-          throw new Error(
-            "Nenhum candidato cadastrado no admin. Cadastre os números antes de escanear o BU."
-          );
-        }
-        const result = parseBuQrText(raw, { registeredNumeros });
+        const result = parseBuQrText(raw);
         await openConfirm({
           zona: result.zona,
           secao: result.secao,
           votes: result.votes,
           rawText: result.rawText,
+          mode: "full",
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Falha ao processar o BU.");
@@ -157,6 +206,7 @@ export function FiscalApp() {
             (v) => `CAND:${v.numero} QTVO:${v.quantidade}`
           ),
         ].join("\n"),
+        mode: "featured",
       });
     },
     [openConfirm]
@@ -173,25 +223,49 @@ export function FiscalApp() {
         return;
       }
 
-      const result = await transmitVotes({
-        zona: parsed.zona,
-        secao: parsed.secao,
-        rawText: parsed.rawText,
-        votes: rows.map((r) => ({
-          candidatoId: r.candidato.id,
-          quantidade: r.quantidade,
-        })),
-      });
-      if (!result.ok) {
-        setError(result.message);
-        setConfirmOpen(false);
-        return;
+      if (ingestMode === "full") {
+        const result = await transmitBuCompleto({
+          zona: parsed.zona,
+          secao: parsed.secao,
+          rawText: parsed.rawText,
+          votes: [
+            ...rows.map((r) => ({
+              candidatoId: r.candidato.id,
+              numero: r.candidato.numero,
+              nome: r.candidato.nome,
+              cargo: String(r.candidato.cargo),
+              quantidade: r.quantidade,
+            })),
+            ...discovered,
+          ],
+        });
+        if (!result.ok) {
+          setError(result.message);
+          setConfirmOpen(false);
+          return;
+        }
+      } else {
+        const result = await transmitVotes({
+          zona: parsed.zona,
+          secao: parsed.secao,
+          rawText: parsed.rawText,
+          votes: rows.map((r) => ({
+            candidatoId: r.candidato.id,
+            quantidade: r.quantidade,
+          })),
+        });
+        if (!result.ok) {
+          setError(result.message);
+          setConfirmOpen(false);
+          return;
+        }
       }
       setSuccess(`Enviado · Zona ${parsed.zona} · Seção ${parsed.secao}`);
       setConfirmOpen(false);
       setParsed(null);
       setLocal(null);
       setRows([]);
+      setDiscovered([]);
       setNotice(null);
       setFormResetKey((k) => k + 1);
       setTab("manual");
@@ -269,6 +343,7 @@ export function FiscalApp() {
           zona={parsed?.zona ?? ""}
           secao={parsed?.secao ?? ""}
           rows={rows}
+          discovered={discovered}
           onConfirm={() => void handleConfirm()}
           transmitting={transmitting}
           notice={notice}
@@ -313,10 +388,21 @@ export function FiscalApp() {
             </Button>
           </div>
           {tab === "scan" ? (
-            <BuScanner
-              onScan={(text) => void handleRawText(text)}
-              busy={processing}
-            />
+            <div className="space-y-2">
+              <BuScanner
+                onScan={(text) => void handleRawText(text)}
+                busy={processing}
+              />
+              <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-700">
+                  Colar texto do BU (se o QR falhar)
+                </summary>
+                <PasteBuForm
+                  busy={processing}
+                  onSubmit={(text) => void handleRawText(text)}
+                />
+              </details>
+            </div>
           ) : (
             <ManualBuForm
               onSubmit={(payload) => void handleManual(payload)}
@@ -327,5 +413,55 @@ export function FiscalApp() {
         </div>
       )}
     </div>
+  );
+}
+
+function PasteBuForm({
+  busy,
+  onSubmit,
+}: {
+  busy?: boolean;
+  onSubmit: (text: string) => void;
+}) {
+  const [text, setText] = useState("");
+  return (
+    <form
+      className="mt-2 space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        onSubmit(trimmed);
+      }}
+    >
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={5}
+        placeholder="ZONA:001 SECA:0001 13:142 13131:51 …"
+        className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 font-mono text-[11px] text-slate-800"
+        disabled={busy}
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="submit"
+          size="sm"
+          className="bg-teal-700 text-white hover:bg-teal-800"
+          disabled={busy || !text.trim()}
+        >
+          Processar texto
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="border-slate-300"
+          disabled={busy}
+          onClick={() => setText(SAMPLE_BU_TEXT)}
+        >
+          Exemplo de teste
+        </Button>
+      </div>
+    </form>
   );
 }

@@ -3,7 +3,7 @@
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CARGOS_FISCAL_ORDEM, CARGOS_OFICIAIS, labelCargoCurto } from "@/lib/cargos";
-import type { ConfirmVoteRow, LocalVotacao } from "@/lib/types";
+import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao } from "@/lib/types";
 import { formatVotes } from "@/lib/utils";
 
 interface ConfirmTransmitModalProps {
@@ -13,6 +13,7 @@ interface ConfirmTransmitModalProps {
   zona: string;
   secao: string;
   rows: ConfirmVoteRow[];
+  discovered?: DiscoveredVote[];
   onConfirm: () => void;
   transmitting: boolean;
   /** Soft notice shown on the confirm surface (not a hard error). */
@@ -30,6 +31,7 @@ export function ConfirmTransmitModal({
   zona,
   secao,
   rows,
+  discovered = [],
   onConfirm,
   transmitting,
   notice,
@@ -44,6 +46,8 @@ export function ConfirmTransmitModal({
   const others = rows.filter(
     (r) => !(CARGOS_OFICIAIS as readonly string[]).includes(r.candidato.cargo)
   );
+
+  const canSend = rows.length > 0 || discovered.length > 0;
 
   function Section({
     title,
@@ -127,9 +131,50 @@ export function ConfirmTransmitModal({
         <Section title="Outros" items={others} />
       </div>
 
-      {rows.length === 0 && (
+      {discovered.length > 0 ? (
+        <details className="rounded-lg border border-slate-200 bg-slate-50 open:bg-white">
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-slate-700 marker:content-none [&::-webkit-details-marker]:hidden">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block text-slate-400">▸</span>
+              Demais candidatos neste BU ({discovered.length})
+            </span>
+            <p className="mt-0.5 font-normal text-slate-500">
+              Também serão gravados. Toque para revisar.
+            </p>
+          </summary>
+          <ul className="max-h-48 divide-y divide-slate-200 overflow-y-auto border-t border-slate-200">
+            {discovered.map((row) => (
+              <li
+                key={`${row.cargo}-${row.numero}`}
+                className="flex items-center justify-between gap-3 px-3 py-1.5"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-800">
+                    {row.nome}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    {labelCargoCurto(row.cargo)} · Nº {row.numero}
+                  </p>
+                </div>
+                <p className="text-sm font-bold tabular-nums text-slate-700">
+                  {formatVotes(row.quantidade)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {rows.length === 0 && discovered.length === 0 && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           Nenhum voto corresponde a candidatos cadastrados.
+        </p>
+      )}
+
+      {rows.length === 0 && discovered.length > 0 && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          Nenhum cadastrado oficial neste BU — os demais candidatos abaixo
+          serão gravados no ranking geral.
         </p>
       )}
 
@@ -147,7 +192,7 @@ export function ConfirmTransmitModal({
           type="button"
           className="h-11 bg-teal-700 text-white hover:bg-teal-800"
           onClick={onConfirm}
-          disabled={transmitting || rows.length === 0}
+          disabled={transmitting || !canSend}
         >
           {transmitting ? (
             <Loader2 className="size-4 animate-spin" />

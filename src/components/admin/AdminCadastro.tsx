@@ -15,11 +15,13 @@ import {
   Plus,
   Save,
   Trash2,
+  Trophy,
   Users,
   MapPinned,
   MonitorPlay,
   X,
 } from "lucide-react";
+import { RankingGeral } from "@/components/admin/RankingGeral";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,7 +50,7 @@ import {
 import type { ApuracaoConfig, Candidato, ZonaConfigRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type CadastroTab = "candidatos" | "secoes" | "relatorio";
+type CadastroTab = "candidatos" | "secoes" | "relatorio" | "ranking";
 
 interface AdminCadastroProps {
   onConfigSaved?: () => void;
@@ -278,6 +280,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   }
 
   const tabs: Array<{ id: CadastroTab; label: string; icon: typeof Users }> = [
+    { id: "ranking", label: "Ranking geral", icon: Trophy },
     { id: "candidatos", label: "Candidatos", icon: Users },
     { id: "secoes", label: "Zonas / Seções", icon: MapPinned },
     { id: "relatorio", label: "Relatório telão", icon: MonitorPlay },
@@ -356,7 +359,9 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
         })}
       </div>
 
-      {loading && (
+      {tab === "ranking" && <RankingGeral />}
+
+      {loading && tab !== "ranking" && (
         <p className="flex items-center gap-2 text-sm text-slate-400">
           <Loader2 className="size-4 animate-spin" /> Carregando…
         </p>

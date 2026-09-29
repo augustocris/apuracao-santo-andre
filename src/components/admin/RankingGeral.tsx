@@ -62,9 +62,15 @@ export function RankingGeral() {
       ? groups
       : groups.filter((g) => g.cargo === cargoFilter);
 
-  const flatRows = visibleGroups.flatMap((g) =>
-    g.rankings.map((row) => ({ ...row, cargo: g.cargo, totalCargo: g.totalVotos }))
-  );
+  const flatRows = visibleGroups
+    .flatMap((g) =>
+      g.rankings.map((row) => ({
+        ...row,
+        cargo: g.cargo,
+        totalCargo: g.totalVotos,
+      }))
+    )
+    .sort((a, b) => b.votos - a.votos || a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR"));
 
   const candidatosBanco: Candidato[] = useMemo(() => {
     const map = new Map<string, Candidato>();

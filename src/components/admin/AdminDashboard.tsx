@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Radio, RefreshCw, Settings2, Tv } from "lucide-react";
 import { AdminCadastro } from "@/components/admin/AdminCadastro";
-import { MilestoneCelebration } from "@/components/admin/MilestoneCelebration";
+import { useMilestoneCelebrations } from "@/components/admin/MilestoneCelebration";
 import { StatsCards } from "@/components/admin/StatsCards";
 import { TelaoSlots } from "@/components/admin/TelaoSlots";
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,11 @@ export function AdminDashboard() {
       : snapshot.relatorioCargos.length >= 4
         ? "todos os cargos"
         : snapshot.relatorioCargos.map(labelCargoCurto).join(" · ");
+
+  const celebration = useMilestoneCelebrations({
+    rankingsByCargo: snapshot.rankingsByCargo,
+    enabled: view === "telao",
+  });
 
   return (
     <div
@@ -215,10 +220,11 @@ export function AdminDashboard() {
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col">
-            <TelaoSlots groups={snapshot.rankingsByCargo} />
+            <TelaoSlots
+              groups={snapshot.rankingsByCargo}
+              celebration={celebration}
+            />
           </div>
-
-          <MilestoneCelebration rankingsByCargo={snapshot.rankingsByCargo} />
         </>
       )}
     </div>

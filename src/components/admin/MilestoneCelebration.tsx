@@ -1,83 +1,88 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import confetti from "canvas-confetti";
 import {
   isMilestoneCargo,
   milestoneKey,
   milestoneMessage,
   milestonesReached,
+  type MilestoneCelebrationEvent,
 } from "@/lib/milestones";
 import type { CargoRanking } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
-interface Celebration {
-  id: string;
-  candidateName: string;
-  message: string;
-}
-
-interface MilestoneCelebrationProps {
+interface UseMilestoneCelebrationsArgs {
   rankingsByCargo: CargoRanking[];
+  enabled?: boolean;
 }
 
-function fireConfettiBurst() {
-  const count = 160;
-  const defaults = {
-    origin: { y: 0.55 },
-    zIndex: 80,
-    disableForReducedMotion: true,
-  };
-
-  confetti({
-    ...defaults,
-    particleCount: Math.floor(count * 0.35),
-    spread: 55,
-    startVelocity: 45,
-  });
-  confetti({
-    ...defaults,
-    particleCount: Math.floor(count * 0.3),
-    angle: 60,
-    spread: 65,
-    origin: { x: 0, y: 0.65 },
-  });
-  confetti({
-    ...defaults,
-    particleCount: Math.floor(count * 0.3),
-    angle: 120,
-    spread: 65,
-    origin: { x: 1, y: 0.65 },
-  });
-}
-
-export function MilestoneCelebration({
+/**
+ * Detects newly crossed Dep. Estadual / Dep. Federal thresholds and exposes
+ * a queued celebration. Confetti + label render inside the matching telão card.
+ * Never falls back to a generic milestone label — always the candidate name.
+ */
+export function useMilestoneCelebrations({
   rankingsByCargo,
-}: MilestoneCelebrationProps) {
+  enabled = true,
+}: UseMilestoneCelebrationsArgs): MilestoneCelebrationEvent | null {
   const firedRef = useRef<Set<string>>(new Set());
   const primedRef = useRef(false);
-  const [active, setActive] = useState<Celebration | null>(null);
-  const queueRef = useRef<Celebration[]>([]);
+  const [active, setActive] = useState<MilestoneCelebrationEvent | null>(null);
+  const queueRef = useRef<MilestoneCelebrationEvent[]>([]);
   const showingRef = useRef(false);
 
+  const demoFiredRef = useRef(false);
+
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!enabled || typeof window === "undefined") return;
+    if (demoFiredRef.current) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("demoCelebrate") !== "1") return;
+
     const threshold = Number(params.get("demoThreshold") || "50000");
     const value = Number.isFinite(threshold) ? threshold : 50_000;
-    const demoName =
-      params.get("demoName")?.trim() || "Candidato demonstração";
+    const demoName = params.get("demoName")?.trim() || "";
+    const demoCargoParam = params.get("demoCargo")?.trim() || "";
+
+    let target: MilestoneCelebrationEvent | null = null;
+    for (const group of rankingsByCargo) {
+      if (!isMilestoneCargo(group.cargo)) continue;
+      if (demoCargoParam && group.cargo !== demoCargoParam) continue;
+      for (const row of group.rankings) {
+        if (demoName && row.candidato.nome !== demoName) continue;
+        target = {
+          id: `demo:${row.candidato.id}:${value}`,
+          candidatoId: row.candidato.id,
+          candidateName: row.candidato.nome,
+          message: milestoneMessage(value),
+          cargo: group.cargo,
+        };
+        break;
+      }
+      if (target) break;
+    }
+
+    if (!target) {
+      const group =
+        rankingsByCargo.find((g) => isMilestoneCargo(g.cargo)) ?? null;
+      const row = group?.rankings[0];
+      if (!row) return;
+      target = {
+        id: `demo:${row.candidato.id}:${value}`,
+        candidatoId: row.candidato.id,
+        candidateName: demoName || row.candidato.nome,
+        message: milestoneMessage(value),
+        cargo: group!.cargo,
+      };
+    }
+
+    if (!target.candidateName.trim()) return;
+    demoFiredRef.current = true;
+
     let cancelled = false;
     const t = window.setTimeout(() => {
       if (cancelled) return;
       showingRef.current = true;
-      setActive({
-        id: `demo:${value}`,
-        candidateName: demoName,
-        message: milestoneMessage(value),
-      });
-      fireConfettiBurst();
+      setActive(target);
       window.setTimeout(() => {
         if (cancelled) return;
         setActive(null);
@@ -88,10 +93,11 @@ export function MilestoneCelebration({
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, []);
+  }, [enabled, rankingsByCargo]);
 
   useEffect(() => {
-    const pending: Celebration[] = [];
+    if (!enabled) return;
+    const pending: MilestoneCelebrationEvent[] = [];
 
     for (const group of rankingsByCargo) {
       if (!isMilestoneCargo(group.cargo)) continue;
@@ -101,12 +107,15 @@ export function MilestoneCelebration({
           const key = milestoneKey(row.candidato.id, threshold);
           if (firedRef.current.has(key)) continue;
           firedRef.current.add(key);
-          // Prime on first snapshot: mark already-crossed without celebrating.
           if (primedRef.current) {
+            const name = row.candidato.nome?.trim();
+            if (!name) continue;
             pending.push({
               id: key,
-              candidateName: row.candidato.nome,
+              candidatoId: row.candidato.id,
+              candidateName: name,
               message: milestoneMessage(threshold),
+              cargo: group.cargo,
             });
           }
         }
@@ -127,7 +136,6 @@ export function MilestoneCelebration({
       if (!next) return;
       showingRef.current = true;
       setActive(next);
-      fireConfettiBurst();
       window.setTimeout(() => {
         setActive(null);
         showingRef.current = false;
@@ -135,29 +143,7 @@ export function MilestoneCelebration({
       }, 4200);
     };
     drain();
-  }, [rankingsByCargo]);
+  }, [enabled, rankingsByCargo]);
 
-  if (!active) return null;
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 top-[18%] z-50 flex justify-center px-4"
-    >
-      <div
-        className={cn(
-          "animate-in fade-in zoom-in-95 duration-500",
-          "rounded-2xl border border-amber-300/50 bg-slate-950/90 px-8 py-5 text-center shadow-[0_0_48px_rgba(251,191,36,0.35)] backdrop-blur-md"
-        )}
-      >
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-300 md:text-sm">
-          {active.candidateName}
-        </p>
-        <p className="mt-2 text-2xl font-bold text-white md:text-4xl">
-          {active.message}
-        </p>
-      </div>
-    </div>
-  );
+  return active;
 }

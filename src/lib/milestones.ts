@@ -40,3 +40,12 @@ export function milestoneMessage(votos: number): string {
 export function milestoneKey(candidatoId: string, threshold: number): string {
   return `${candidatoId}:${threshold}`;
 }
+
+export interface MilestoneCelebrationEvent {
+  id: string;
+  candidatoId: string;
+  /** Always the candidate display name (no generic milestone eyebrow). */
+  candidateName: string;
+  message: string;
+  cargo: string;
+}

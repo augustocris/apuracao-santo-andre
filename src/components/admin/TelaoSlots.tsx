@@ -1,7 +1,10 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import confetti from "canvas-confetti";
 import { UserRound } from "lucide-react";
 import { CARGO_SLOTS, labelCargoCurto, type CargoOficial } from "@/lib/cargos";
+import type { MilestoneCelebrationEvent } from "@/lib/milestones";
 import type { CargoRanking, RankingRow } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
 
@@ -19,7 +22,6 @@ export function buildTelaoSlots(groups: CargoRanking[]): TelaoSlot[] {
   const pickOrdered = (cargo: CargoOficial): RankingRow[] => {
     const group = byCargo.get(cargo);
     if (!group) return [];
-    // Stable registration order (número), not vote rank — Senador 1/2 slots.
     return [...group.rankings].sort((a, b) =>
       a.candidato.numero.localeCompare(b.candidato.numero, "pt-BR", {
         numeric: true,
@@ -67,42 +69,125 @@ export function buildTelaoSlots(groups: CargoRanking[]): TelaoSlot[] {
   return slots;
 }
 
+function fireCardConfetti(canvas: HTMLCanvasElement) {
+  const fire = confetti.create(canvas, {
+    resize: true,
+    useWorker: false,
+    disableForReducedMotion: true,
+  });
+  const count = 90;
+  fire({
+    particleCount: Math.floor(count * 0.45),
+    spread: 62,
+    startVelocity: 28,
+    origin: { x: 0.5, y: 0.55 },
+    ticks: 180,
+  });
+  fire({
+    particleCount: Math.floor(count * 0.28),
+    angle: 60,
+    spread: 50,
+    startVelocity: 24,
+    origin: { x: 0.15, y: 0.7 },
+    ticks: 180,
+  });
+  fire({
+    particleCount: Math.floor(count * 0.28),
+    angle: 120,
+    spread: 50,
+    startVelocity: 24,
+    origin: { x: 0.85, y: 0.7 },
+    ticks: 180,
+  });
+}
+
 interface SlotCardProps {
   slot: TelaoSlot;
   size: "tall" | "short";
   singleInCargo: boolean;
+  celebration: MilestoneCelebrationEvent | null;
 }
 
-function SlotCard({ slot, size, singleInCargo }: SlotCardProps) {
+function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
   const empty = !slot.row;
   const votos = slot.row?.votos ?? 0;
   const pct = slot.row?.percentual ?? 0;
   const showPctStrong = !singleInCargo && !empty;
+  const celebrating =
+    !!celebration &&
+    !!slot.row &&
+    slot.row.candidato.id === celebration.candidatoId;
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastFiredId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!celebrating || !celebration || !canvasRef.current) return;
+    if (lastFiredId.current === celebration.id) return;
+    lastFiredId.current = celebration.id;
+    fireCardConfetti(canvasRef.current);
+  }, [celebrating, celebration]);
 
   return (
     <article
+      data-slot-key={slot.key}
+      data-candidato-id={slot.row?.candidato.id ?? ""}
+      data-celebrating={celebrating ? "1" : "0"}
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/85 shadow-lg shadow-black/25",
+        "relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/85 shadow-lg shadow-black/25",
         size === "tall" ? "p-4 md:p-5" : "p-3 md:p-4",
-        empty && "border-dashed border-white/15 bg-slate-950/40"
+        empty && "border-dashed border-white/15 bg-slate-950/40",
+        celebrating && "ring-2 ring-amber-300/70"
       )}
     >
+      {celebrating ? (
+        <>
+          <canvas
+            ref={canvasRef}
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full"
+          />
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "pointer-events-none absolute inset-x-3 top-3 z-30",
+              "animate-in fade-in zoom-in-95 duration-500",
+              "rounded-xl border border-amber-300/50 bg-slate-950/90 px-3 py-2.5 text-center shadow-[0_0_28px_rgba(251,191,36,0.35)] backdrop-blur-md"
+            )}
+          >
+            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300 md:text-xs">
+              {celebration!.candidateName}
+            </p>
+            <p className="mt-1 text-sm font-bold leading-snug text-white md:text-base">
+              {celebration!.message}
+            </p>
+          </div>
+        </>
+      ) : null}
+
       <p
         className={cn(
-          "font-semibold uppercase tracking-[0.14em] text-teal-300/90",
-          size === "tall" ? "text-xs md:text-sm" : "text-[10px] md:text-xs"
+          "relative z-10 font-semibold uppercase tracking-[0.14em] text-teal-300/90",
+          size === "tall" ? "text-xs md:text-sm" : "text-[10px] md:text-xs",
+          celebrating && "opacity-40"
         )}
       >
         {slot.label}
       </p>
 
       {empty ? (
-        <div className="mt-3 flex flex-1 flex-col items-center justify-center gap-2 text-slate-500">
+        <div className="relative z-10 mt-3 flex flex-1 flex-col items-center justify-center gap-2 text-slate-500">
           <UserRound className={size === "tall" ? "size-10" : "size-7"} />
           <p className="text-sm">Sem candidato cadastrado</p>
         </div>
       ) : (
-        <div className="mt-2 flex min-h-0 flex-1 flex-col justify-between gap-2">
+        <div
+          className={cn(
+            "relative z-10 mt-2 flex min-h-0 flex-1 flex-col justify-between gap-2",
+            celebrating && "pt-14"
+          )}
+        >
           <div className="flex items-start gap-3">
             <div
               className={cn(
@@ -209,9 +294,10 @@ function SlotCard({ slot, size, singleInCargo }: SlotCardProps) {
 
 interface TelaoSlotsProps {
   groups: CargoRanking[];
+  celebration?: MilestoneCelebrationEvent | null;
 }
 
-export function TelaoSlots({ groups }: TelaoSlotsProps) {
+export function TelaoSlots({ groups, celebration = null }: TelaoSlotsProps) {
   const slots = buildTelaoSlots(groups);
   const tall = slots.slice(0, 2);
   const short = slots.slice(2);
@@ -228,6 +314,7 @@ export function TelaoSlots({ groups }: TelaoSlotsProps) {
             slot={slot}
             size="tall"
             singleInCargo={countInCargo(slot.cargo) <= 1}
+            celebration={celebration}
           />
         ))}
       </div>
@@ -238,6 +325,7 @@ export function TelaoSlots({ groups }: TelaoSlotsProps) {
             slot={slot}
             size="short"
             singleInCargo={countInCargo(slot.cargo) <= 1}
+            celebration={celebration}
           />
         ))}
       </div>

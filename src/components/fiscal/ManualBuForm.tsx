@@ -43,6 +43,7 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
   const [zona, setZona] = useState("");
   const [secao, setSecao] = useState("");
   const [votos, setVotos] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +83,7 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
     if (resetKey === 0) return;
     setZona("");
     setSecao("");
+    setFormError(null);
     setVotos((prev) => {
       const next: Record<string, string> = {};
       for (const id of Object.keys(prev)) {
@@ -98,11 +100,17 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
     })).filter((g) => g.items.length > 0);
   }, [candidatos]);
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  function trySubmit() {
     const z = zona.replace(/\D/g, "");
     const s = secao.replace(/\D/g, "");
-    if (!z || !s) return;
+    if (!z) {
+      setFormError("Informe a zona.");
+      return;
+    }
+    if (!s) {
+      setFormError("Informe a seção.");
+      return;
+    }
 
     const votes: ManualBuSubmit["votes"] = [];
     for (const c of candidatos) {
@@ -110,6 +118,7 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
       if (raw === "") continue;
       const quantidade = Number.parseInt(raw, 10);
       if (!Number.isFinite(quantidade) || quantidade < 0) {
+        setFormError(`Votos inválidos para ${c.nome}.`);
         return;
       }
       votes.push({
@@ -119,20 +128,20 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
       });
     }
 
-    if (votes.length === 0) return;
+    if (votes.length === 0) {
+      setFormError("Preencha ao menos um campo de votos.");
+      return;
+    }
 
+    setFormError(null);
     onSubmit({ zona: z, secao: s, votes });
   }
 
-  const canSubmit =
-    zona.replace(/\D/g, "").length > 0 &&
-    secao.replace(/\D/g, "").length > 0 &&
-    candidatos.some((c) => {
-      const raw = votos[c.id]?.trim() ?? "";
-      if (raw === "") return false;
-      const n = Number.parseInt(raw, 10);
-      return Number.isFinite(n) && n >= 0;
-    });
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    trySubmit();
+  }
 
   if (loading) {
     return (
@@ -163,7 +172,7 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2" noValidate>
       <div className="rounded-xl border border-slate-300 bg-white px-3 py-2">
         <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-700">
           <ClipboardList className="size-3.5 text-teal-700" />
@@ -179,12 +188,12 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
               inputMode="numeric"
               autoComplete="off"
               value={zona}
-              onChange={(e) =>
-                setZona(e.target.value.replace(/\D/g, "").slice(0, 3))
-              }
+              onChange={(e) => {
+                setZona(e.target.value.replace(/\D/g, "").slice(0, 3));
+                setFormError(null);
+              }}
               placeholder="001"
               className="h-9 border border-slate-300 text-base font-semibold tabular-nums"
-              required
               disabled={busy}
             />
           </div>
@@ -197,12 +206,12 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
               inputMode="numeric"
               autoComplete="off"
               value={secao}
-              onChange={(e) =>
-                setSecao(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
+              onChange={(e) => {
+                setSecao(e.target.value.replace(/\D/g, "").slice(0, 4));
+                setFormError(null);
+              }}
               placeholder="0001"
               className="h-9 border border-slate-300 text-base font-semibold tabular-nums"
-              required
               disabled={busy}
             />
           </div>
@@ -245,6 +254,7 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
                       onChange={(e) => {
                         const digits = e.target.value.replace(/\D/g, "");
                         setVotos((prev) => ({ ...prev, [c.id]: digits }));
+                        setFormError(null);
                       }}
                       placeholder="0"
                       className="h-9 border border-slate-300 text-center text-base font-bold tabular-nums"
@@ -258,18 +268,31 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
         ))}
       </div>
 
+      {formError ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-900"
+        >
+          {formError}
+        </p>
+      ) : null}
+
       <Button
-        type="submit"
+        type="button"
         size="lg"
-        className="mt-0.5 h-11 w-full bg-teal-700 text-sm font-semibold text-white hover:bg-teal-800"
-        disabled={busy || !canSubmit}
+        className="mt-0.5 h-11 w-full bg-teal-700 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-70"
+        disabled={busy}
+        onClick={() => {
+          if (busy) return;
+          trySubmit();
+        }}
       >
         {busy ? (
           <Loader2 className="size-4 animate-spin" />
         ) : (
           <Send className="size-4" />
         )}
-        Revisar e enviar
+        {busy ? "Preparando…" : "Revisar e enviar"}
       </Button>
     </form>
   );

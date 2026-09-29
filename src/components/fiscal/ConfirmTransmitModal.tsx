@@ -1,16 +1,8 @@
 "use client";
 
 import { Loader2, Send } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { CARGOS_FISCAL_ORDEM, CARGOS_OFICIAIS } from "@/lib/cargos";
+import { CARGOS_FISCAL_ORDEM, CARGOS_OFICIAIS, labelCargoCurto } from "@/lib/cargos";
 import type { ConfirmVoteRow, LocalVotacao } from "@/lib/types";
 import { formatVotes } from "@/lib/utils";
 
@@ -23,8 +15,14 @@ interface ConfirmTransmitModalProps {
   rows: ConfirmVoteRow[];
   onConfirm: () => void;
   transmitting: boolean;
+  /** Soft notice shown on the confirm surface (not a hard error). */
+  notice?: string | null;
 }
 
+/**
+ * Inline confirmation view (not a portal dialog) so mobile / PWA always
+ * shows a clear next step after "Revisar e enviar".
+ */
 export function ConfirmTransmitModal({
   open,
   onOpenChange,
@@ -34,7 +32,10 @@ export function ConfirmTransmitModal({
   rows,
   onConfirm,
   transmitting,
+  notice,
 }: ConfirmTransmitModalProps) {
+  if (!open) return null;
+
   const byCargo = CARGOS_FISCAL_ORDEM.map((cargo) => ({
     cargo,
     items: rows.filter((r) => r.candidato.cargo === cargo),
@@ -53,15 +54,15 @@ export function ConfirmTransmitModal({
   }) {
     if (items.length === 0) return null;
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-1">
         <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
           {title}
         </h3>
-        <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-slate-50">
+        <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
           {items.map((row) => (
             <li
               key={row.candidato.id}
-              className="flex items-center justify-between gap-3 px-3 py-2"
+              className="flex items-center justify-between gap-3 px-3 py-1.5"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">
@@ -82,62 +83,80 @@ export function ConfirmTransmitModal({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Confirmar envio</DialogTitle>
-          <DialogDescription>
-            Revise zona, seção e votos antes de confirmar.
-          </DialogDescription>
-        </DialogHeader>
+    <section
+      role="region"
+      aria-labelledby="confirm-envio-title"
+      className="flex flex-col gap-2 rounded-xl border-2 border-teal-600 bg-white px-3 py-3 shadow-sm"
+    >
+      <div>
+        <h2
+          id="confirm-envio-title"
+          className="text-base font-bold text-slate-900"
+        >
+          Confirmar envio
+        </h2>
+        <p className="text-xs text-slate-600">
+          Revise zona, seção e votos antes de confirmar.
+        </p>
+      </div>
 
-        <div className="space-y-3">
-          <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5">
-            <p className="text-sm font-medium text-teal-900">
-              Zona {zona} · Seção {secao}
-            </p>
-            <p className="text-xs text-teal-800/80">
-              {local?.nome_escola ?? "Local não cadastrado (envio permitido)"}
-              {local?.bairro ? ` · ${local.bairro}` : ""}
-            </p>
-          </div>
+      <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
+        <p className="text-sm font-semibold text-teal-900">
+          Zona {zona} · Seção {secao}
+        </p>
+        <p className="text-xs text-teal-800/80">
+          {local?.nome_escola ?? "Local não cadastrado (envio permitido)"}
+          {local?.bairro ? ` · ${local.bairro}` : ""}
+        </p>
+      </div>
 
-          {byCargo.map((g) => (
-            <Section key={g.cargo} title={g.cargo} items={g.items} />
-          ))}
-          <Section title="Outros" items={others} />
+      {notice ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          {notice}
+        </p>
+      ) : null}
 
-          {rows.length === 0 && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              Nenhum voto corresponde a candidatos cadastrados.
-            </p>
+      <div className="flex flex-col gap-1.5">
+        {byCargo.map((g) => (
+          <Section
+            key={g.cargo}
+            title={labelCargoCurto(g.cargo)}
+            items={g.items}
+          />
+        ))}
+        <Section title="Outros" items={others} />
+      </div>
+
+      {rows.length === 0 && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          Nenhum voto corresponde a candidatos cadastrados.
+        </p>
+      )}
+
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 border-slate-300"
+          onClick={() => onOpenChange(false)}
+          disabled={transmitting}
+        >
+          Voltar
+        </Button>
+        <Button
+          type="button"
+          className="h-11 bg-teal-700 text-white hover:bg-teal-800"
+          onClick={onConfirm}
+          disabled={transmitting || rows.length === 0}
+        >
+          {transmitting ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Send className="size-4" />
           )}
-        </div>
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={transmitting}
-          >
-            Voltar
-          </Button>
-          <Button
-            type="button"
-            className="bg-teal-700 text-white hover:bg-teal-800"
-            onClick={onConfirm}
-            disabled={transmitting || rows.length === 0}
-          >
-            {transmitting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
-            )}
-            Confirmar envio
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          Confirmar envio
+        </Button>
+      </div>
+    </section>
   );
 }

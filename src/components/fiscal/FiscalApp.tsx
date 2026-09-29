@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, ClipboardList, Loader2, QrCode, Sun } from "lucide-react";
 import { BuScanner } from "@/components/fiscal/BuScanner";
 import { ManualBuForm, type ManualBuSubmit } from "@/components/fiscal/ManualBuForm";
@@ -26,18 +26,25 @@ export function FiscalApp() {
   const [processing, setProcessing] = useState(false);
   const [transmitting, setTransmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedBu | null>(null);
   const [local, setLocal] = useState<LocalVotacao | null>(null);
   const [rows, setRows] = useState<ConfirmVoteRow[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formResetKey, setFormResetKey] = useState(0);
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!success) return;
     const t = window.setTimeout(() => setSuccess(null), 3500);
     return () => window.clearTimeout(t);
   }, [success]);
+
+  useEffect(() => {
+    if (!error && !success && !processing) return;
+    feedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [error, success, processing]);
 
   const openConfirm = useCallback(
     async (opts: {
@@ -47,6 +54,7 @@ export function FiscalApp() {
       rawText: string;
     }) => {
       setError(null);
+      setNotice(null);
       setSuccess(null);
       setProcessing(true);
       try {
@@ -55,6 +63,7 @@ export function FiscalApp() {
 
         if (await urnaJaCadastrada(zona, secao)) {
           setError(DUPLICATE_MSG);
+          setConfirmOpen(false);
           return;
         }
 
@@ -87,8 +96,10 @@ export function FiscalApp() {
             `Números sem cadastro ignorados: ${resolved.unknown.join(", ")}`
           );
         }
-        setError(hints.length > 0 ? hints.join(" ") : null);
+        setNotice(hints.length > 0 ? hints.join(" ") : null);
+        setError(null);
       } catch (err) {
+        setConfirmOpen(false);
         setError(
           err instanceof Error ? err.message : "Falha ao preparar o envio."
         );
@@ -102,6 +113,9 @@ export function FiscalApp() {
   const handleRawText = useCallback(
     async (raw: string) => {
       try {
+        setError(null);
+        setSuccess(null);
+        setProcessing(true);
         await new Promise((r) => setTimeout(r, 200));
         const result = parseBuQrText(raw);
         await openConfirm({
@@ -165,20 +179,27 @@ export function FiscalApp() {
         setConfirmOpen(false);
         return;
       }
-      setSuccess(
-        `Enviado · Zona ${parsed.zona} · Seção ${parsed.secao}`
-      );
+      setSuccess(`Enviado · Zona ${parsed.zona} · Seção ${parsed.secao}`);
       setConfirmOpen(false);
       setParsed(null);
       setLocal(null);
       setRows([]);
+      setNotice(null);
       setFormResetKey((k) => k + 1);
+      setTab("manual");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Falha ao transmitir os votos."
       );
     } finally {
       setTransmitting(false);
+    }
+  }
+
+  function handleConfirmOpenChange(open: boolean) {
+    setConfirmOpen(open);
+    if (!open) {
+      setNotice(null);
     }
   }
 
@@ -201,94 +222,102 @@ export function FiscalApp() {
         </p>
       </header>
 
-      {processing && (
-        <div
-          role="status"
-          className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900"
-        >
-          <Loader2 className="size-4 animate-spin" />
-          <span className="font-semibold">Preparando envio…</span>
-        </div>
-      )}
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-900"
-        >
-          {error}
-        </p>
-      )}
-
-      {success && (
-        <p
-          role="status"
-          className="flex items-start gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-950"
-        >
-          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
-          {success}
-        </p>
-      )}
-
-      <div className="w-full space-y-2">
-        <div
-          role="tablist"
-          className="grid h-9 w-full grid-cols-2 gap-1 rounded-lg bg-slate-200/80 p-0.5"
-        >
-          <Button
-            type="button"
-            role="tab"
-            aria-selected={tab === "scan"}
-            variant="ghost"
-            className={cn(
-              "h-full rounded-md text-xs font-semibold",
-              tab === "scan"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-600 hover:bg-white/50"
-            )}
-            onClick={() => setTab("scan")}
+      <div ref={feedbackRef} className="space-y-2">
+        {processing && (
+          <div
+            role="status"
+            className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900"
           >
-            <QrCode className="size-3.5" />
-            Escanear
-          </Button>
-          <Button
-            type="button"
-            role="tab"
-            aria-selected={tab === "manual"}
-            variant="ghost"
-            className={cn(
-              "h-full rounded-md text-xs font-semibold",
-              tab === "manual"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-600 hover:bg-white/50"
-            )}
-            onClick={() => setTab("manual")}
+            <Loader2 className="size-4 animate-spin" />
+            <span className="font-semibold">Preparando envio…</span>
+          </div>
+        )}
+
+        {error && (
+          <p
+            role="alert"
+            className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-900"
           >
-            <ClipboardList className="size-3.5" />
-            Digitar
-          </Button>
-        </div>
-        {tab === "scan" ? (
-          <BuScanner onScan={(text) => void handleRawText(text)} busy={processing} />
-        ) : (
-          <ManualBuForm
-            onSubmit={(payload) => void handleManual(payload)}
-            busy={processing || transmitting}
-            resetKey={formResetKey}
-          />
+            {error}
+          </p>
+        )}
+
+        {success && (
+          <p
+            role="status"
+            className="flex items-start gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-950"
+          >
+            <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+            {success}
+          </p>
         )}
       </div>
 
-      <ConfirmTransmitModal
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        local={local}
-        zona={parsed?.zona ?? ""}
-        secao={parsed?.secao ?? ""}
-        rows={rows}
-        onConfirm={() => void handleConfirm()}
-        transmitting={transmitting}
-      />
+      {confirmOpen ? (
+        <ConfirmTransmitModal
+          open={confirmOpen}
+          onOpenChange={handleConfirmOpenChange}
+          local={local}
+          zona={parsed?.zona ?? ""}
+          secao={parsed?.secao ?? ""}
+          rows={rows}
+          onConfirm={() => void handleConfirm()}
+          transmitting={transmitting}
+          notice={notice}
+        />
+      ) : (
+        <div className="w-full space-y-2">
+          <div
+            role="tablist"
+            className="grid h-9 w-full grid-cols-2 gap-1 rounded-lg bg-slate-200/80 p-0.5"
+          >
+            <Button
+              type="button"
+              role="tab"
+              aria-selected={tab === "scan"}
+              variant="ghost"
+              className={cn(
+                "h-full rounded-md text-xs font-semibold",
+                tab === "scan"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:bg-white/50"
+              )}
+              onClick={() => setTab("scan")}
+            >
+              <QrCode className="size-3.5" />
+              Escanear
+            </Button>
+            <Button
+              type="button"
+              role="tab"
+              aria-selected={tab === "manual"}
+              variant="ghost"
+              className={cn(
+                "h-full rounded-md text-xs font-semibold",
+                tab === "manual"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:bg-white/50"
+              )}
+              onClick={() => setTab("manual")}
+            >
+              <ClipboardList className="size-3.5" />
+              Digitar
+            </Button>
+          </div>
+          {tab === "scan" ? (
+            <BuScanner
+              onScan={(text) => void handleRawText(text)}
+              busy={processing}
+            />
+          ) : (
+            <ManualBuForm
+              onSubmit={(payload) => void handleManual(payload)}
+              busy={processing || transmitting}
+              resetKey={formResetKey}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

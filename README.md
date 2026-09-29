@@ -1,6 +1,8 @@
-# Apuração Eleitoral Paralela — Santo André
+# Apuração Antecipada — Santo André
 
 PWA for parallel ballot-box counting (fiscais scan BU QR codes; admin TV dashboard shows live results). Built with Next.js App Router, TypeScript, Tailwind CSS, Supabase, and a mock fallback for local demos without credentials.
+
+The `/admin` **Telão** view is built for a single TV viewport: compact header (**Apuração Antecipada - Santo André**), slim Enviadas/Faltam + % Progresso bars, and five cargo cards (Dep. Estadual, Dep. Federal, Senador 1, Senador 2, Governador). Dep. Estadual/Federal celebrate vote milestones (50 mil / 100.000 / 150.000 / +10 mil) with confetti.
 
 ## Quick start
 
@@ -90,7 +92,8 @@ Dark high-contrast layout for TV:
 ```
 src/app/fiscal                 Mobile fiscal UI
 src/app/admin                  TV dashboard + Cadastro
-src/components/admin/          Telão, cadastro, rankings
+src/components/admin/          Telão (5 slots + milestones), cadastro
+src/lib/milestones.ts          Thresholds / PT-BR labels for confetti
 src/lib/cargos.ts              Digit rules per cargo
 src/lib/parser/bu-qr.ts        BU QR parser
 src/lib/data.ts                Supabase + mock data layer

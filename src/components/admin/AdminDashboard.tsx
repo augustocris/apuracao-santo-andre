@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Radio, RefreshCw, Settings2, Tv } from "lucide-react";
 import { AdminCadastro } from "@/components/admin/AdminCadastro";
+import { MilestoneCelebration } from "@/components/admin/MilestoneCelebration";
 import { StatsCards } from "@/components/admin/StatsCards";
-import { Rankings } from "@/components/admin/Rankings";
-import { VotesChart } from "@/components/admin/VotesChart";
-import { LatestFeed } from "@/components/admin/LatestFeed";
+import { TelaoSlots } from "@/components/admin/TelaoSlots";
 import { Button } from "@/components/ui/button";
 import { labelCargoCurto } from "@/lib/cargos";
 import { fetchDashboard, subscribeDashboard } from "@/lib/data";
@@ -72,17 +71,51 @@ export function AdminDashboard() {
         : snapshot.relatorioCargos.map(labelCargoCurto).join(" · ");
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-col gap-5 px-4 py-5 md:px-6 lg:px-8">
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-4">
-        <div>
-          <p className="mb-1 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-teal-300">
-            <Radio className="size-3.5 animate-pulse" />
+    <div
+      className={cn(
+        "mx-auto flex w-full max-w-[1600px] flex-col gap-3 px-3 py-3 md:px-5 md:py-4",
+        view === "telao"
+          ? "h-[100dvh] min-h-0 overflow-hidden"
+          : "min-h-full gap-5 px-4 py-5 md:px-6 lg:px-8"
+      )}
+    >
+      <header
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2 border-b border-white/10",
+          view === "telao" ? "shrink-0 pb-2" : "items-end gap-3 pb-4"
+        )}
+      >
+        <div className="min-w-0">
+          <p
+            className={cn(
+              "inline-flex items-center gap-2 font-semibold uppercase tracking-[0.2em] text-teal-300",
+              view === "telao" ? "mb-0.5 text-[10px]" : "mb-1 text-xs"
+            )}
+          >
+            <Radio
+              className={cn(
+                "animate-pulse",
+                view === "telao" ? "size-3" : "size-3.5"
+              )}
+            />
             Ao vivo
           </p>
-          <h1 className="text-2xl font-bold tracking-tight text-white md:text-4xl">
-            Apuração Eleitoral em Tempo Real - Santo André
+          <h1
+            className={cn(
+              "font-bold tracking-tight text-white",
+              view === "telao"
+                ? "text-lg leading-tight md:text-2xl lg:text-3xl"
+                : "text-2xl md:text-4xl"
+            )}
+          >
+            Apuração Antecipada - Santo André
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p
+            className={cn(
+              "text-slate-400",
+              view === "telao" ? "mt-0.5 text-xs" : "mt-1 text-sm"
+            )}
+          >
             Relatório: {cargoLabel} · atualizado às {updatedAt} · modo{" "}
             <span
               className={cn(
@@ -95,9 +128,10 @@ export function AdminDashboard() {
               {snapshot.mode}
             </span>
           </p>
-          {snapshot.mode === "mock" && (
+          {snapshot.mode === "mock" && view === "cadastro" && (
             <p className="mt-2 max-w-2xl text-xs text-amber-200/90">
-              Sem Supabase neste deploy: cadastros ficam só no navegador. Configure{" "}
+              Sem Supabase neste deploy: cadastros ficam só no navegador.
+              Configure{" "}
               <code className="text-amber-100">NEXT_PUBLIC_SUPABASE_*</code> na
               Vercel + Redeploy.
             </p>
@@ -114,7 +148,8 @@ export function AdminDashboard() {
               aria-selected={view === "telao"}
               variant="ghost"
               className={cn(
-                "h-10 rounded-lg text-sm font-semibold",
+                "rounded-lg text-sm font-semibold",
+                view === "telao" ? "h-8 px-3" : "h-10",
                 view === "telao"
                   ? "bg-teal-600 text-white hover:bg-teal-600"
                   : "text-slate-300 hover:bg-white/5 hover:text-white"
@@ -130,7 +165,8 @@ export function AdminDashboard() {
               aria-selected={view === "cadastro"}
               variant="ghost"
               className={cn(
-                "h-10 rounded-lg text-sm font-semibold",
+                "rounded-lg text-sm font-semibold",
+                view === "telao" ? "h-8 px-3" : "h-10",
                 view === "cadastro"
                   ? "bg-teal-600 text-white hover:bg-teal-600"
                   : "text-slate-300 hover:bg-white/5 hover:text-white"
@@ -144,7 +180,10 @@ export function AdminDashboard() {
           <Button
             type="button"
             variant="outline"
-            className="border-white/20 bg-white/5 text-white hover:bg-white/10"
+            className={cn(
+              "border-white/20 bg-white/5 text-white hover:bg-white/10",
+              view === "telao" && "h-8 px-3"
+            )}
             onClick={() => void reload()}
             disabled={pending}
           >
@@ -157,7 +196,7 @@ export function AdminDashboard() {
       {error && (
         <p
           role="alert"
-          className="rounded-xl border border-red-400/40 bg-red-950/50 px-4 py-3 text-sm text-red-100"
+          className="shrink-0 rounded-xl border border-red-400/40 bg-red-950/50 px-4 py-2 text-sm text-red-100"
         >
           {error}
         </p>
@@ -167,39 +206,19 @@ export function AdminDashboard() {
         <AdminCadastro onConfigSaved={() => void reload()} />
       ) : (
         <>
-          <StatsCards
-            urnasApuradas={snapshot.urnasApuradas}
-            totalSecoes={snapshot.secoesEsperadas || snapshot.totalSecoes}
-            secoesFaltam={snapshot.secoesFaltam}
-            totalVotosValidos={snapshot.totalVotosValidos}
-          />
-
-          <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-            <section className="space-y-6">
-              {snapshot.rankingsByCargo.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-white/20 p-8 text-center text-slate-400">
-                  Nenhum cargo selecionado no relatório. Abra a aba Cadastro.
-                </p>
-              ) : (
-                snapshot.rankingsByCargo.map((group) => (
-                  <div key={group.cargo} className="space-y-3">
-                    <h2 className="text-sm font-bold uppercase tracking-wide text-slate-300">
-                      Ranking — {group.cargo}
-                    </h2>
-                    <Rankings rankings={group.rankings} />
-                    <VotesChart rankings={group.rankings} />
-                  </div>
-                ))
-              )}
-            </section>
-
-            <aside className="space-y-3 rounded-2xl border border-white/10 bg-slate-950/50 p-4 lg:sticky lg:top-4 lg:self-start">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-300">
-                Últimos BUs
-              </h2>
-              <LatestFeed feed={snapshot.feed} />
-            </aside>
+          <div className="shrink-0">
+            <StatsCards
+              urnasApuradas={snapshot.urnasApuradas}
+              totalSecoes={snapshot.secoesEsperadas || snapshot.totalSecoes}
+              secoesFaltam={snapshot.secoesFaltam}
+            />
           </div>
+
+          <div className="flex min-h-0 flex-1 flex-col">
+            <TelaoSlots groups={snapshot.rankingsByCargo} />
+          </div>
+
+          <MilestoneCelebration rankingsByCargo={snapshot.rankingsByCargo} />
         </>
       )}
     </div>

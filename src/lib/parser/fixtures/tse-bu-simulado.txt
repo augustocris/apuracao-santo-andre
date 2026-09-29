@@ -1,0 +1,149 @@
+Justic¸a Eleitoral
+TribunalRegionalEleitoral[AC]
+BoletimdeUrna
+Integrac¸˜ aoSeint(P1)
+1o Turno
+(07/10/2018)
+Eleic¸˜ oesGeraisEstaduais2018
+Eleic¸˜ ao GeralFederal2018
+Munic´ ıpio 01392
+RIOBRANCO
+ZonaEleitoral 0001
+LocaldeVotac¸˜ ao 2488
+Sec¸˜ aoEleitoral 0477
+Eleitoresaptos 0325
+Comparecimento 0006
+Eleitoresfaltosos 0319
+Habilitadospor anonascimento 0006
+C´ odigoidentificac¸˜ aoUE 01600868
+DatadeaberturadaUE 07/10/2018
+Hor´ ariodeabertura 17:10:42
+DatadefechamentodaUE 07/10/2018
+Hor´ ariodefechamento 17:44:54
+RESUMODA CORRESPONDˆ ENCIA
+381.507
+C´ odigoVerificador:9.278.371.727
+======================================
+Eleic¸˜ oesGeraisEstaduais2018
+======================================
+===============SIMULADO===============-----------DEPUTADOFEDERAL----------
+Partido:10-PRB
+Nomedocandidato NumcandVotos
+KEILAGISELLE 1001 0002
+Votosdelegenda 0001
+Totaldopartido 0003
+C´ odigoVerificador:0.866.420.908
+Partido:20-PSC
+N˜ aoh´ avotosnominais
+Votosdelegenda 0001
+Totaldopartido 0001
+C´ odigoVerificador:6.314.461.664-------------------------------------
+EleitoresAptos 0325
+TotaldevotosNominais 0002
+TotaldevotosdeLegenda 0002
+Brancos 0001
+Nulos 0001
+TotalApurado 0006
+C´ odigoVerificador:6.983.292.819
+===============SIMULADO===============----------DEPUTADOESTADUAL----------
+Partido:10-PRB
+Nomedocandidato NumcandVotos
+JACIARAPATRICIA 10001 0002
+Votosdelegenda 0000
+Totaldopartido 0002
+C´ odigoVerificador:0.597.824.590
+Partido:13-PT
+Nomedocandidato NumcandVotos
+RITAFILIPA 13001 0001
+Votosdelegenda 0000
+Totaldopartido 0001
+C´ odigoVerificador:9.752.461.266
+Partido:17-PSL
+N˜ aoh´ avotosnominais
+Votosdelegenda 0001
+Totaldopartido 0001
+C´ odigoVerificador:5.444.774.556
+Partido:20-PSC
+N˜ aoh´ avotosnominais
+Votosdelegenda 0001
+Totaldopartido 0001
+C´ odigoVerificador:6.455.304.902-------------------------------------
+EleitoresAptos 0325
+TotaldevotosNominais 0003
+TotaldevotosdeLegenda 0002
+Brancos 0001
+Nulos 0000
+TotalApurado 0006
+C´ odigoVerificador:4.519.103.991
+===============SIMULADO===============---------------SENADOR---------------
+Nomedocandidato NumcandVotos
+GUSTAVOGIL 130 0001
+NUNOVIRIATO 140 0002-------------------------------------
+EleitoresAptos 0325
+TotaldevotosNominais 0003
+Brancos 0002
+Nulos 0007
+TotalApurado 0012
+C´ odigoVerificador:7.562.639.171
+===============SIMULADO===============
+1
+--------------GOVERNADOR-------------
+Nome do candidato
+Num cand Votos
+RICARDO EDUARDO
+DUARTE PATRICIO
+10 0001
+13 0001-------------------------------------
+Eleitores Aptos
+0325
+Total de votos Nominais
+Brancos
+Nulos
+Total Apurado
+C´ odigo Verificador: 2.846.185.382
+0002
+0001
+0003
+0006
+======================================
+Eleic¸˜ ao Geral Federal 2018
+======================================
+===============SIMULADO===============--------------PRESIDENTE-------------
+Nome do candidato
+Num cand Votos
+LEONARDO MATIAS
+MARTIM DIEGO
+LOURENCO LUIS
+10 0001
+13 0001
+14 0001-------------------------------------
+Eleitores Aptos
+0325
+Total de votos Nominais
+Brancos
+Nulos
+Total Apurado
+C´ odigo Verificador: 0.137.059.975
+0003
+0001
+0002
+0006
+======================================--------------- 1 de 2--------------
+ASSINATURA QR CODE:
+BA44B0AF61CBAC90D91D1FA9345EA0D2ADF19E
+0BDBB56A4A4CAC4287593E817FCABB47BC9152
+A18A540F97CAC6A31B05E5B81DBB0683F05743
+85D19B37EA6905
+===============SIMULADO===============
+C´ odigo de identificac¸˜ ao da carga
+863.719.863.196.273.714.381.507
+Ver: 6.32.0.4
+A partir do dia 10/10/2018
+o conte´ udo deste BU poder´ a ser
+conferido no enderec¸o
+www.tse.jus.br
+ASSINATURAS:
+PRESIDENTE:
+MES´ ARIOS:
+FISCAIS:
+2--------------- 2 de 2--------------

@@ -132,9 +132,9 @@ export const TSE_CARG_LABEL: Record<string, string> = {
 };
 
 const HEADER_CARGO_MAP: Array<{ re: RegExp; cargo: string }> = [
-  { re: /DEPUTADO\s+ESTADUAL/i, cargo: "Deputado Estadual" },
-  { re: /DEPUTADO\s+FEDERAL/i, cargo: "Deputado Federal" },
-  { re: /DEPUTADO\s+DISTRITAL/i, cargo: "Deputado Distrital" },
+  { re: /DEPUTADO\s*ESTADUAL/i, cargo: "Deputado Estadual" },
+  { re: /DEPUTADO\s*FEDERAL/i, cargo: "Deputado Federal" },
+  { re: /DEPUTADO\s*DISTRITAL/i, cargo: "Deputado Distrital" },
   { re: /PRESIDENTE/i, cargo: "Presidente" },
   { re: /GOVERNADOR/i, cargo: "Governador" },
   { re: /SENADOR/i, cargo: "Senador" },
@@ -155,8 +155,8 @@ export function cargoFromTseCarg(code: string): string | null {
 }
 
 /**
- * Infer cargo from candidate number length when the BU section is unknown.
- * 2 digits are Presidente *or* Governador — never default to Governador.
+ * TSE digit-length hint only — never used to assign cargo.
+ * Presidente and Governador both use 2 digits; without a banner the cargo is Indefinido.
  */
 export function inferCargoFromNumero(numero: string): string {
   const len = numero.replace(/\D/g, "").length;
@@ -174,13 +174,14 @@ export function inferCargoFromNumero(numero: string): string {
   }
 }
 
+/** Cargo comes from section banners / CARG tags only — never from digit length. */
 export function resolveVoteCargo(
-  numero: string,
+  _numero: string,
   knownCargo?: string | null
 ): string {
   const known = knownCargo?.trim();
   if (known) return known;
-  return inferCargoFromNumero(numero);
+  return CARGO_INDEFINIDO;
 }
 
 export function placeholderCandidateName(numero: string): string {

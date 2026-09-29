@@ -329,6 +329,14 @@ export function FiscalApp() {
     }
   }
 
+  const qrTotal = fragments.reduce((m, f) => Math.max(m, f.qrTotal ?? 0), 0);
+  const qrIndex = Math.max(
+    fragments.length,
+    fragments[fragments.length - 1]?.qrIndex ?? 0
+  );
+  const awaitingMore =
+    qrTotal === 0 ? fragments.length > 0 : fragments.length < qrTotal;
+
   return (
     <div className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-4">
       <header className="space-y-0.5">
@@ -440,16 +448,21 @@ export function FiscalApp() {
                   className="rounded-xl border border-teal-600 bg-teal-50 px-3 py-2.5 text-sm text-teal-950"
                 >
                   <p className="font-bold">
-                    QR {fragments.length}
-                    {fragments[fragments.length - 1]?.qrTotal
-                      ? ` de ${fragments[fragments.length - 1].qrTotal}`
-                      : ""}{" "}
-                    lido — filme o próximo
+                    {qrTotal > 1
+                      ? awaitingMore
+                        ? `QR ${qrIndex} de ${qrTotal} lido — filme o próximo`
+                        : `QR ${qrTotal} de ${qrTotal} lidos — pode revisar e enviar`
+                      : awaitingMore
+                        ? `QR ${fragments.length} lido — filme o próximo`
+                        : `QR ${fragments.length} lido — pode revisar e enviar`}
                   </p>
                   <p className="mt-0.5 text-[11px] text-teal-800">
                     Zona {fragments[0].zona} · Seção {fragments[0].secao} ·{" "}
                     {fragments.reduce((n, f) => n + f.votes.length, 0)} pares neste
                     conjunto. QRs extras da mesma urna não são duplicata.
+                    {qrTotal > 1 && awaitingMore
+                      ? " Leia o próximo QR desta urna (zona e seção têm de ser iguais)."
+                      : ""}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button
@@ -477,7 +490,7 @@ export function FiscalApp() {
                 onScan={(text) => void handleRawText(text)}
                 busy={processing}
                 resetKey={scanNonce}
-                nextQr={fragments.length > 0}
+                nextQr={awaitingMore}
               />
               <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                 <summary className="cursor-pointer text-xs font-semibold text-slate-700">

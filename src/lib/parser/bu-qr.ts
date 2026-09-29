@@ -5,6 +5,11 @@ import {
   resolveVoteCargo,
 } from "@/lib/cargos";
 import type { ParsedBu, ParsedCandidateVote } from "@/lib/types";
+import {
+  isCargoBannerLine,
+  isSkippableBuLine,
+  normalizePrintedBuText,
+} from "@/lib/parser/ocr-bu";
 
 /** Known TSE QR metadata keys (never treat as candidate numbers). */
 const METADATA_KEYS = new Set(
@@ -73,14 +78,15 @@ const METADATA_KEYS = new Set(
 
 const ZONA_PATTERNS = [
   /ZONA\s*:\s*(\d+)/i,
-  /Zona\s+Eleitoral\s*:\s*(\d+)/i,
-  /ZONA\s+ELEITORAL\s*:\s*(\d+)/i,
+  /Zona\s+Eleitoral\s*:?\s*(\d+)/i,
+  /ZONA\s+ELEITORAL\s*:?\s*(\d+)/i,
 ];
 
 const SECAO_PATTERNS = [
   /SEC(?:A|AO|ÇÃO|CAO)\s*:\s*(\d+)/i,
-  /Se[cç][aã]o\s+Eleitoral\s*:\s*(\d+)/i,
-  /SE[CÇ][AÃ]O\s+ELEITORAL\s*:\s*(\d+)/i,
+  /Secao\s+Eleitoral\s*:?\s*(\d+)/i,
+  /Se[cç][aã]o\s+Eleitoral\s*:?\s*(\d+)/i,
+  /SE[CÇ][AÃ]O\s+ELEITORAL\s*:?\s*(\d+)/i,
 ];
 
 /** Demo / paste: CAND:13 QTVO:142 */
@@ -104,13 +110,6 @@ const TSE_TOKEN_RE = /^(\d{1,5}):(\d+)$/;
  */
 const LINE_NUM_VOTOS_RE =
   /^(?:(.+?)\s+)?(\d{2,5})\s+(\d{1,7})\s*$/;
-
-/** Cargo section markers on printed BUs (with or without dashed rulers). */
-const CARGO_HEADER_RE =
-  /(?:^-{2,}.*)?(PRESIDENTE|GOVERNADOR|SENADOR|DEPUTADO\s+FEDERAL|DEPUTADO\s+ESTADUAL|PREFEITO|VEREADOR)(?:.*-{2,})?$/i;
-
-const BARE_CARGO_LINE_RE =
-  /^(PRESIDENTE|GOVERNADOR|SENADOR|DEPUTADO\s+FEDERAL|DEPUTADO\s+ESTADUAL|PREFEITO|VEREADOR)\s*$/i;
 
 export interface ParseBuOptions {
   /** When set, only return votes for these registered candidate numbers. */
@@ -217,9 +216,8 @@ function collectCandQtvo(text: string, map: Map<string, VoteAcc>) {
     if (carg) {
       currentCargo = cargoFromTseCarg(carg[1]) ?? currentCargo;
     }
-    const header = cargoFromPrintedHeader(chunk);
-    if (header && (CARGO_HEADER_RE.test(chunk.trim()) || BARE_CARGO_LINE_RE.test(chunk.trim()))) {
-      currentCargo = header;
+    if (isCargoBannerLine(chunk)) {
+      currentCargo = cargoFromPrintedHeader(chunk) ?? currentCargo;
     }
     for (const re of [VOTE_CAND_QTVO_RE, VOTE_CANDIDATO_VOTOS_RE]) {
       re.lastIndex = 0;
@@ -263,35 +261,58 @@ function collectTseNumericPairs(text: string, map: Map<string, VoteAcc>) {
 
 /**
  * Line-based dumps mimicking the printed BU columns Nome | Num cand | Votos.
- * Skips header lines and cargo separators; uses the last cargo header as context.
+ * Cargo comes ONLY from section banners (DEPUTADO FEDERAL, PRESIDENTE, …).
+ * Skips party totals, aptos, brancos/nulos, verificador, “Não há votos nominais”.
  */
 function collectLineBasedPairs(text: string, map: Map<string, VoteAcc>) {
   const lines = text.split(/\r?\n/);
   let currentCargo: string | undefined;
+  let inSignature = false;
+  const pendingNames: string[] = [];
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
+    const line = rawLine.replace(/[-_=]{2,}/g, " ").trim();
     if (!line) continue;
 
-    if (CARGO_HEADER_RE.test(line) || BARE_CARGO_LINE_RE.test(line)) {
-      currentCargo = cargoFromPrintedHeader(line) ?? currentCargo;
+    if (/assinatura/i.test(line)) {
+      inSignature = true;
       continue;
     }
-    if (/^(nome|num|votos|candidato)/i.test(line)) continue;
-    if (/CAND(?:IDATO)?\s*:/i.test(line)) continue;
+    if (inSignature) continue;
+
+    if (isCargoBannerLine(rawLine) || isCargoBannerLine(line)) {
+      currentCargo = cargoFromPrintedHeader(rawLine) ?? cargoFromPrintedHeader(line) ?? currentCargo;
+      pendingNames.length = 0;
+      continue;
+    }
+
+    if (isSkippableBuLine(line)) {
+      pendingNames.length = 0;
+      continue;
+    }
 
     const m = line.match(LINE_NUM_VOTOS_RE);
-    if (!m) continue;
-    const nomeRaw = m[1]?.trim();
-    const numero = m[2];
-    const votos = m[3];
-    if (numero.length < 2 || numero.length > 5) continue;
+    if (m && currentCargo) {
+      const numero = m[2];
+      const votos = m[3];
+      if (numero.length < 2 || numero.length > 5) continue;
+      const nomeRaw = m[1]?.trim();
+      const fromLine =
+        nomeRaw && !/^\d+$/.test(nomeRaw)
+          ? nomeRaw.replace(/\s+/g, " ")
+          : pendingNames.shift();
+      setVote(map, numero, votos, { nome: fromLine, cargo: currentCargo });
+      continue;
+    }
 
-    const nome =
-      nomeRaw && !/^\d+$/.test(nomeRaw)
-        ? nomeRaw.replace(/\s+/g, " ")
-        : undefined;
-    setVote(map, numero, votos, { nome, cargo: currentCargo });
+    if (
+      currentCargo &&
+      /^[A-Za-z .'-]+$/.test(line) &&
+      line.length >= 3 &&
+      !/^\d/.test(line)
+    ) {
+      pendingNames.push(line.replace(/\s+/g, " "));
+    }
   }
 }
 
@@ -460,14 +481,34 @@ export class BuParseError extends Error {
 export function parseQrbuMeta(
   text: string
 ): { index: number; total: number } | null {
-  const m = String(text).match(/QRBU\s*:\s*(\d+)\s*:\s*(\d+)/i);
-  if (!m) return null;
-  const index = Number.parseInt(m[1], 10);
-  const total = Number.parseInt(m[2], 10);
-  if (!Number.isFinite(index) || !Number.isFinite(total) || index < 1 || total < 1) {
-    return null;
+  const folded = normalizePrintedBuText(String(text));
+  const qrbu = folded.match(/QRBU\s*:\s*(\d+)\s*:\s*(\d+)/i);
+  if (qrbu) {
+    const index = Number.parseInt(qrbu[1], 10);
+    const total = Number.parseInt(qrbu[2], 10);
+    if (Number.isFinite(index) && Number.isFinite(total) && index >= 1 && total >= 1) {
+      return { index, total };
+    }
   }
-  return { index, total };
+
+  const bannerHits = [
+    ...folded.matchAll(/-{2,}[^\n]*?(\d{1,2})\s+de\s+(\d{1,2})/gi),
+  ];
+  for (const m of bannerHits) {
+    const index = Number.parseInt(m[1], 10);
+    const total = Number.parseInt(m[2], 10);
+    if (
+      Number.isFinite(index) &&
+      Number.isFinite(total) &&
+      index >= 1 &&
+      total >= 1 &&
+      total <= 20 &&
+      index <= total
+    ) {
+      return { index, total };
+    }
+  }
+  return null;
 }
 
 /**
@@ -527,7 +568,8 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
  * - Printed BU lines: `NOME  17  0103` under cargo headers
  * - Labels: `Zona Eleitoral: 0001` / `Seção Eleitoral: 0483`
  *
- * Always returns every `numero:votos` pair found (nome + cargo inferred).
+ * Always returns every candidate `numero` + votos under a cargo banner / CARG.
+ * Cargo is never inferred from digit length (2-digit = Presidente or Governador).
  * When `registeredNumeros` is provided, filters to those numbers
  * (flexible zero-padding / word-boundary match) — used by tests / Digitar checks.
  */
@@ -551,7 +593,8 @@ export function parseBuQrText(
     return parseBuQrText(recovered, options);
   }
 
-  const text = decodeBuPayloadStrategies(raw);
+  const decoded = decodeBuPayloadStrategies(raw);
+  const text = normalizePrintedBuText(decoded);
   const registered = options.registeredNumeros;
 
   const zonaRaw = firstMatch(text, ZONA_PATTERNS);
@@ -559,12 +602,12 @@ export function parseBuQrText(
 
   if (!zonaRaw) {
     throw new BuParseError(
-      "Zona não encontrada no QR. Formatos aceitos: ZONA:001 ou Zona Eleitoral: 0001. Se falhar, use Digitar."
+      "Zona não encontrada no QR. Formatos aceitos: ZONA:001, Zona Eleitoral: 0001 ou ZonaEleitoral 0001. Se falhar, use Digitar."
     );
   }
   if (!secaoRaw) {
     throw new BuParseError(
-      "Seção não encontrada no QR. Formatos aceitos: SECA:0483, SECAO:0483 ou Seção Eleitoral: 0483. Se falhar, use Digitar."
+      "Seção não encontrada no QR. Formatos aceitos: SECA:0483, Seção Eleitoral: 0483 ou SecaoEleitoral 0477. Se falhar, use Digitar."
     );
   }
 

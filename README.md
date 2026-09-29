@@ -76,7 +76,7 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 
 1. Open `/fiscal` on a phone (installable PWA).
 2. Tap **Escanear** (QR) or **Digitar** (formulário manual: zona, seção e votos).
-3. QR/foto parser extrai **todos** os pares `numero:votos`. Cargo vem de cabeçalho/`CARG` (Presidente ≠ Governador). 2 dígitos sem tag → `Indefinido` (não assume Governador). BUs com 2+ QRs: **Ler próximo QR desta urna** e depois **Revisar e enviar**. **Digitar** grava só oficiais.
+3. QR/foto parser extrai **todos** os pares `numero:votos`. Cargo vem **só** de banners (`PRESIDENTE`, `GOVERNADOR`, `DEPUTADO FEDERAL`… inclusive colados tipo `DEPUTADOFEDERAL`) ou tags TSE `CARG`. Nunca infere cargo pela quantidade de dígitos. 2 dígitos sem banner → `Indefinido`. BUs longos (`1 de 2` / `QRBU:1:2`): **Ler próximo QR desta urna** até unir as partes. **Digitar** grava só oficiais.
 4. Confirmation shows zona, seção, número + nome + votos → **Enviar**.
 5. Duplicate urnas return: *Urna já cadastrada anteriormente* (pre-check + UNIQUE). Vários QRs da **mesma** urna não são duplicata até o envio.
 
@@ -112,7 +112,8 @@ src/app/admin                  TV dashboard + Cadastro
 src/components/admin/          Telão (5 slots + milestones), cadastro
 src/lib/milestones.ts          Thresholds / PT-BR labels for confetti
 src/lib/cargos.ts              Digit rules per cargo
-src/lib/parser/bu-qr.ts        BU QR parser
+src/lib/parser/bu-qr.ts        BU QR + BU impresso (OCR colado)
+src/lib/parser/fixtures/       Dump TSE SIMULADO (ground-truth)
 src/lib/data.ts                Supabase + mock data layer
 supabase/migrations/           001 init · 002 admin config · 003 storage fotos · 004 BU completo · 005 chefe PIN
 ```

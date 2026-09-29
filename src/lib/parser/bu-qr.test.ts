@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   inferCargoFromNumero,
   resolveVoteCargo,
@@ -16,6 +19,12 @@ import {
   parseBuQrText,
   parseQrbuMeta,
 } from "./bu-qr";
+import { normalizePrintedBuText } from "./ocr-bu";
+
+const TSE_SIMULADO = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "fixtures/tse-bu-simulado.txt"),
+  "utf8"
+);
 
 describe("normalizeCandidateNumero", () => {
   it("strips leading zeros", () => {
@@ -40,6 +49,8 @@ describe("inferCargoFromNumero", () => {
     assert.equal(resolveVoteCargo("13", "Presidente"), "Presidente");
     assert.equal(resolveVoteCargo("13", "Governador"), "Governador");
     assert.equal(resolveVoteCargo("13", undefined), "Indefinido");
+    assert.equal(resolveVoteCargo("4545", undefined), "Indefinido");
+    assert.equal(resolveVoteCargo("13131", undefined), "Indefinido");
   });
 });
 
@@ -80,7 +91,7 @@ describe("parseBuQrText — CAND/QTVO demo format", () => {
         numero: "4545",
         quantidade: 11,
         nome: "Candidato 4545",
-        cargo: "Deputado Federal",
+        cargo: "Indefinido",
       },
     ]);
   });
@@ -159,9 +170,9 @@ describe("parseBuQrText — official TSE QR (numero:votos)", () => {
       parsed.votes.find((v) => v.numero === n)?.cargo;
     assert.equal(cargoOf("13"), "Indefinido");
     assert.equal(cargoOf("99"), "Indefinido");
-    assert.equal(cargoOf("456"), "Senador");
-    assert.equal(cargoOf("1313"), "Deputado Federal");
-    assert.equal(cargoOf("45045"), "Deputado Estadual");
+    assert.equal(cargoOf("456"), "Indefinido");
+    assert.equal(cargoOf("1313"), "Indefinido");
+    assert.equal(cargoOf("45045"), "Indefinido");
     assert.equal(parsed.votes.length, 5);
   });
 });
@@ -340,3 +351,79 @@ describe("multi-QR merge", () => {
     );
   });
 });
+
+describe("TSE BU simulado (printed dump fixture)", () => {
+  it("normalizes glued OCR labels", () => {
+    const n = normalizePrintedBuText(
+      "ZonaEleitoral 0001\nSec¸˜ aoEleitoral 0477\nDEPUTADOFEDERAL\n1de2"
+    );
+    assert.match(n, /Zona Eleitoral 0001/);
+    assert.match(n, /Secao Eleitoral 0477/);
+    assert.match(n, /DEPUTADO FEDERAL/);
+    assert.match(n, /1 de 2/);
+  });
+
+  it("parses zona, seção, QR 1/2, cargos and skips party 10", () => {
+    const parsed = parseBuQrText(TSE_SIMULADO);
+    assert.equal(parsed.zona, "001");
+    assert.equal(parsed.secao, "0477");
+    assert.equal(parsed.qrIndex, 1);
+    assert.equal(parsed.qrTotal, 2);
+
+    const key = (v: { cargo: string; numero: string }) => `${v.cargo}:${v.numero}`;
+    const by = Object.fromEntries(
+      parsed.votes.map((v) => [key(v), v])
+    );
+
+    assert.equal(by["Deputado Federal:1001"]?.quantidade, 2);
+    assert.match(by["Deputado Federal:1001"]?.nome ?? "", /KEILA/i);
+
+    assert.equal(by["Deputado Estadual:10001"]?.quantidade, 2);
+    assert.match(by["Deputado Estadual:10001"]?.nome ?? "", /JACIARA/i);
+    assert.equal(by["Deputado Estadual:13001"]?.quantidade, 1);
+    assert.match(by["Deputado Estadual:13001"]?.nome ?? "", /RITA/i);
+
+    assert.equal(by["Senador:130"]?.quantidade, 1);
+    assert.match(by["Senador:130"]?.nome ?? "", /GUSTAVO/i);
+    assert.equal(by["Senador:140"]?.quantidade, 2);
+    assert.match(by["Senador:140"]?.nome ?? "", /NUNO/i);
+
+    assert.equal(by["Governador:10"]?.quantidade, 1);
+    assert.equal(by["Governador:13"]?.quantidade, 1);
+    assert.equal(by["Presidente:10"]?.quantidade, 1);
+    assert.equal(by["Presidente:13"]?.quantidade, 1);
+    assert.equal(by["Presidente:14"]?.quantidade, 1);
+
+    const tens = parsed.votes.filter((v) => v.numero === "10");
+    assert.equal(tens.length, 2);
+    assert.deepEqual(
+      tens.map((v) => v.cargo).sort(),
+      ["Governador", "Presidente"]
+    );
+    assert.equal(
+      parsed.votes.filter((v) => v.numero === "10" && v.cargo === "Indefinido")
+        .length,
+      0
+    );
+
+    assert.equal(parsed.votes.find((v) => v.numero === "20"), undefined);
+    assert.equal(parsed.votes.find((v) => v.numero === "2488"), undefined);
+    assert.equal(parsed.votes.find((v) => v.numero === "1392"), undefined);
+    assert.equal(parsed.votes.find((v) => v.numero === "325"), undefined);
+
+    assert.equal(parsed.votes.length, 10);
+  });
+
+  it("does not mix Presidente 13 with Governador 13", () => {
+    const parsed = parseBuQrText(TSE_SIMULADO);
+    const gov13 = parsed.votes.find(
+      (v) => v.numero === "13" && v.cargo === "Governador"
+    );
+    const pres13 = parsed.votes.find(
+      (v) => v.numero === "13" && v.cargo === "Presidente"
+    );
+    assert.equal(gov13?.quantidade, 1);
+    assert.equal(pres13?.quantidade, 1);
+  });
+});
+

@@ -7,6 +7,18 @@ import type {
 } from "@/lib/types";
 import { CARGOS_OFICIAIS, DEFAULT_RELATORIO_CARGOS } from "@/lib/cargos";
 
+/**
+ * Seed demo data only for local demos.
+ * Production (Vercel) never ships ghost seed candidatos — empty mock + MOCK banner.
+ * Opt-in anytime with NEXT_PUBLIC_ALLOW_MOCK_SEED=true; opt-out in dev with =false.
+ */
+export function allowMockSeed(): boolean {
+  const flag = process.env.NEXT_PUBLIC_ALLOW_MOCK_SEED;
+  if (flag === "true") return true;
+  if (flag === "false") return false;
+  return process.env.NODE_ENV !== "production";
+}
+
 export const MOCK_CANDIDATOS: Candidato[] = [
   {
     id: "22222222-2222-2222-2222-222222222201",
@@ -125,7 +137,7 @@ export const MOCK_LOCAIS: LocalVotacao[] = [
   },
 ];
 
-const mockBoletins: BoletimUrna[] = [
+const SEED_BOLETINS: BoletimUrna[] = [
   {
     id: "bu-seed-1",
     zona: "002",
@@ -168,19 +180,31 @@ const mockBoletins: BoletimUrna[] = [
   },
 ];
 
-const mockLocais = [...MOCK_LOCAIS];
-const mockCandidatos = [...MOCK_CANDIDATOS];
+const useSeed = allowMockSeed();
+
+const mockBoletins: BoletimUrna[] = useSeed
+  ? SEED_BOLETINS.map((b) => ({ ...b }))
+  : [];
+const mockLocais: LocalVotacao[] = useSeed
+  ? MOCK_LOCAIS.map((l) => ({ ...l }))
+  : [];
+const mockCandidatos: Candidato[] = useSeed
+  ? MOCK_CANDIDATOS.map((c) => ({ ...c }))
+  : [];
+
 let mockConfig: ApuracaoConfig = {
   id: 1,
-  secoes_esperadas: MOCK_LOCAIS.length,
+  secoes_esperadas: useSeed ? MOCK_LOCAIS.length : 0,
   relatorio_cargos: [...DEFAULT_RELATORIO_CARGOS],
-  zonas_config: [
-    { zona: "001", secoes: 3 },
-    { zona: "002", secoes: 2 },
-    { zona: "003", secoes: 2 },
-    { zona: "004", secoes: 2 },
-    { zona: "005", secoes: 1 },
-  ],
+  zonas_config: useSeed
+    ? [
+        { zona: "001", secoes: 3 },
+        { zona: "002", secoes: 2 },
+        { zona: "003", secoes: 2 },
+        { zona: "004", secoes: 2 },
+        { zona: "005", secoes: 1 },
+      ]
+    : [],
   updated_at: new Date().toISOString(),
 };
 

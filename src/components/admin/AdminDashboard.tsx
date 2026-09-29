@@ -84,10 +84,24 @@ export function AdminDashboard() {
           </h1>
           <p className="mt-1 text-sm text-slate-400">
             Relatório: {cargoLabel} · atualizado às {updatedAt} · modo{" "}
-            <span className="font-semibold uppercase text-slate-200">
+            <span
+              className={cn(
+                "font-semibold uppercase",
+                snapshot.mode === "supabase"
+                  ? "text-emerald-300"
+                  : "text-amber-300"
+              )}
+            >
               {snapshot.mode}
             </span>
           </p>
+          {snapshot.mode === "mock" && (
+            <p className="mt-2 max-w-2xl text-xs text-amber-200/90">
+              Sem Supabase neste deploy: cadastros ficam só no navegador. Configure{" "}
+              <code className="text-amber-100">NEXT_PUBLIC_SUPABASE_*</code> na
+              Vercel + Redeploy.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div

@@ -32,6 +32,19 @@ import type {
   ZonaConfigRow,
 } from "@/lib/types";
 
+/** Surface PostgREST/RLS failures in Portuguese for the admin UI. */
+function supabaseWriteError(action: string, message: string): Error {
+  const lower = message.toLowerCase();
+  const rlsHint =
+    lower.includes("row-level security") ||
+    lower.includes("rls") ||
+    lower.includes("permission denied") ||
+    lower.includes("42501")
+      ? " Possível bloqueio RLS: rode a migration 002 (policy candidatos_delete_anon / insert/update) no SQL Editor."
+      : "";
+  return new Error(`${action}: ${message}.${rlsHint}`);
+}
+
 function padZona(zona: string): string {
   return zona.replace(/\D/g, "").padStart(3, "0");
 }
@@ -354,7 +367,7 @@ export async function upsertCandidato(input: {
       .eq("id", input.id)
       .select("*")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw supabaseWriteError("Falha ao atualizar candidato", error.message);
     return data as Candidato;
   }
 
@@ -363,7 +376,7 @@ export async function upsertCandidato(input: {
     .upsert(row, { onConflict: "numero,cargo" })
     .select("*")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) throw supabaseWriteError("Falha ao cadastrar candidato", error.message);
   return data as Candidato;
 }
 
@@ -374,7 +387,7 @@ export async function removeCandidato(id: string): Promise<void> {
     return;
   }
   const { error } = await supabase.from("candidatos").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) throw supabaseWriteError("Falha ao remover candidato", error.message);
 }
 
 export async function findLocal(
@@ -753,12 +766,16 @@ export async function importCandidatos(
     normalized,
     { onConflict: "numero,cargo", count: "exact" }
   );
-  if (error) throw new Error(error.message);
+  if (error) throw supabaseWriteError("Falha ao importar candidatos", error.message);
   return count ?? normalized.length;
 }
 
 export function dataModeLabel(): "supabase" | "mock" {
   return hasSupabaseEnv() ? "supabase" : "mock";
+}
+
+export function isSupabaseMode(): boolean {
+  return hasSupabaseEnv();
 }
 
 export { padZona, padSecao };

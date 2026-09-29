@@ -23,7 +23,9 @@ npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigi
 | `NEXT_PUBLIC_SUPABASE_URL` | for production | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | for production | Supabase anon/public key |
 
-If either variable is missing, the app runs in **mock mode**: in-memory locais, candidatos, config, and boletins so `/fiscal` and `/admin` remain fully demoable.
+If either variable is missing, the app runs in **mock mode** (in-memory only — nothing is written to Supabase). On Vercel/production the mock store starts **empty** (no ghost seed candidatos); local `next dev` still seeds demo data unless `NEXT_PUBLIC_ALLOW_MOCK_SEED=false`.
+
+In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows the active source.
 
 ## Supabase setup
 
@@ -72,9 +74,10 @@ Dark high-contrast layout for TV:
 ## Deploy (Vercel + Supabase)
 
 1. Push to `main` — Vercel auto-deploys if the project is connected.
-2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set.
-3. Run SQL migrations `001` then `002` on Supabase (002 is manual if already live).
-4. Point fiscales to `/fiscal` and the telão to `/admin`.
+2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
+3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
+4. Run SQL migrations `001` then `002` on Supabase (002 is manual if already live; includes `candidatos_delete_anon`).
+5. Point fiscales to `/fiscal` and the telão to `/admin`.
 
 ## Stack
 

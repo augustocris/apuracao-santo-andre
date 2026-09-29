@@ -31,6 +31,7 @@ import {
 } from "@/lib/cargos";
 import {
   applyZonasExpectativa,
+  dataModeLabel,
   getConfig,
   listCandidatos,
   removeCandidato,
@@ -50,6 +51,7 @@ interface AdminCadastroProps {
 const EMPTY_ZONA: ZonaConfigRow = { zona: "", secoes: 1 };
 
 export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
+  const mode = dataModeLabel();
   const [tab, setTab] = useState<CadastroTab>("candidatos");
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [config, setConfig] = useState<ApuracaoConfig | null>(null);
@@ -249,15 +251,48 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
 
   return (
     <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4 md:p-5">
-      <div>
-        <h2 className="text-lg font-bold text-white">Cadastro da apuração</h2>
-        <p className="text-sm text-slate-400">
-          Configure candidatos, expectativa de seções e o que aparece no telão.
-          {config
-            ? ` · ${config.secoes_esperadas} seções esperadas`
-            : ""}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-white">Cadastro da apuração</h2>
+          <p className="text-sm text-slate-400">
+            Configure candidatos, expectativa de seções e o que aparece no telão.
+            {config
+              ? ` · ${config.secoes_esperadas} seções esperadas`
+              : ""}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wide",
+            mode === "supabase"
+              ? "border border-emerald-400/40 bg-emerald-950/50 text-emerald-200"
+              : "border border-amber-400/50 bg-amber-950/60 text-amber-100"
+          )}
+          title={
+            mode === "supabase"
+              ? "Lendo e gravando na tabela candidatos do Supabase"
+              : "Sem env Supabase — dados só nesta sessão do navegador"
+          }
+        >
+          Fonte: {mode === "supabase" ? "Supabase" : "MOCK"}
+        </span>
       </div>
+
+      {mode === "mock" && (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-400/40 bg-amber-950/40 px-4 py-3 text-sm text-amber-50"
+        >
+          <p className="font-semibold">Modo MOCK ativo — nada é gravado no Supabase.</p>
+          <p className="mt-1 text-amber-100/90">
+            Na Vercel → Project → Settings → Environment Variables, defina{" "}
+            <code className="text-amber-200">NEXT_PUBLIC_SUPABASE_URL</code> e{" "}
+            <code className="text-amber-200">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{" "}
+            (Production), depois <strong>Redeploy</strong> e hard refresh (Ctrl+Shift+R).
+            Cadastros feitos agora somem ao recarregar e não aparecem no Table Editor.
+          </p>
+        </div>
+      )}
 
       <div
         role="tablist"
@@ -416,8 +451,9 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
             </h3>
             {candidatos.length === 0 ? (
               <p className="rounded-xl border border-dashed border-white/20 p-6 text-center text-sm text-slate-400">
-                Nenhum candidato da corrida estadual ainda. Cadastre Governador,
-                Senadores, Dep. Federal e Dep. Estadual.
+                {mode === "supabase"
+                  ? "Nenhum candidato no Supabase. A tabela está vazia — cadastre Governador, Senadores, Dep. Federal e Dep. Estadual."
+                  : "Nenhum candidato no modo MOCK. Cadastre aqui para demo local (não sincroniza com o banco) ou configure as variáveis Supabase na Vercel."}
               </p>
             ) : (
               <ul className="divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10">

@@ -10,8 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { CARGOS_FISCAL_ORDEM, CARGOS_OFICIAIS } from "@/lib/cargos";
 import type { ConfirmVoteRow, LocalVotacao } from "@/lib/types";
 import { formatVotes } from "@/lib/utils";
@@ -23,8 +21,6 @@ interface ConfirmTransmitModalProps {
   zona: string;
   secao: string;
   rows: ConfirmVoteRow[];
-  fiscalNome: string;
-  onFiscalNomeChange: (value: string) => void;
   onConfirm: () => void;
   transmitting: boolean;
 }
@@ -36,8 +32,6 @@ export function ConfirmTransmitModal({
   zona,
   secao,
   rows,
-  fiscalNome,
-  onFiscalNomeChange,
   onConfirm,
   transmitting,
 }: ConfirmTransmitModalProps) {
@@ -59,25 +53,25 @@ export function ConfirmTransmitModal({
   }) {
     if (items.length === 0) return null;
     return (
-      <div className="space-y-2">
-        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+      <div className="space-y-1.5">
+        <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
           {title}
         </h3>
-        <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-slate-50">
+        <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-slate-50">
           {items.map((row) => (
             <li
               key={row.candidato.id}
-              className="flex items-center justify-between gap-3 px-3 py-2.5"
+              className="flex items-center justify-between gap-3 px-3 py-2"
             >
-              <div>
-                <p className="font-semibold text-slate-900">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">
                   {row.candidato.nome}
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="text-[11px] text-slate-500">
                   Nº {row.candidato.numero}
                 </p>
               </div>
-              <p className="text-lg font-bold tabular-nums text-teal-800">
+              <p className="text-base font-bold tabular-nums text-teal-800">
                 {formatVotes(row.quantidade)}
               </p>
             </li>
@@ -91,15 +85,14 @@ export function ConfirmTransmitModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Confirmar boletim</DialogTitle>
+          <DialogTitle>Confirmar envio</DialogTitle>
           <DialogDescription>
-            Revise zona, seção e votos dos candidatos cadastrados antes de
-            enviar.
+            Revise zona, seção e votos antes de confirmar.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3">
+        <div className="space-y-3">
+          <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5">
             <p className="text-sm font-medium text-teal-900">
               Zona {zona} · Seção {secao}
             </p>
@@ -115,21 +108,10 @@ export function ConfirmTransmitModal({
           <Section title="Outros" items={others} />
 
           {rows.length === 0 && (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
               Nenhum voto corresponde a candidatos cadastrados.
             </p>
           )}
-
-          <div className="space-y-2">
-            <Label htmlFor="fiscal-nome">Nome do fiscal (opcional)</Label>
-            <Input
-              id="fiscal-nome"
-              value={fiscalNome}
-              onChange={(e) => onFiscalNomeChange(e.target.value)}
-              placeholder="Seu nome"
-              disabled={transmitting}
-            />
-          </div>
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
@@ -139,7 +121,7 @@ export function ConfirmTransmitModal({
             onClick={() => onOpenChange(false)}
             disabled={transmitting}
           >
-            Cancelar
+            Voltar
           </Button>
           <Button
             type="button"
@@ -152,7 +134,7 @@ export function ConfirmTransmitModal({
             ) : (
               <Send className="size-4" />
             )}
-            Enviar
+            Confirmar envio
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 interface Celebration {
   id: string;
+  candidateName: string;
   message: string;
 }
 
@@ -65,12 +66,15 @@ export function MilestoneCelebration({
     if (params.get("demoCelebrate") !== "1") return;
     const threshold = Number(params.get("demoThreshold") || "50000");
     const value = Number.isFinite(threshold) ? threshold : 50_000;
+    const demoName =
+      params.get("demoName")?.trim() || "Candidato demonstração";
     let cancelled = false;
     const t = window.setTimeout(() => {
       if (cancelled) return;
       showingRef.current = true;
       setActive({
         id: `demo:${value}`,
+        candidateName: demoName,
         message: milestoneMessage(value),
       });
       fireConfettiBurst();
@@ -101,6 +105,7 @@ export function MilestoneCelebration({
           if (primedRef.current) {
             pending.push({
               id: key,
+              candidateName: row.candidato.nome,
               message: milestoneMessage(threshold),
             });
           }
@@ -146,8 +151,8 @@ export function MilestoneCelebration({
           "rounded-2xl border border-amber-300/50 bg-slate-950/90 px-8 py-5 text-center shadow-[0_0_48px_rgba(251,191,36,0.35)] backdrop-blur-md"
         )}
       >
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-300">
-          Marco atingido
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-300 md:text-sm">
+          {active.candidateName}
         </p>
         <p className="mt-2 text-2xl font-bold text-white md:text-4xl">
           {active.message}

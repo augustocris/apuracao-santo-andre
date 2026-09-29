@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, ClipboardList, Loader2, QrCode, Sun } from "lucide-react";
 import { BuScanner } from "@/components/fiscal/BuScanner";
 import { ManualBuForm, type ManualBuSubmit } from "@/components/fiscal/ManualBuForm";
@@ -31,7 +31,13 @@ export function FiscalApp() {
   const [local, setLocal] = useState<LocalVotacao | null>(null);
   const [rows, setRows] = useState<ConfirmVoteRow[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [fiscalNome, setFiscalNome] = useState("");
+  const [formResetKey, setFormResetKey] = useState(0);
+
+  useEffect(() => {
+    if (!success) return;
+    const t = window.setTimeout(() => setSuccess(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [success]);
 
   const openConfirm = useCallback(
     async (opts: {
@@ -139,7 +145,6 @@ export function FiscalApp() {
     setTransmitting(true);
     setError(null);
     try {
-      // Re-check duplicate right before insert
       if (await urnaJaCadastrada(parsed.zona, parsed.secao)) {
         setError(DUPLICATE_MSG);
         setConfirmOpen(false);
@@ -150,7 +155,6 @@ export function FiscalApp() {
         zona: parsed.zona,
         secao: parsed.secao,
         rawText: parsed.rawText,
-        fiscalNome: fiscalNome.trim() || undefined,
         votes: rows.map((r) => ({
           candidatoId: r.candidato.id,
           quantidade: r.quantidade,
@@ -162,11 +166,13 @@ export function FiscalApp() {
         return;
       }
       setSuccess(
-        `Votos transmitidos: ${local?.nome_escola ?? `Zona ${parsed.zona}`} · Seção ${parsed.secao}`
+        `Enviado · Zona ${parsed.zona} · Seção ${parsed.secao}`
       );
       setConfirmOpen(false);
       setParsed(null);
+      setLocal(null);
       setRows([]);
+      setFormResetKey((k) => k + 1);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Falha ao transmitir os votos."
@@ -177,21 +183,20 @@ export function FiscalApp() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-5 px-4 py-6">
-      <header className="space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
-          <Sun className="size-3.5" />
+    <div className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-4">
+      <header className="space-y-0.5">
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+          <Sun className="size-3" />
           Modo fiscal · tela clara
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-lg font-bold leading-tight tracking-tight text-slate-900 sm:text-xl">
           Apuração Paralela
         </h1>
-        <p className="text-sm text-slate-600">
-          Santo André — escaneie o QR ou digite zona, seção e votos dos
-          candidatos cadastrados.
+        <p className="text-[11px] leading-snug text-slate-600 sm:text-xs">
+          Santo André — escaneie o QR ou digite zona, seção e votos.
         </p>
-        <p className="text-xs text-slate-500">
-          Fonte de dados:{" "}
+        <p className="text-[10px] text-slate-500">
+          Fonte:{" "}
           <span className="font-semibold uppercase">{dataModeLabel()}</span>
         </p>
       </header>
@@ -199,9 +204,9 @@ export function FiscalApp() {
       {processing && (
         <div
           role="status"
-          className="flex items-center gap-3 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-4 text-teal-900"
+          className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-900"
         >
-          <Loader2 className="size-5 animate-spin" />
+          <Loader2 className="size-4 animate-spin" />
           <span className="font-semibold">Preparando envio…</span>
         </div>
       )}
@@ -209,7 +214,7 @@ export function FiscalApp() {
       {error && (
         <p
           role="alert"
-          className="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900"
+          className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-900"
         >
           {error}
         </p>
@@ -218,17 +223,17 @@ export function FiscalApp() {
       {success && (
         <p
           role="status"
-          className="flex items-start gap-2 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950"
+          className="flex items-start gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-950"
         >
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
           {success}
         </p>
       )}
 
-      <div className="w-full space-y-4">
+      <div className="w-full space-y-2">
         <div
           role="tablist"
-          className="grid h-12 w-full grid-cols-2 gap-1 rounded-xl bg-slate-200/80 p-1"
+          className="grid h-9 w-full grid-cols-2 gap-1 rounded-lg bg-slate-200/80 p-0.5"
         >
           <Button
             type="button"
@@ -236,14 +241,14 @@ export function FiscalApp() {
             aria-selected={tab === "scan"}
             variant="ghost"
             className={cn(
-              "h-full rounded-lg text-sm font-semibold",
+              "h-full rounded-md text-xs font-semibold",
               tab === "scan"
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-600 hover:bg-white/50"
             )}
             onClick={() => setTab("scan")}
           >
-            <QrCode className="size-4" />
+            <QrCode className="size-3.5" />
             Escanear
           </Button>
           <Button
@@ -252,14 +257,14 @@ export function FiscalApp() {
             aria-selected={tab === "manual"}
             variant="ghost"
             className={cn(
-              "h-full rounded-lg text-sm font-semibold",
+              "h-full rounded-md text-xs font-semibold",
               tab === "manual"
                 ? "bg-white text-slate-900 shadow-sm"
                 : "text-slate-600 hover:bg-white/50"
             )}
             onClick={() => setTab("manual")}
           >
-            <ClipboardList className="size-4" />
+            <ClipboardList className="size-3.5" />
             Digitar
           </Button>
         </div>
@@ -269,6 +274,7 @@ export function FiscalApp() {
           <ManualBuForm
             onSubmit={(payload) => void handleManual(payload)}
             busy={processing || transmitting}
+            resetKey={formResetKey}
           />
         )}
       </div>
@@ -280,8 +286,6 @@ export function FiscalApp() {
         zona={parsed?.zona ?? ""}
         secao={parsed?.secao ?? ""}
         rows={rows}
-        fiscalNome={fiscalNome}
-        onFiscalNomeChange={setFiscalNome}
         onConfirm={() => void handleConfirm()}
         transmitting={transmitting}
       />

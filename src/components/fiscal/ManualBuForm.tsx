@@ -18,6 +18,8 @@ export interface ManualBuSubmit {
 interface ManualBuFormProps {
   onSubmit: (payload: ManualBuSubmit) => void;
   busy?: boolean;
+  /** Increment to clear zona/seção/votos after a successful transmit. */
+  resetKey?: number;
 }
 
 function sortCandidatosFiscais(list: Candidato[]): Candidato[] {
@@ -30,12 +32,11 @@ function sortCandidatosFiscais(list: Candidato[]): Candidato[] {
       const oa = order.get(a.cargo as (typeof CARGOS_FISCAL_ORDEM)[number]) ?? 99;
       const ob = order.get(b.cargo as (typeof CARGOS_FISCAL_ORDEM)[number]) ?? 99;
       if (oa !== ob) return oa - ob;
-      // Senadores (and any ties): registration / número order
       return a.numero.localeCompare(b.numero, "pt-BR", { numeric: true });
     });
 }
 
-export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
+export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps) {
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -76,6 +77,19 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (resetKey === 0) return;
+    setZona("");
+    setSecao("");
+    setVotos((prev) => {
+      const next: Record<string, string> = {};
+      for (const id of Object.keys(prev)) {
+        next[id] = "";
+      }
+      return next;
+    });
+  }, [resetKey]);
 
   const grouped = useMemo(() => {
     return CARGOS_FISCAL_ORDEM.map((cargo) => ({
@@ -122,8 +136,8 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-4 py-6 text-slate-700">
-        <Loader2 className="size-5 animate-spin text-teal-700" />
+      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
+        <Loader2 className="size-4 animate-spin text-teal-700" />
         <span className="font-medium">Carregando candidatos…</span>
       </div>
     );
@@ -133,7 +147,7 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
     return (
       <p
         role="alert"
-        className="rounded-2xl border-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-900"
+        className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-900"
       >
         {loadError}
       </p>
@@ -142,23 +156,22 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
 
   if (candidatos.length === 0) {
     return (
-      <p className="rounded-2xl border-2 border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-600">
-        Nenhum candidato cadastrado. Peça ao admin para cadastrar na aba
-        Cadastro do telão.
+      <p className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-sm text-slate-600">
+        Nenhum candidato cadastrado para digitação. Cadastre no admin.
       </p>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="rounded-2xl border-2 border-slate-300 bg-white p-4 shadow-sm">
-        <p className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-700">
-          <ClipboardList className="size-4 text-teal-700" />
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+      <div className="rounded-xl border border-slate-300 bg-white px-3 py-2">
+        <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-700">
+          <ClipboardList className="size-3.5 text-teal-700" />
           Digitar boletim
         </p>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="manual-zona" className="text-slate-800">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-0.5">
+            <Label htmlFor="manual-zona" className="text-xs text-slate-800">
               Zona *
             </Label>
             <Input
@@ -170,13 +183,13 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
                 setZona(e.target.value.replace(/\D/g, "").slice(0, 3))
               }
               placeholder="001"
-              className="h-12 border-2 border-slate-300 text-lg font-semibold tabular-nums"
+              className="h-9 border border-slate-300 text-base font-semibold tabular-nums"
               required
               disabled={busy}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="manual-secao" className="text-slate-800">
+          <div className="space-y-0.5">
+            <Label htmlFor="manual-secao" className="text-xs text-slate-800">
               Seção *
             </Label>
             <Input
@@ -188,7 +201,7 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
                 setSecao(e.target.value.replace(/\D/g, "").slice(0, 4))
               }
               placeholder="0001"
-              className="h-12 border-2 border-slate-300 text-lg font-semibold tabular-nums"
+              className="h-9 border border-slate-300 text-base font-semibold tabular-nums"
               required
               disabled={busy}
             />
@@ -196,28 +209,30 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="flex flex-col gap-1.5">
         {grouped.map((group) => (
           <section
             key={group.cargo}
-            className="space-y-2 rounded-2xl border-2 border-slate-300 bg-white p-4 shadow-sm"
+            className="rounded-xl border border-slate-300 bg-white px-3 py-1.5"
           >
-            <h3 className="text-xs font-bold uppercase tracking-wide text-teal-800">
+            <h3 className="mb-1 text-[10px] font-bold uppercase tracking-wide text-teal-800">
               {labelCargoCurto(group.cargo)}
             </h3>
-            <ul className="space-y-3">
+            <ul className="space-y-1">
               {group.items.map((c) => (
                 <li
                   key={c.id}
-                  className="flex items-center justify-between gap-3"
+                  className="flex items-center justify-between gap-2"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-slate-900">
+                    <p className="truncate text-sm font-semibold leading-tight text-slate-900">
                       {c.nome}
                     </p>
-                    <p className="text-xs text-slate-500">Nº {c.numero}</p>
+                    <p className="text-[10px] leading-tight text-slate-500">
+                      Nº {c.numero}
+                    </p>
                   </div>
-                  <div className="w-28 shrink-0 space-y-1">
+                  <div className="w-20 shrink-0">
                     <Label
                       htmlFor={`voto-${c.id}`}
                       className="sr-only"
@@ -232,7 +247,7 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
                         setVotos((prev) => ({ ...prev, [c.id]: digits }));
                       }}
                       placeholder="0"
-                      className="h-12 border-2 border-slate-300 text-center text-lg font-bold tabular-nums"
+                      className="h-9 border border-slate-300 text-center text-base font-bold tabular-nums"
                       disabled={busy}
                     />
                   </div>
@@ -243,20 +258,16 @@ export function ManualBuForm({ onSubmit, busy }: ManualBuFormProps) {
         ))}
       </div>
 
-      <p className="text-xs text-slate-500">
-        Preencha ao menos um campo de votos. Em seguida revise e envie.
-      </p>
-
       <Button
         type="submit"
         size="lg"
-        className="h-14 w-full bg-teal-700 text-base font-semibold text-white hover:bg-teal-800"
+        className="mt-0.5 h-11 w-full bg-teal-700 text-sm font-semibold text-white hover:bg-teal-800"
         disabled={busy || !canSubmit}
       >
         {busy ? (
-          <Loader2 className="size-5 animate-spin" />
+          <Loader2 className="size-4 animate-spin" />
         ) : (
-          <Send className="size-5" />
+          <Send className="size-4" />
         )}
         Revisar e enviar
       </Button>

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   dataModeLabel,
   findLocal,
+  listCandidatos,
   resolveConfirmRows,
   transmitVotes,
   urnaJaCadastrada,
@@ -71,7 +72,7 @@ export function FiscalApp() {
         const resolved = await resolveConfirmRows(opts.votes);
         if (resolved.rows.length === 0) {
           throw new Error(
-            "Nenhum candidato cadastrado corresponde aos votos informados. Verifique o cadastro no admin."
+            `QR/formulário lido, mas nenhum número cadastrado corresponde aos votos. Verifique o cadastro no admin ou use Digitar.`
           );
         }
 
@@ -117,7 +118,14 @@ export function FiscalApp() {
         setSuccess(null);
         setProcessing(true);
         await new Promise((r) => setTimeout(r, 200));
-        const result = parseBuQrText(raw);
+        const cadastrados = await listCandidatos({ activeRaceOnly: true });
+        const registeredNumeros = cadastrados.map((c) => c.numero);
+        if (registeredNumeros.length === 0) {
+          throw new Error(
+            "Nenhum candidato cadastrado no admin. Cadastre os números antes de escanear o BU."
+          );
+        }
+        const result = parseBuQrText(raw, { registeredNumeros });
         await openConfirm({
           zona: result.zona,
           secao: result.secao,

@@ -60,7 +60,7 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 
 1. Open `/fiscal` on a phone (installable PWA).
 2. Tap **Escanear** (QR) or **Digitar** (formulário manual: zona, seção e votos).
-3. QR parser extracts `ZONA`, `SECA/SECAO`, and votes; only registered candidate numbers are kept. The manual form lists cadastrados by cargo.
+3. QR parser aceita formato TSE oficial (`4545:11`), `CAND/QTVO`, `CANDIDATO/VOTOS` e linhas do BU impresso (`Nome  17  0103`); casa só com números cadastrados (zeros à esquerda ok). Sem match: mensagem lista os cadastrados. O formulário **Digitar** lista cadastrados por cargo.
 4. Confirmation shows zona, seção, número + nome + votos → **Enviar**.
 5. Duplicate urnas return: *Urna já cadastrada anteriormente* (pre-check + UNIQUE).
 

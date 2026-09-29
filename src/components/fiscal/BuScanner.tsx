@@ -61,7 +61,7 @@ const FALLBACK_CONSTRAINTS: MediaTrackConstraints = {
 /** Continuous autofocus when the browser exposes the constraint. */
 const FOCUS_CONSTRAINTS = {
   advanced: [{ focusMode: "continuous" }],
-} as MediaTrackConstraints;
+} as unknown as MediaTrackConstraints;
 
 export function BuScanner({ onScan, busy }: BuScannerProps) {
   const [active, setActive] = useState(false);

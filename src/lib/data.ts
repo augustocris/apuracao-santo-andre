@@ -18,6 +18,7 @@ import {
   DEFAULT_RELATORIO_CARGOS,
   validarNumeroCargo,
 } from "@/lib/cargos";
+import { normalizeCandidateNumero } from "@/lib/parser/bu-qr";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
 import type {
   ApuracaoConfig,
@@ -438,12 +439,18 @@ export async function resolveConfirmRows(
   votes: Array<{ numero: string; quantidade: number }>
 ): Promise<{ rows: ConfirmVoteRow[]; unknown: string[] }> {
   const candidatos = await listCandidatos({ activeRaceOnly: true });
-  const byNumero = new Map(candidatos.map((c) => [c.numero, c]));
+  // Match 17 ↔ 0017 / padded variants via canonical digit form.
+  const byNumero = new Map<string, (typeof candidatos)[number]>();
+  for (const c of candidatos) {
+    byNumero.set(normalizeCandidateNumero(c.numero), c);
+    byNumero.set(c.numero, c);
+  }
   const rows: ConfirmVoteRow[] = [];
   const unknown: string[] = [];
 
   for (const vote of votes) {
-    const candidato = byNumero.get(vote.numero);
+    const canon = normalizeCandidateNumero(vote.numero);
+    const candidato = byNumero.get(canon) ?? byNumero.get(vote.numero);
     if (!candidato) {
       unknown.push(vote.numero);
       continue;

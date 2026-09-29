@@ -17,7 +17,7 @@ import {
   padZona,
   padSecao,
 } from "@/lib/data";
-import { parseBuQrText, SAMPLE_BU_TEXT } from "@/lib/parser/bu-qr";
+import { parseBuQrText, mergeParsedBus, SAMPLE_BU_TEXT, SAMPLE_TSE_QR_PART1, SAMPLE_TSE_QR_PART2 } from "@/lib/parser/bu-qr";
 import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao, ParsedBu } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +35,8 @@ export function FiscalApp() {
   const [rows, setRows] = useState<ConfirmVoteRow[]>([]);
   const [discovered, setDiscovered] = useState<DiscoveredVote[]>([]);
   const [ingestMode, setIngestMode] = useState<"full" | "featured">("full");
+  const [fragments, setFragments] = useState<ParsedBu[]>([]);
+  const [scanNonce, setScanNonce] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formResetKey, setFormResetKey] = useState(0);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
@@ -172,22 +174,63 @@ export function FiscalApp() {
         setError(null);
         setSuccess(null);
         setProcessing(true);
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 150));
         const result = parseBuQrText(raw);
-        await openConfirm({
-          zona: result.zona,
-          secao: result.secao,
-          votes: result.votes,
-          rawText: result.rawText,
-          mode: "full",
-        });
+
+        if (fragments.length > 0) {
+          const first = fragments[0];
+          if (result.zona !== first.zona || result.secao !== first.secao) {
+            throw new Error(
+              `Este QR é de outra urna (zona ${result.zona} / seção ${result.secao}; a urna atual é zona ${first.zona} / seção ${first.secao}).`
+            );
+          }
+        } else if (await urnaJaCadastrada(result.zona, result.secao)) {
+          setError(DUPLICATE_MSG);
+          setProcessing(false);
+          return;
+        }
+
+        setFragments((prev) => [...prev, result]);
+        setScanNonce((n) => n + 1);
+        setProcessing(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Falha ao processar o BU.");
         setProcessing(false);
       }
     },
-    [openConfirm]
+    [fragments]
   );
+
+  async function handleRevisarUrna() {
+    if (fragments.length === 0) return;
+    try {
+      const merged = mergeParsedBus(fragments);
+      await openConfirm({
+        zona: merged.zona,
+        secao: merged.secao,
+        votes: merged.votes,
+        rawText: merged.rawText,
+        mode: "full",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao unir os QRs.");
+    }
+  }
+
+  function handleCancelFragments() {
+    setFragments([]);
+    setScanNonce((n) => n + 1);
+    setError(null);
+    setNotice(null);
+  }
+
+  function handleTagCargo(numero: string, fromCargo: string, toCargo: string) {
+    setDiscovered((prev) =>
+      prev.map((d) =>
+        d.numero === numero && d.cargo === fromCargo ? { ...d, cargo: toCargo } : d
+      )
+    );
+  }
 
   const handleManual = useCallback(
     async (payload: ManualBuSubmit) => {
@@ -267,6 +310,7 @@ export function FiscalApp() {
       setRows([]);
       setDiscovered([]);
       setNotice(null);
+      setFragments([]);
       setFormResetKey((k) => k + 1);
       setTab("manual");
     } catch (err) {
@@ -344,6 +388,7 @@ export function FiscalApp() {
           secao={parsed?.secao ?? ""}
           rows={rows}
           discovered={discovered}
+          onTagCargo={handleTagCargo}
           onConfirm={() => void handleConfirm()}
           transmitting={transmitting}
           notice={notice}
@@ -389,9 +434,50 @@ export function FiscalApp() {
           </div>
           {tab === "scan" ? (
             <div className="space-y-2">
+              {fragments.length > 0 && (
+                <div
+                  role="status"
+                  className="rounded-xl border border-teal-600 bg-teal-50 px-3 py-2.5 text-sm text-teal-950"
+                >
+                  <p className="font-bold">
+                    QR {fragments.length}
+                    {fragments[fragments.length - 1]?.qrTotal
+                      ? ` de ${fragments[fragments.length - 1].qrTotal}`
+                      : ""}{" "}
+                    lido — filme o próximo
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-teal-800">
+                    Zona {fragments[0].zona} · Seção {fragments[0].secao} ·{" "}
+                    {fragments.reduce((n, f) => n + f.votes.length, 0)} pares neste
+                    conjunto. QRs extras da mesma urna não são duplicata.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="bg-teal-700 text-white hover:bg-teal-800"
+                      onClick={() => void handleRevisarUrna()}
+                      disabled={processing}
+                    >
+                      Revisar e enviar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-slate-300"
+                      onClick={handleCancelFragments}
+                    >
+                      Cancelar urna
+                    </Button>
+                  </div>
+                </div>
+              )}
               <BuScanner
                 onScan={(text) => void handleRawText(text)}
                 busy={processing}
+                resetKey={scanNonce}
+                nextQr={fragments.length > 0}
               />
               <details className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                 <summary className="cursor-pointer text-xs font-semibold text-slate-700">
@@ -399,6 +485,7 @@ export function FiscalApp() {
                 </summary>
                 <PasteBuForm
                   busy={processing}
+                  fragmentCount={fragments.length}
                   onSubmit={(text) => void handleRawText(text)}
                 />
               </details>
@@ -419,9 +506,11 @@ export function FiscalApp() {
 function PasteBuForm({
   busy,
   onSubmit,
+  fragmentCount = 0,
 }: {
   busy?: boolean;
   onSubmit: (text: string) => void;
+  fragmentCount?: number;
 }) {
   const [text, setText] = useState("");
   return (
@@ -460,6 +549,18 @@ function PasteBuForm({
           onClick={() => setText(SAMPLE_BU_TEXT)}
         >
           Exemplo de teste
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="border-slate-300"
+          disabled={busy}
+          onClick={() =>
+            setText(fragmentCount === 0 ? SAMPLE_TSE_QR_PART1 : SAMPLE_TSE_QR_PART2)
+          }
+        >
+          Exemplo QR {fragmentCount === 0 ? "1/2" : "2/2"}
         </Button>
       </div>
     </form>

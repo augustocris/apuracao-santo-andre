@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MonitorPlay, Smartphone } from "lucide-react";
+import { MonitorPlay, Smartphone, Trophy } from "lucide-react";
 
 export default function HomePage() {
   return (
@@ -18,7 +18,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Link
             href="/fiscal"
             className="group rounded-3xl border-2 border-teal-700/20 bg-white/80 p-6 shadow-sm transition hover:border-teal-700 hover:shadow-md"
@@ -37,6 +37,16 @@ export default function HomePage() {
             <h2 className="text-xl font-bold">Telão / Admin</h2>
             <p className="mt-1 text-sm text-slate-300">
               Cadastro, ranking ao vivo, relatório e feed de urnas.
+            </p>
+          </Link>
+          <Link
+            href="/chefe"
+            className="group rounded-3xl border-2 border-slate-300 bg-white/90 p-6 shadow-sm transition hover:border-teal-700 hover:shadow-md sm:col-span-1"
+          >
+            <Trophy className="mb-3 size-8 text-teal-800" />
+            <h2 className="text-xl font-bold text-slate-900">Acesso chefe</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Ranking completo com Presidente, filtros e busca. PIN simples.
             </p>
           </Link>
         </div>

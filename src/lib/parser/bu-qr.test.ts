@@ -6,11 +6,15 @@ import {
 } from "../cargos";
 import {
   SAMPLE_BU_TEXT,
+  SAMPLE_TSE_QR_PART1,
+  SAMPLE_TSE_QR_PART2,
   SAMPLE_TSE_QR_TEXT,
   decodeBuPayloadStrategies,
   looksBinaryPayload,
+  mergeParsedBus,
   normalizeCandidateNumero,
   parseBuQrText,
+  parseQrbuMeta,
 } from "./bu-qr";
 
 describe("normalizeCandidateNumero", () => {
@@ -23,8 +27,8 @@ describe("normalizeCandidateNumero", () => {
 });
 
 describe("inferCargoFromNumero", () => {
-  it("maps digit length to statewide cargos", () => {
-    assert.equal(inferCargoFromNumero("13"), "Governador");
+  it("maps digit length without assuming Presidente vs Governador", () => {
+    assert.equal(inferCargoFromNumero("13"), "Indefinido");
     assert.equal(inferCargoFromNumero("131"), "Senador");
     assert.equal(inferCargoFromNumero("1313"), "Deputado Federal");
     assert.equal(inferCargoFromNumero("13131"), "Deputado Estadual");
@@ -34,7 +38,8 @@ describe("inferCargoFromNumero", () => {
 
   it("keeps known cargo from headers instead of digit inference", () => {
     assert.equal(resolveVoteCargo("13", "Presidente"), "Presidente");
-    assert.equal(resolveVoteCargo("13", undefined), "Governador");
+    assert.equal(resolveVoteCargo("13", "Governador"), "Governador");
+    assert.equal(resolveVoteCargo("13", undefined), "Indefinido");
   });
 });
 
@@ -142,17 +147,18 @@ describe("parseBuQrText — official TSE QR (numero:votos)", () => {
         numero: "17",
         quantidade: 103,
         nome: "Candidato 17",
-        cargo: "Governador",
+        cargo: "Indefinido",
       },
     ]);
   });
 
-  it("infers cargo from digit length when CARG is absent", () => {
+  it("does not treat 2-digit numbers as Governador when CARG is absent", () => {
     const text = `ZONA:9 SECA:31 13:100 456:40 1313:22 45045:7 99:3`;
     const parsed = parseBuQrText(text);
     const cargoOf = (n: string) =>
       parsed.votes.find((v) => v.numero === n)?.cargo;
-    assert.equal(cargoOf("13"), "Governador");
+    assert.equal(cargoOf("13"), "Indefinido");
+    assert.equal(cargoOf("99"), "Indefinido");
     assert.equal(cargoOf("456"), "Senador");
     assert.equal(cargoOf("1313"), "Deputado Federal");
     assert.equal(cargoOf("45045"), "Deputado Estadual");
@@ -265,5 +271,72 @@ describe("decodeBuPayloadStrategies", () => {
     const out = decodeBuPayloadStrategies(SAMPLE_TSE_QR_TEXT);
     assert.match(out, /ZONA:247/);
     assert.match(out, /4545:11/);
+  });
+});
+
+describe("parseBuQrText — cargo headers PRESIDENTE vs GOVERNADOR", () => {
+  it("tags 2-digit numbers from bare section titles", () => {
+    const text = `
+ZONA:1
+SECAO:2
+PRESIDENTE
+CAND:13 QTVO:80
+GOVERNADOR
+CAND:13 QTVO:142
+`;
+    const parsed = parseBuQrText(text);
+    const pres = parsed.votes.find(
+      (v) => v.numero === "13" && v.cargo === "Presidente"
+    );
+    const gov = parsed.votes.find(
+      (v) => v.numero === "13" && v.cargo === "Governador"
+    );
+    assert.equal(pres?.quantidade, 80);
+    assert.equal(gov?.quantidade, 142);
+  });
+});
+
+describe("multi-QR merge", () => {
+  it("parses QRBU index/total", () => {
+    assert.deepEqual(parseQrbuMeta(SAMPLE_TSE_QR_PART1), { index: 1, total: 2 });
+    assert.deepEqual(parseQrbuMeta(SAMPLE_TSE_QR_PART2), { index: 2, total: 2 });
+  });
+
+  it("unions complementary slices of the same urna", () => {
+    const a = parseBuQrText(SAMPLE_TSE_QR_PART1);
+    const b = parseBuQrText(SAMPLE_TSE_QR_PART2);
+    const merged = mergeParsedBus([a, b]);
+    assert.equal(merged.zona, "247");
+    assert.equal(merged.secao, "0123");
+    const by = Object.fromEntries(
+      merged.votes.map((v) => [`${v.cargo}:${v.numero}`, v.quantidade])
+    );
+    assert.equal(by["Presidente:17"], 103);
+    assert.equal(by["Presidente:13"], 89);
+    assert.equal(by["Deputado Federal:4545"], 11);
+    assert.equal(by["Governador:10"], 55);
+  });
+
+  it("last fragment wins on overlapping numero+cargo", () => {
+    const a = parseBuQrText(`QRBU:1:2 ZONA:1 SECA:1 CARG:3 13:10`);
+    const b = parseBuQrText(`QRBU:2:2 ZONA:1 SECA:1 CARG:3 13:99`);
+    const merged = mergeParsedBus([a, b]);
+    assert.equal(
+      merged.votes.find((v) => v.numero === "13")?.quantidade,
+      99
+    );
+  });
+
+  it("rejects a QR from another urna", () => {
+    const a = parseBuQrText(SAMPLE_TSE_QR_PART1);
+    const b = parseBuQrText(`ZONA:9 SECA:9 CARG:3 13:1`);
+    assert.throws(
+      () => mergeParsedBus([a, b]),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /outra urna/i);
+        return true;
+      }
+    );
   });
 });

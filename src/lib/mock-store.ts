@@ -5,7 +5,7 @@ import type {
   LocalVotacao,
   ZonaConfigRow,
 } from "@/lib/types";
-import { CARGOS_OFICIAIS, DEFAULT_RELATORIO_CARGOS } from "@/lib/cargos";
+import { CARGOS_OFICIAIS, DEFAULT_CHEFE_PIN, DEFAULT_RELATORIO_CARGOS } from "@/lib/cargos";
 
 /**
  * Seed demo data only for local demos.
@@ -83,6 +83,14 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     numero: "2211",
     nome: "Paulo Serra",
     cargo: "Deputado Federal",
+    foto_url: null,
+    origem: "bu",
+  },
+  {
+    id: "bu-discovered-17-pres",
+    numero: "17",
+    nome: "Candidato 17",
+    cargo: "Presidente",
     foto_url: null,
     origem: "bu",
   },
@@ -222,6 +230,16 @@ const SEED_BOLETINS: BoletimUrna[] = [
     fiscal_nome: "Demo",
     created_at: new Date(Date.now() - 120_000).toISOString(),
   },
+  {
+    id: "bu-seed-7",
+    zona: "002",
+    secao: "0010",
+    candidato_id: "bu-discovered-17-pres",
+    quantidade_votos: 80,
+    raw_text: "SEED",
+    fiscal_nome: "Demo",
+    created_at: new Date(Date.now() - 120_000).toISOString(),
+  },
 ];
 
 const useSeed = allowMockSeed();
@@ -249,6 +267,7 @@ let mockConfig: ApuracaoConfig = {
         { zona: "005", secoes: 1 },
       ]
     : [],
+  chefe_pin: DEFAULT_CHEFE_PIN,
   updated_at: new Date().toISOString(),
 };
 
@@ -283,7 +302,10 @@ export function getMockConfig(): ApuracaoConfig {
 
 export function setMockConfig(
   patch: Partial<
-    Pick<ApuracaoConfig, "secoes_esperadas" | "relatorio_cargos" | "zonas_config">
+    Pick<
+      ApuracaoConfig,
+      "secoes_esperadas" | "relatorio_cargos" | "zonas_config" | "chefe_pin"
+    >
   >
 ): ApuracaoConfig {
   mockConfig = {

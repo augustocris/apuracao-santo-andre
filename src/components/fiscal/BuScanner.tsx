@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 interface BuScannerProps {
   onScan: (text: string) => void;
   busy?: boolean;
+  /** Increment to allow another decode after the previous one. */
+  resetKey?: number;
+  nextQr?: boolean;
 }
 
 function mapCameraError(err: unknown): string {
@@ -63,7 +66,7 @@ const FOCUS_CONSTRAINTS = {
   advanced: [{ focusMode: "continuous" }],
 } as unknown as MediaTrackConstraints;
 
-export function BuScanner({ onScan, busy }: BuScannerProps) {
+export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScannerProps) {
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -76,6 +79,10 @@ export function BuScanner({ onScan, busy }: BuScannerProps) {
       void stopScanner();
     };
   }, []);
+
+  useEffect(() => {
+    handledRef.current = false;
+  }, [resetKey]);
 
   async function stopScanner() {
     const scanner = scannerRef.current;
@@ -225,7 +232,11 @@ export function BuScanner({ onScan, busy }: BuScannerProps) {
             rápida: envia somente os cadastrados oficiais (não há os demais
             números do BU).
           </li>
-          <li>Segure o celular firme, com boa luz, e preencha o quadro com o QR.</li>
+          <li>
+            BUs longos têm 2+ QRs: leia o primeiro, depois{" "}
+            <strong className="font-semibold">Ler próximo QR desta urna</strong>{" "}
+            e só então <strong className="font-semibold">Revisar e enviar</strong>.
+          </li>
           <li>
             Se o QR estiver no monitor, afaste um pouco (reduz reflexo) ou use{" "}
             <strong className="font-semibold">Enviar foto</strong> /{" "}
@@ -261,7 +272,7 @@ export function BuScanner({ onScan, busy }: BuScannerProps) {
           disabled={busy || uploading}
         >
           <Camera className="size-5 sm:size-6" />
-          Escanear Boletim de Urna (BU)
+          {nextQr ? "Ler próximo QR desta urna" : "Escanear Boletim de Urna (BU)"}
         </Button>
       )}
 

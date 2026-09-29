@@ -2,7 +2,7 @@
 
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CARGOS_FISCAL_ORDEM, CARGOS_OFICIAIS, labelCargoCurto } from "@/lib/cargos";
+import { CARGOS_FISCAL_ORDEM, CARGOS_OFICIAIS, CARGOS_TAG_OPTIONS, CARGO_INDEFINIDO, labelCargoCurto } from "@/lib/cargos";
 import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao } from "@/lib/types";
 import { formatVotes } from "@/lib/utils";
 
@@ -14,6 +14,7 @@ interface ConfirmTransmitModalProps {
   secao: string;
   rows: ConfirmVoteRow[];
   discovered?: DiscoveredVote[];
+  onTagCargo?: (numero: string, fromCargo: string, toCargo: string) => void;
   onConfirm: () => void;
   transmitting: boolean;
   /** Soft notice shown on the confirm surface (not a hard error). */
@@ -32,6 +33,7 @@ export function ConfirmTransmitModal({
   secao,
   rows,
   discovered = [],
+  onTagCargo,
   onConfirm,
   transmitting,
   notice,
@@ -152,9 +154,29 @@ export function ConfirmTransmitModal({
                   <p className="truncate text-sm font-medium text-slate-800">
                     {row.nome}
                   </p>
-                  <p className="text-[11px] text-slate-500">
-                    {labelCargoCurto(row.cargo)} · Nº {row.numero}
-                  </p>
+                  {row.cargo === CARGO_INDEFINIDO && onTagCargo ? (
+                    <label className="mt-0.5 flex items-center gap-1 text-[11px] text-amber-800">
+                      Cargo
+                      <select
+                        value={row.cargo}
+                        onChange={(e) =>
+                          onTagCargo(row.numero, row.cargo, e.target.value)
+                        }
+                        className="rounded border border-amber-300 bg-white px-1 py-0.5 text-[11px]"
+                      >
+                        <option value={CARGO_INDEFINIDO}>Indefinido</option>
+                        {CARGOS_TAG_OPTIONS.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <p className="text-[11px] text-slate-500">
+                      {labelCargoCurto(row.cargo)} · Nº {row.numero}
+                    </p>
+                  )}
                 </div>
                 <p className="text-sm font-bold tabular-nums text-slate-700">
                   {formatVotes(row.quantidade)}

@@ -76,9 +76,9 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 
 1. Open `/fiscal` on a phone (installable PWA).
 2. Tap **Escanear** (QR) or **Digitar** (formulário manual: zona, seção e votos).
-3. QR/foto parser extrai **todos** os pares `numero:votos` (TSE `4545:11`, `CAND/QTVO`, linhas `Nome  17  0103`). Cargo: cabeçalho/`CARG` se houver; senão 2=Governador, 3=Senador, 4=Dep. Federal, 5=Dep. Estadual. Confirmação: cadastrados oficiais primeiro + bloco recolhível **Demais candidatos neste BU (N)**. **Digitar** lista só os oficiais e, no envio, grava somente esses votos.
+3. QR/foto parser extrai **todos** os pares `numero:votos`. Cargo vem de cabeçalho/`CARG` (Presidente ≠ Governador). 2 dígitos sem tag → `Indefinido` (não assume Governador). BUs com 2+ QRs: **Ler próximo QR desta urna** e depois **Revisar e enviar**. **Digitar** grava só oficiais.
 4. Confirmation shows zona, seção, número + nome + votos → **Enviar**.
-5. Duplicate urnas return: *Urna já cadastrada anteriormente* (pre-check + UNIQUE) — vale para o telão e para o ingest completo daquela zona+seção.
+5. Duplicate urnas return: *Urna já cadastrada anteriormente* (pre-check + UNIQUE). Vários QRs da **mesma** urna não são duplicata até o envio.
 
 ## Admin telão
 
@@ -95,8 +95,8 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
 4. Run migration `003` if you want Storage photo uploads.
-4. Run SQL migrations `001` then `002` then `003` then `004` on Supabase (002/003/004 are manual if already live; 004 = ingestão completa do BU).
-5. Point fiscales to `/fiscal` and the telão to `/admin`.
+4. Run SQL migrations `001` … `005` on Supabase (005 = PIN `/chefe` + ingest sem default Governador).
+5. Point fiscales to `/fiscal`, telão to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`).
 
 ## Stack
 
@@ -114,5 +114,5 @@ src/lib/milestones.ts          Thresholds / PT-BR labels for confetti
 src/lib/cargos.ts              Digit rules per cargo
 src/lib/parser/bu-qr.ts        BU QR parser
 src/lib/data.ts                Supabase + mock data layer
-supabase/migrations/           001 init · 002 admin config · 003 storage fotos · 004 BU completo
+supabase/migrations/           001 init · 002 admin config · 003 storage fotos · 004 BU completo · 005 chefe PIN
 ```

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Radio, RefreshCw, Settings2, Tv } from "lucide-react";
+import Link from "next/link";
 import { AdminCadastro } from "@/components/admin/AdminCadastro";
 import { useMilestoneCelebrations } from "@/components/admin/MilestoneCelebration";
 import { StatsCards } from "@/components/admin/StatsCards";
@@ -201,6 +202,15 @@ export function AdminDashboard() {
             <RefreshCw className={`size-4 ${pending ? "animate-spin" : ""}`} />
             Atualizar
           </Button>
+          <Link
+            href="/chefe"
+            className={cn(
+              "text-[11px] text-white/40 underline-offset-2 hover:text-white/70 hover:underline",
+              view === "telao" && "self-center"
+            )}
+          >
+            Acesso chefe
+          </Link>
         </div>
       </header>
 

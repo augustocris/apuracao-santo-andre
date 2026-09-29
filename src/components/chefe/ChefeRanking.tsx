@@ -1,0 +1,350 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { Loader2, Lock, LogOut, Search, Trophy } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  CARGO_INDEFINIDO,
+  CARGOS_CHEFE_FILTRO,
+  CHEFE_UNLOCK_KEY,
+  isFeaturedCandidato,
+  labelCargoCurto,
+  resolveChefePin,
+} from "@/lib/cargos";
+import { fetchDashboard, getConfig, subscribeDashboard } from "@/lib/data";
+import type { DashboardSnapshot, RankingRow } from "@/lib/types";
+import { cn, formatPercent, formatVotes } from "@/lib/utils";
+
+const EMPTY: DashboardSnapshot = {
+  totalSecoes: 0,
+  secoesEsperadas: 0,
+  urnasApuradas: 0,
+  secoesFaltam: 0,
+  totalVotosValidos: 0,
+  rankings: [],
+  rankingsByCargo: [],
+  rankingGeralByCargo: [],
+  relatorioCargos: [],
+  feed: [],
+  mode: "mock",
+};
+
+type SortKey = "votos" | "nome";
+
+function isUnlocked(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return sessionStorage.getItem(CHEFE_UNLOCK_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function ChefeRanking() {
+  const [unlocked, setUnlocked] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [expectedPin, setExpectedPin] = useState(resolveChefePin(null));
+  const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
+  const [cargoFilter, setCargoFilter] = useState<string>("todos");
+  const [sort, setSort] = useState<SortKey>("votos");
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUnlocked(isUnlocked());
+    void (async () => {
+      try {
+        const cfg = await getConfig();
+        setExpectedPin(resolveChefePin(cfg.chefe_pin));
+      } catch {
+        setExpectedPin(resolveChefePin(null));
+      }
+    })();
+  }, []);
+
+  const reload = useCallback(async () => {
+    try {
+      const data = await fetchDashboard("todos");
+      setSnapshot(data);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Falha ao carregar o ranking."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    void reload();
+    return subscribeDashboard(() => {
+      void reload();
+    }, 4000);
+  }, [unlocked, reload]);
+
+  const rows = useMemo(() => {
+    const groups = snapshot.rankingGeralByCargo;
+    const selected =
+      cargoFilter === "todos"
+        ? groups.filter((g) => g.cargo !== CARGO_INDEFINIDO)
+        : groups.filter((g) => g.cargo === cargoFilter);
+
+    const flat: Array<RankingRow & { cargo: string }> = selected.flatMap((g) =>
+      g.rankings.map((row) => ({ ...row, cargo: g.cargo }))
+    );
+
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? flat.filter(
+          (r) =>
+            r.candidato.nome.toLowerCase().includes(q) ||
+            r.candidato.numero.includes(q.replace(/\D/g, "") || q)
+        )
+      : flat;
+
+    filtered.sort((a, b) => {
+      if (sort === "nome") {
+        return a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR");
+      }
+      return (
+        b.votos - a.votos ||
+        a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
+      );
+    });
+    return filtered;
+  }, [snapshot.rankingGeralByCargo, cargoFilter, sort, query]);
+
+  const indefinidos = snapshot.rankingGeralByCargo.find(
+    (g) => g.cargo === CARGO_INDEFINIDO
+  )?.rankings.length ?? 0;
+
+  function handleUnlock(e: FormEvent) {
+    e.preventDefault();
+    if (pin.trim() === expectedPin) {
+      try {
+        sessionStorage.setItem(CHEFE_UNLOCK_KEY, "1");
+      } catch {
+        /* ignore */
+      }
+      setUnlocked(true);
+      setPinError(null);
+      setPin("");
+    } else {
+      setPinError("PIN incorreto.");
+    }
+  }
+
+  function handleLock() {
+    try {
+      sessionStorage.removeItem(CHEFE_UNLOCK_KEY);
+    } catch {
+      /* ignore */
+    }
+    setUnlocked(false);
+  }
+
+  if (!unlocked) {
+    return (
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center gap-6 px-5 py-12">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-800">
+            Santo André
+          </p>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900">Acesso chefe</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Ranking completo (incluindo Presidente). Não substitui o telão de 5
+            cards.
+          </p>
+        </div>
+        <form
+          onSubmit={handleUnlock}
+          className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          <label className="block text-sm font-medium text-slate-700">
+            PIN
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              className="mt-1"
+              placeholder="PIN"
+            />
+          </label>
+          {pinError && (
+            <p role="alert" className="text-sm text-red-700">
+              {pinError}
+            </p>
+          )}
+          <Button type="submit" className="h-11 w-full bg-teal-700 text-white hover:bg-teal-800">
+            <Lock className="size-4" />
+            Entrar
+          </Button>
+        </form>
+        <Link href="/" className="text-center text-sm text-slate-500 underline">
+          Voltar ao início
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-5 md:px-6">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-3">
+        <div>
+          <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-800">
+            <Trophy className="size-3.5" />
+            Chefe
+          </p>
+          <h1 className="text-2xl font-bold text-slate-900">Ranking geral</h1>
+          <p className="text-sm text-slate-600">
+            {snapshot.urnasApuradas} urnas · modo {snapshot.mode}. Presidente
+            entra aqui, não no telão de 5 cards.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin"
+            className="inline-flex h-10 items-center rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Telão
+          </Link>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 border-slate-300"
+            onClick={handleLock}
+          >
+            <LogOut className="size-4" />
+            Sair
+          </Button>
+        </div>
+      </header>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs text-slate-500">
+          Cargo
+          <select
+            value={cargoFilter}
+            onChange={(e) => setCargoFilter(e.target.value)}
+            className="h-10 min-w-[12rem] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+          >
+            {CARGOS_CHEFE_FILTRO.map((c) => (
+              <option key={c} value={c}>
+                {c === "todos" ? "Todos (exceto indefinidos)" : c}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-slate-500">
+          Ordenar
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="h-10 min-w-[10rem] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+          >
+            <option value="votos">Votos desc</option>
+            <option value="nome">Nome A–Z</option>
+          </select>
+        </label>
+        <label className="relative min-w-[14rem] flex-1">
+          <span className="sr-only">Buscar</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Nome ou número"
+            className="h-10 pl-9"
+          />
+        </label>
+      </div>
+
+      {indefinidos > 0 && cargoFilter !== CARGO_INDEFINIDO && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          {indefinidos} candidato(s) com cargo indefinido (2 dígitos sem
+          PRESIDENTE/GOVERNADOR no BU). Não entram em “Todos” — filtre
+          Indefinido.
+        </p>
+      )}
+
+      {loading && (
+        <p className="flex items-center gap-2 text-sm text-slate-600">
+          <Loader2 className="size-4 animate-spin" /> Carregando…
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+          {error}
+        </p>
+      )}
+
+      {!loading && rows.length === 0 && (
+        <p className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+          Nenhum candidato neste filtro.
+        </p>
+      )}
+
+      {!loading && rows.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-2 font-semibold">#</th>
+                <th className="px-3 py-2 font-semibold">Nome</th>
+                <th className="px-3 py-2 font-semibold">Número</th>
+                <th className="px-3 py-2 font-semibold">Cargo</th>
+                <th className="px-3 py-2 text-right font-semibold">Votos</th>
+                <th className="px-3 py-2 text-right font-semibold">% no cargo</th>
+                <th className="px-3 py-2 font-semibold">Origem</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((row, index) => (
+                <tr key={`${row.candidato.id}-${row.cargo}`} className="bg-white">
+                  <td className="px-3 py-2 tabular-nums text-slate-400">
+                    {index + 1}
+                  </td>
+                  <td className="px-3 py-2 font-medium text-slate-900">
+                    {row.candidato.nome}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-slate-700">
+                    {row.candidato.numero}
+                  </td>
+                  <td className="px-3 py-2 text-slate-700">
+                    {labelCargoCurto(row.cargo)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-bold tabular-nums text-teal-800">
+                    {formatVotes(row.votos)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                    {formatPercent(row.percentual)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                        isFeaturedCandidato(row.candidato.origem)
+                          ? "bg-teal-100 text-teal-800"
+                          : "bg-slate-200 text-slate-600"
+                      )}
+                    >
+                      {isFeaturedCandidato(row.candidato.origem)
+                        ? "oficial"
+                        : "BU"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

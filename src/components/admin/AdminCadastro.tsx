@@ -30,6 +30,7 @@ import {
   CARGO_SLOTS,
   CARGOS_OFICIAIS,
   CONFIG_STORAGE_KEY,
+  DEFAULT_CHEFE_PIN,
   labelCargoCurto,
   type CargoOficial,
 } from "@/lib/cargos";
@@ -43,6 +44,7 @@ import {
   getConfig,
   listCandidatos,
   removeCandidato,
+  saveChefePin,
   saveRelatorioCargos,
   saveSecoesEsperadas,
   upsertCandidato,
@@ -88,6 +90,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   const [relatorioCargos, setRelatorioCargos] = useState<string[]>([
     ...CARGOS_OFICIAIS,
   ]);
+  const [chefePin, setChefePin] = useState(DEFAULT_CHEFE_PIN);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -98,6 +101,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       ]);
       setCandidatos(cands);
       setConfig(cfg);
+      setChefePin(cfg.chefe_pin?.trim() || DEFAULT_CHEFE_PIN);
       setTotalEsperado(String(cfg.secoes_esperadas || 10));
       if (cfg.zonas_config.length > 0) {
         setZonaRows(cfg.zonas_config);
@@ -359,7 +363,62 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
         })}
       </div>
 
-      {tab === "ranking" && <RankingGeral />}
+      {tab === "ranking" && (
+        <div className="space-y-5">
+          <RankingGeral />
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void (async () => {
+                setBusy(true);
+                setError(null);
+                setMessage(null);
+                try {
+                  await saveChefePin(chefePin);
+                  setMessage("PIN do chefe atualizado.");
+                  onConfigSaved?.();
+                } catch (err) {
+                  setError(
+                    err instanceof Error ? err.message : "Falha ao salvar o PIN."
+                  );
+                } finally {
+                  setBusy(false);
+                }
+              })();
+            }}
+            className="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-4"
+          >
+            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-300">
+              PIN do acesso chefe
+            </h3>
+            <p className="text-xs text-slate-400">
+              Página{" "}
+              <a href="/chefe" className="text-[#00ADEF] underline">
+                /chefe
+              </a>
+              . Padrão <code className="text-[#FFDE00]">andre2026</code>. Cole a
+              migration 005 no Supabase para persistir no banco.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                type="text"
+                value={chefePin}
+                onChange={(e) => setChefePin(e.target.value)}
+                className="max-w-xs border-white/15 bg-slate-950 text-white"
+                autoComplete="off"
+                disabled={busy}
+              />
+              <Button
+                type="submit"
+                disabled={busy}
+                className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
+              >
+                Salvar PIN
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {loading && tab !== "ranking" && (
         <p className="flex items-center gap-2 text-sm text-slate-400">

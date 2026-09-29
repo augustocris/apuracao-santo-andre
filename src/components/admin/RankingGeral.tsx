@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Trophy, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CARGOS_OFICIAIS, isFeaturedCandidato, labelCargoCurto } from "@/lib/cargos";
+import { CARGOS_OFICIAIS, CARGOS_RANKING_ORDEM, isFeaturedCandidato, labelCargoCurto } from "@/lib/cargos";
 import { fetchDashboard, subscribeDashboard } from "@/lib/data";
 import type { Candidato, CargoRanking, DashboardSnapshot } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
@@ -54,7 +54,7 @@ export function RankingGeral() {
     const extras = groups
       .map((g) => g.cargo)
       .filter((c) => !(CARGOS_OFICIAIS as readonly string[]).includes(c));
-    return ["todos", ...CARGOS_OFICIAIS, ...extras];
+    return ["todos", ...CARGOS_RANKING_ORDEM, ...extras.filter((c) => !(CARGOS_RANKING_ORDEM as readonly string[]).includes(c))];
   }, [groups]);
 
   const visibleGroups: CargoRanking[] =

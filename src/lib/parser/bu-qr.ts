@@ -105,9 +105,12 @@ const TSE_TOKEN_RE = /^(\d{1,5}):(\d+)$/;
 const LINE_NUM_VOTOS_RE =
   /^(?:(.+?)\s+)?(\d{2,5})\s+(\d{1,7})\s*$/;
 
-/** Cargo section markers on printed BUs (ignored structurally; help line parsing). */
+/** Cargo section markers on printed BUs (with or without dashed rulers). */
 const CARGO_HEADER_RE =
-  /^-{3,}.*(PRESIDENTE|GOVERNADOR|SENADOR|DEPUTADO\s+FEDERAL|DEPUTADO\s+ESTADUAL|PREFEITO|VEREADOR).*-{3,}$/i;
+  /(?:^-{2,}.*)?(PRESIDENTE|GOVERNADOR|SENADOR|DEPUTADO\s+FEDERAL|DEPUTADO\s+ESTADUAL|PREFEITO|VEREADOR)(?:.*-{2,})?$/i;
+
+const BARE_CARGO_LINE_RE =
+  /^(PRESIDENTE|GOVERNADOR|SENADOR|DEPUTADO\s+FEDERAL|DEPUTADO\s+ESTADUAL|PREFEITO|VEREADOR)\s*$/i;
 
 export interface ParseBuOptions {
   /** When set, only return votes for these registered candidate numbers. */
@@ -205,11 +208,25 @@ function setVote(
 }
 
 function collectCandQtvo(text: string, map: Map<string, VoteAcc>) {
-  for (const re of [VOTE_CAND_QTVO_RE, VOTE_CANDIDATO_VOTOS_RE]) {
-    re.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(text)) !== null) {
-      setVote(map, match[1], match[2]);
+  let currentCargo: string | undefined;
+  const lines = text.split(/\r?\n/);
+  const chunks = lines.length > 1 ? lines : [text];
+
+  for (const chunk of chunks) {
+    const carg = chunk.match(/CARG\s*:\s*(\d+)/i);
+    if (carg) {
+      currentCargo = cargoFromTseCarg(carg[1]) ?? currentCargo;
+    }
+    const header = cargoFromPrintedHeader(chunk);
+    if (header && (CARGO_HEADER_RE.test(chunk.trim()) || BARE_CARGO_LINE_RE.test(chunk.trim()))) {
+      currentCargo = header;
+    }
+    for (const re of [VOTE_CAND_QTVO_RE, VOTE_CANDIDATO_VOTOS_RE]) {
+      re.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(chunk)) !== null) {
+        setVote(map, match[1], match[2], { cargo: currentCargo });
+      }
     }
   }
 }
@@ -256,7 +273,7 @@ function collectLineBasedPairs(text: string, map: Map<string, VoteAcc>) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    if (CARGO_HEADER_RE.test(line)) {
+    if (CARGO_HEADER_RE.test(line) || BARE_CARGO_LINE_RE.test(line)) {
       currentCargo = cargoFromPrintedHeader(line) ?? currentCargo;
       continue;
     }
@@ -440,6 +457,67 @@ export class BuParseError extends Error {
   }
 }
 
+export function parseQrbuMeta(
+  text: string
+): { index: number; total: number } | null {
+  const m = String(text).match(/QRBU\s*:\s*(\d+)\s*:\s*(\d+)/i);
+  if (!m) return null;
+  const index = Number.parseInt(m[1], 10);
+  const total = Number.parseInt(m[2], 10);
+  if (!Number.isFinite(index) || !Number.isFinite(total) || index < 1 || total < 1) {
+    return null;
+  }
+  return { index, total };
+}
+
+/**
+ * Merge complementary QR slices of the same urna.
+ * zona+seção must match. Same numero+cargo → last fragment wins.
+ */
+export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
+  if (parts.length === 0) {
+    throw new BuParseError("Nenhum QR para unir.");
+  }
+  const zona = parts[0].zona;
+  const secao = parts[0].secao;
+  for (const part of parts) {
+    if (part.zona !== zona || part.secao !== secao) {
+      throw new BuParseError(
+        `Este QR é de outra urna (zona ${part.zona} / seção ${part.secao}; esperado zona ${zona} / seção ${secao}).`
+      );
+    }
+  }
+
+  const map = new Map<string, ParsedCandidateVote>();
+  for (const part of parts) {
+    for (const vote of part.votes) {
+      const cargo = resolveVoteCargo(vote.numero, vote.cargo);
+      const numero = normalizeCandidateNumero(vote.numero);
+      map.set(`${cargo}::${numero}`, {
+        ...vote,
+        numero,
+        cargo,
+      });
+    }
+  }
+
+  const qrTotal = parts.reduce(
+    (max, p) => Math.max(max, p.qrTotal ?? 0, p.qrIndex ?? 0),
+    0
+  );
+
+  return {
+    zona,
+    secao,
+    votes: Array.from(map.values()),
+    rawText: parts
+      .map((p, i) => `--- QR ${p.qrIndex ?? i + 1} ---\n${p.rawText}`)
+      .join("\n"),
+    qrIndex: parts.length,
+    qrTotal: qrTotal || parts.length,
+  };
+}
+
 /**
  * Parses TSE BU QR payloads and common text dumps.
  *
@@ -532,24 +610,37 @@ export function parseBuQrText(
     }
   }
 
+  const qrbu = parseQrbuMeta(text);
+
   return {
     zona: normalizeDigits(zonaRaw, 3),
     secao: normalizeDigits(secaoRaw, 4),
     votes,
     rawText: text,
+    qrIndex: qrbu?.index,
+    qrTotal: qrbu?.total,
   };
 }
 
 /** Sample BU text for demos / paste fallback testing (cargos estaduais). */
 export const SAMPLE_BU_TEXT = `ZONA:001
 SECAO:0001
+CARG:3
 CAND:13 QTVO:142
 CAND:45 QTVO:98
+CARG:5
 CAND:131 QTVO:110
 CAND:456 QTVO:87
+CARG:6
 CAND:1313 QTVO:64
+CARG:7
 CAND:13131 QTVO:51
 CAND:99999 QTVO:3`;
 
 /** Official-style TSE QR sample (space-separated, numeric pairs). */
 export const SAMPLE_TSE_QR_TEXT = `QRBU:1:1 ORIG:VOTA PROC:2000 DTPL:20181007 PLEI:2100 TURN:1 FASE:S UNFE:SP MUNI:71072 ZONA:247 SECA:123 IDUE:1760649 IDCA:529951844372447180336660 VERS:5.22.0.1 VRQR:4.0 LOCA:4 APTO:400 COMP:250 FALT:150 IDEL:2101 CARG:1 TIPO:0 VERC:20180901 17:103 13:89 NOMI:192 BRAN:3 NULO:5 TOTC:200 CARG:6 TIPO:1 VERC:20180901 PART:45 4545:11 45045:7 LEGP:0 TOTP:18 PART:11 111:4 222:2 LEGP:0 TOTP:6 NOMI:24 LEGC:0 BRAN:1 NULO:0 TOTC:25 CARG:3 TIPO:0 VERC:20180901 10:55 45:40 NOMI:95 BRAN:2 NULO:1 TOTC:98`;
+
+/** Complementary TSE QR slices of the same urna (QRBU 1/2 and 2/2). */
+export const SAMPLE_TSE_QR_PART1 = `QRBU:1:2 ORIG:VOTA ZONA:247 SECA:123 CARG:1 TIPO:0 17:103 13:89 NOMI:192 BRAN:3 NULO:5 TOTC:200`;
+
+export const SAMPLE_TSE_QR_PART2 = `QRBU:2:2 ORIG:VOTA ZONA:247 SECA:123 CARG:6 TIPO:1 4545:11 45045:7 CARG:3 TIPO:0 10:55 45:40`;

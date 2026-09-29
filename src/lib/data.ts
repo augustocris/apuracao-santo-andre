@@ -15,6 +15,8 @@ import {
 } from "@/lib/mock-store";
 import {
   CARGOS_OFICIAIS,
+  CARGOS_RANKING_ORDEM,
+  DEFAULT_CHEFE_PIN,
   DEFAULT_RELATORIO_CARGOS,
   isFeaturedCandidato,
   placeholderCandidateName,
@@ -85,13 +87,17 @@ function normalizeConfig(raw: Partial<ApuracaoConfig> | null): ApuracaoConfig {
     relatorio_cargos: cargos,
     zonas_config: normalizeZonasConfig(raw?.zonas_config),
     updated_at: raw?.updated_at ?? new Date().toISOString(),
+    chefe_pin:
+      typeof raw?.chefe_pin === "string" && raw.chefe_pin.trim()
+        ? raw.chefe_pin.trim()
+        : DEFAULT_CHEFE_PIN,
   };
 }
 
 function uniqueCargosForRanking(candidatos: Candidato[]): string[] {
   const seen = new Set<string>();
   const ordered: string[] = [];
-  for (const cargo of CARGOS_OFICIAIS) {
+  for (const cargo of CARGOS_RANKING_ORDEM) {
     if (candidatos.some((c) => c.cargo === cargo)) {
       ordered.push(cargo);
       seen.add(cargo);
@@ -306,7 +312,10 @@ export async function getConfig(): Promise<ApuracaoConfig> {
 
 export async function saveConfig(
   patch: Partial<
-    Pick<ApuracaoConfig, "secoes_esperadas" | "relatorio_cargos" | "zonas_config">
+    Pick<
+      ApuracaoConfig,
+      "secoes_esperadas" | "relatorio_cargos" | "zonas_config" | "chefe_pin"
+    >
   >
 ): Promise<ApuracaoConfig> {
   const supabase = getSupabase();
@@ -321,20 +330,43 @@ export async function saveConfig(
     updated_at: new Date().toISOString(),
   });
 
+  const payload: Record<string, unknown> = {
+    id: 1,
+    secoes_esperadas: next.secoes_esperadas,
+    relatorio_cargos: next.relatorio_cargos,
+    zonas_config: next.zonas_config,
+    updated_at: next.updated_at,
+    chefe_pin: next.chefe_pin,
+  };
+
   const { data, error } = await supabase
     .from("apuracao_config")
-    .upsert({
-      id: 1,
-      secoes_esperadas: next.secoes_esperadas,
-      relatorio_cargos: next.relatorio_cargos,
-      zonas_config: next.zonas_config,
-      updated_at: next.updated_at,
-    })
+    .upsert(payload)
     .select("*")
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (/chefe_pin/i.test(error.message)) {
+      delete payload.chefe_pin;
+      const retry = await supabase
+        .from("apuracao_config")
+        .upsert(payload)
+        .select("*")
+        .single();
+      if (retry.error) throw new Error(retry.error.message);
+      return normalizeConfig(retry.data as ApuracaoConfig);
+    }
+    throw new Error(error.message);
+  }
   return normalizeConfig(data as ApuracaoConfig);
+}
+
+export async function saveChefePin(pin: string): Promise<ApuracaoConfig> {
+  const cleaned = pin.trim();
+  if (cleaned.length < 4) {
+    throw new Error("O PIN do chefe precisa ter ao menos 4 caracteres.");
+  }
+  return saveConfig({ chefe_pin: cleaned });
 }
 
 export async function listCandidatos(opts?: {

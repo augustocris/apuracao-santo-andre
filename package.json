@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 43127",
     "lint": "eslint",
-    "test": "tsx --test src/lib/parser/bu-qr.test.ts"
+    "test": "tsx --test src/lib/parser/bu-qr.test.ts src/lib/urna-duplicate.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

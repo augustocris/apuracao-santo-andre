@@ -49,6 +49,8 @@ export interface ApuracaoConfig {
   relatorio_cargos: string[];
   zonas_config: ZonaConfigRow[];
   updated_at: string;
+  /** Light PIN for /chefe. Missing → default andre2026. */
+  chefe_pin?: string | null;
 }
 
 export interface ParsedCandidateVote {
@@ -63,6 +65,9 @@ export interface ParsedBu {
   secao: string;
   votes: ParsedCandidateVote[];
   rawText: string;
+  /** TSE QRBU:index:total when present. */
+  qrIndex?: number;
+  qrTotal?: number;
 }
 
 export interface ConfirmVoteRow {

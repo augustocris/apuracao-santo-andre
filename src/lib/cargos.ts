@@ -82,6 +82,43 @@ export function labelCargoCurto(cargo: string): string {
 
 export const DEFAULT_RELATORIO_CARGOS: CargoOficial[] = [...CARGOS_OFICIAIS];
 
+/** 2-digit numbers without a section header / CARG tag (Presidente vs Governador). */
+export const CARGO_INDEFINIDO = "Indefinido";
+
+/** Filters on /chefe (telão 5 cards stay CARGOS_OFICIAIS only). */
+export const CARGOS_CHEFE_FILTRO = [
+  "todos",
+  "Deputado Estadual",
+  "Deputado Federal",
+  "Senador",
+  "Governador",
+  "Presidente",
+  CARGO_INDEFINIDO,
+] as const;
+
+export const CARGOS_RANKING_ORDEM = [
+  ...CARGOS_OFICIAIS,
+  "Presidente",
+] as const;
+
+export const CARGOS_TAG_OPTIONS = [
+  "Presidente",
+  "Governador",
+  "Senador",
+  "Deputado Federal",
+  "Deputado Estadual",
+] as const;
+
+export const DEFAULT_CHEFE_PIN = "andre2026";
+export const CHEFE_UNLOCK_KEY = "apuracao-sa-chefe-unlock";
+
+export function resolveChefePin(configPin?: string | null): string {
+  const env = process.env.NEXT_PUBLIC_CHEFE_PIN?.trim();
+  if (env) return env;
+  if (configPin?.trim()) return configPin.trim();
+  return DEFAULT_CHEFE_PIN;
+}
+
 /** TSE QR `CARG:n` codes (urna eletrônica). */
 export const TSE_CARG_LABEL: Record<string, string> = {
   "1": "Presidente",
@@ -119,13 +156,13 @@ export function cargoFromTseCarg(code: string): string | null {
 
 /**
  * Infer cargo from candidate number length when the BU section is unknown.
- * 2 = Governador, 3 = Senador, 4 = Deputado Federal, 5 = Deputado Estadual.
+ * 2 digits are Presidente *or* Governador — never default to Governador.
  */
 export function inferCargoFromNumero(numero: string): string {
   const len = numero.replace(/\D/g, "").length;
   switch (len) {
     case 2:
-      return "Governador";
+      return CARGO_INDEFINIDO;
     case 3:
       return "Senador";
     case 4:

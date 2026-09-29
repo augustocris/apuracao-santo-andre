@@ -1,52 +1,51 @@
 import { NextResponse } from "next/server";
+import { parseChapadaPayload } from "@/lib/chapada";
 import { importCandidatos } from "@/lib/data";
 
 export async function POST(request: Request) {
   try {
+    const url = new URL(request.url);
+    const origemParam = url.searchParams.get("origem");
     const contentType = request.headers.get("content-type") ?? "";
-    let rows: Array<{
-      numero: string;
-      nome: string;
-      cargo: string;
-      foto_url?: string | null;
-    }> = [];
+    let text = "";
+    let origem: "catalogo" | "cadastro" =
+      origemParam === "cadastro" ? "cadastro" : "catalogo";
 
     if (contentType.includes("application/json")) {
       const body = await request.json();
-      rows = Array.isArray(body) ? body : body.candidatos ?? [];
+      if (body && typeof body === "object" && body.origem === "cadastro") {
+        origem = "cadastro";
+      }
+      if (body && typeof body === "object" && body.origem === "catalogo") {
+        origem = "catalogo";
+      }
+      text = JSON.stringify(
+        Array.isArray(body) ? body : body.candidatos ?? body
+      );
     } else {
-      const text = await request.text();
-      const lines = text
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      const header = lines[0]?.toLowerCase() ?? "";
-      const hasHeader = header.includes("numero") || header.includes("nome");
-      const start = hasHeader ? 1 : 0;
-      rows = lines.slice(start).map((line) => {
-        const parts = line.split(/[,;|\t]/).map((p) => p.trim());
-        return {
-          numero: parts[0] ?? "",
-          nome: parts[1] ?? "",
-          cargo: parts[2] ?? "Prefeito",
-          foto_url: parts[3] || null,
-        };
-      });
+      text = await request.text();
     }
 
-    const valid = rows.filter((r) => r.numero && r.nome && r.cargo);
-    if (valid.length === 0) {
+    const parsed = parseChapadaPayload(text);
+    if (parsed.rows.length === 0) {
       return NextResponse.json(
         {
           error:
-            "Nenhum candidato válido. Envie JSON array ou CSV (numero,nome,cargo,foto_url).",
+            parsed.errors[0] ??
+            "Nenhum candidato válido. CSV/JSON: numero,nome,cargo.",
+          details: parsed.errors,
         },
         { status: 400 }
       );
     }
 
-    const count = await importCandidatos(valid);
-    return NextResponse.json({ ok: true, upserted: count });
+    const result = await importCandidatos(parsed.rows, { origem });
+    return NextResponse.json({
+      ok: true,
+      upserted: result.upserted,
+      skippedCadastro: result.skippedCadastro,
+      warnings: parsed.errors,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Erro ao importar";

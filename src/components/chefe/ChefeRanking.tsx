@@ -11,8 +11,10 @@ import {
   CHEFE_UNLOCK_KEY,
   isFeaturedCandidato,
   labelCargoCurto,
+  origemLabel,
   resolveChefePin,
 } from "@/lib/cargos";
+import { CHAPADA_HINT } from "@/lib/chapada";
 import { fetchDashboard, getConfig, subscribeDashboard } from "@/lib/data";
 import type { DashboardSnapshot, RankingRow } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
@@ -117,7 +119,7 @@ export function ChefeRanking() {
         a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
       );
     });
-    return filtered;
+    return filtered.filter((r) => r.votos > 0);
   }, [snapshot.rankingGeralByCargo, cargoFilter, sort, query]);
 
   const indefinidos = snapshot.rankingGeralByCargo.find(
@@ -207,6 +209,7 @@ export function ChefeRanking() {
             {snapshot.urnasApuradas} urnas · modo {snapshot.mode}. Presidente
             entra aqui, não no telão de 5 cards.
           </p>
+          <p className="mt-1 max-w-2xl text-xs text-slate-500">{CHAPADA_HINT}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -331,12 +334,12 @@ export function ChefeRanking() {
                         "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
                         isFeaturedCandidato(row.candidato.origem)
                           ? "bg-teal-100 text-teal-800"
-                          : "bg-slate-200 text-slate-600"
+                          : row.candidato.origem === "catalogo"
+                            ? "bg-amber-100 text-amber-900"
+                            : "bg-slate-200 text-slate-600"
                       )}
                     >
-                      {isFeaturedCandidato(row.candidato.origem)
-                        ? "oficial"
-                        : "BU"}
+                      {origemLabel(row.candidato.origem)}
                     </span>
                   </td>
                 </tr>

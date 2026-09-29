@@ -15,7 +15,7 @@ export interface LocalVotacao {
   bairro: string | null;
 }
 
-export type CandidatoOrigem = "cadastro" | "bu";
+export type CandidatoOrigem = "cadastro" | "catalogo" | "bu";
 
 export interface Candidato {
   id: string;
@@ -23,7 +23,7 @@ export interface Candidato {
   nome: string;
   cargo: Cargo;
   foto_url: string | null;
-  /** cadastro = featured admin CRUD; bu = discovered on scan. Missing = cadastro. */
+  /** cadastro = telão; catalogo = chapada da cidade; bu = descoberto no scan. */
   origem?: CandidatoOrigem | null;
 }
 

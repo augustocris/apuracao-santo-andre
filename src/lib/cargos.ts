@@ -188,9 +188,52 @@ export function placeholderCandidateName(numero: string): string {
   return `Candidato ${numero}`;
 }
 
-/** Featured telão/CRUD rows. Missing origem (pre-004) counts as cadastro. */
+export const CARGOS_CHAPADA = [
+  "Deputado Estadual",
+  "Deputado Federal",
+  "Senador",
+  "Governador",
+  "Presidente",
+] as const;
+
+export type CargoChapada = (typeof CARGOS_CHAPADA)[number];
+
+export const CARGO_DIGITOS_CHAPADA: Record<CargoChapada, number> = {
+  ...CARGO_DIGITOS,
+  Presidente: 2,
+};
+
+export function validarNumeroCargoChapada(
+  cargo: string,
+  numero: string
+): { ok: true; numero: string } | { ok: false; message: string } {
+  const digits = numero.replace(/\D/g, "");
+  const expected =
+    (CARGO_DIGITOS_CHAPADA as Record<string, number>)[cargo] ?? null;
+  if (expected == null) {
+    return {
+      ok: false,
+      message: `Cargo inválido. Use: ${CARGOS_CHAPADA.join(", ")}.`,
+    };
+  }
+  if (digits.length !== expected) {
+    return {
+      ok: false,
+      message: `${cargo} exige número com ${expected} dígitos (recebido: ${digits.length || 0}).`,
+    };
+  }
+  return { ok: true, numero: digits.replace(/^0+(?=\d)/, "") || digits };
+}
+
+/** Telão 5 cards: só origem=cadastro (ausência pre-004 conta como cadastro). */
 export function isFeaturedCandidato(origem?: string | null): boolean {
-  return origem !== "bu";
+  return origem == null || origem === "" || origem === "cadastro";
+}
+
+export function origemLabel(origem?: string | null): string {
+  if (origem === "catalogo") return "catálogo";
+  if (origem === "bu") return "BU";
+  return "oficial";
 }
 
 export const CONFIG_STORAGE_KEY = "apuracao-sa-relatorio-cargos";

@@ -382,16 +382,16 @@ export function upsertMockCandidatos(
       (c) => c.numero === row.numero && c.cargo === row.cargo
     );
     if (existing) {
-      const keepCadastro = existing.origem !== "bu";
-      if (!keepCadastro) {
+      const keepNamed =
+        existing.origem === "cadastro" || existing.origem === "catalogo";
+      if (existing.origem === "cadastro" && row.origem !== "cadastro") {
+        // Chapada / BU must not overwrite featured telão names.
+      } else if (keepNamed && row.origem === "bu") {
+        // keep catalog/cadastro nome + origem
+      } else {
         existing.nome = row.nome;
         if (row.foto_url !== undefined) existing.foto_url = row.foto_url;
-      } else if (row.origem === "cadastro") {
-        existing.nome = row.nome;
-        if (row.foto_url !== undefined) existing.foto_url = row.foto_url;
-      }
-      if (existing.origem !== "cadastro" && row.origem) {
-        existing.origem = row.origem;
+        if (row.origem) existing.origem = row.origem;
       }
     } else {
       mockCandidatos.push({

@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   Check,
+  FileUp,
   ImagePlus,
   Loader2,
   Pencil,
@@ -34,6 +35,7 @@ import {
   labelCargoCurto,
   type CargoOficial,
 } from "@/lib/cargos";
+import { CHAPADA_HINT, parseChapadaPayload } from "@/lib/chapada";
 import {
   isProbablyImageUrl,
   uploadCandidatoFoto,
@@ -42,6 +44,7 @@ import {
   applyZonasExpectativa,
   dataModeLabel,
   getConfig,
+  importCandidatos,
   listCandidatos,
   removeCandidato,
   saveChefePin,
@@ -91,6 +94,8 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     ...CARGOS_OFICIAIS,
   ]);
   const [chefePin, setChefePin] = useState(DEFAULT_CHEFE_PIN);
+  const [chapadaText, setChapadaText] = useState("");
+  const [chapadaBusy, setChapadaBusy] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -219,6 +224,60 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     }
   }
 
+  async function runChapadaImport(text: string) {
+    const parsed = parseChapadaPayload(text);
+    if (parsed.rows.length === 0) {
+      throw new Error(
+        parsed.errors[0] ??
+          "Nenhum candidato válido. CSV/JSON: numero,nome,cargo."
+      );
+    }
+    const result = await importCandidatos(parsed.rows, { origem: "catalogo" });
+    const warn =
+      parsed.errors.length > 0
+        ? ` ${parsed.errors.length} linha(s) ignorada(s).`
+        : "";
+    const skip =
+      result.skippedCadastro > 0
+        ? ` ${result.skippedCadastro} oficial(is) do telão preservado(s).`
+        : "";
+    setMessage(
+      `Chapada: ${result.upserted} candidato(s) no catálogo.${skip}${warn}`
+    );
+    setChapadaText("");
+    await reload();
+    onConfigSaved?.();
+  }
+
+  async function handleChapadaPaste(e: FormEvent) {
+    e.preventDefault();
+    setChapadaBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await runChapadaImport(chapadaText);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao importar chapada.");
+    } finally {
+      setChapadaBusy(false);
+    }
+  }
+
+  async function handleChapadaFile(file: File | null) {
+    if (!file) return;
+    setChapadaBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const text = await file.text();
+      await runChapadaImport(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao importar chapada.");
+    } finally {
+      setChapadaBusy(false);
+    }
+  }
+
   async function handleSaveSecoes(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -296,7 +355,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
         <div>
           <h2 className="text-lg font-bold text-white">Cadastro da apuração</h2>
           <p className="text-sm text-slate-400">
-            Configure candidatos, expectativa de seções e o que aparece no telão.
+            Telão: 5 oficiais. Ranking: importe a chapada de Santo André.
             {config
               ? ` · ${config.secoes_esperadas} seções esperadas`
               : ""}
@@ -446,6 +505,60 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       )}
 
       {!loading && tab === "candidatos" && (
+        <div className="space-y-5">
+          <form
+            onSubmit={(e) => void handleChapadaPaste(e)}
+            className="space-y-3 rounded-xl border border-[#00ADEF]/30 bg-slate-900/50 p-4"
+          >
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
+              <FileUp className="size-4 text-[#00ADEF]" />
+              Importar chapada
+            </h3>
+            <p className="text-sm text-slate-300">{CHAPADA_HINT}</p>
+            <p className="text-xs text-slate-500">
+              CSV ou JSON: <code className="text-[#FFDE00]">numero,nome,cargo</code>{" "}
+              (Deputado Estadual, Deputado Federal, Senador, Governador,
+              Presidente). Não altera os 5 oficiais do telão. Exemplo:{" "}
+              <code className="text-slate-400">supabase/seed-chapada-exemplo.csv</code>
+            </p>
+            <textarea
+              value={chapadaText}
+              onChange={(e) => setChapadaText(e.target.value)}
+              rows={5}
+              placeholder={"numero,nome,cargo\n1001,Keila Giselle,Deputado Federal"}
+              className="w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2 font-mono text-[11px] text-slate-100"
+              disabled={chapadaBusy}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="submit"
+                disabled={chapadaBusy || !chapadaText.trim()}
+                className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
+              >
+                {chapadaBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <FileUp className="size-4" />
+                )}
+                Importar texto
+              </Button>
+              <label className="inline-flex h-10 cursor-pointer items-center rounded-lg border border-white/20 px-3 text-sm font-medium text-white hover:bg-white/5">
+                Arquivo CSV/JSON
+                <input
+                  type="file"
+                  accept=".csv,.json,text/csv,application/json,text/plain"
+                  className="hidden"
+                  disabled={chapadaBusy}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    e.target.value = "";
+                    void handleChapadaFile(file);
+                  }}
+                />
+              </label>
+            </div>
+          </form>
+
         <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
           <form
             onSubmit={(e) => void handleSaveCandidato(e)}
@@ -694,6 +807,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               </ul>
             )}
           </div>
+        </div>
         </div>
       )}
 

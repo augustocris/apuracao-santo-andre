@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Trophy, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CARGOS_OFICIAIS, CARGOS_RANKING_ORDEM, isFeaturedCandidato, labelCargoCurto } from "@/lib/cargos";
+import { CARGOS_OFICIAIS, CARGOS_RANKING_ORDEM, isFeaturedCandidato, labelCargoCurto, origemLabel } from "@/lib/cargos";
 import { fetchDashboard, subscribeDashboard } from "@/lib/data";
 import type { Candidato, CargoRanking, DashboardSnapshot } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
@@ -70,6 +70,7 @@ export function RankingGeral() {
         totalCargo: g.totalVotos,
       }))
     )
+    .filter((row) => row.votos > 0)
     .sort((a, b) => b.votos - a.votos || a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR"));
 
   const candidatosBanco: Candidato[] = useMemo(() => {
@@ -80,8 +81,10 @@ export function RankingGeral() {
       }
     }
     return Array.from(map.values()).sort((a, b) => {
-      const oa = a.origem === "bu" ? 1 : 0;
-      const ob = b.origem === "bu" ? 1 : 0;
+      const rank = (o?: string | null) =>
+        o === "cadastro" || !o ? 0 : o === "catalogo" ? 1 : 2;
+      const oa = rank(a.origem);
+      const ob = rank(b.origem);
       if (oa !== ob) return oa - ob;
       if (a.cargo !== b.cargo) return a.cargo.localeCompare(b.cargo, "pt-BR");
       return a.numero.localeCompare(b.numero, "pt-BR", { numeric: true });
@@ -97,8 +100,8 @@ export function RankingGeral() {
             Ranking geral
           </h3>
           <p className="mt-1 text-sm text-slate-400">
-            Todos os candidatos com votos nas urnas (oficiais + descobertos no
-            BU). O telão de 5 cards continua só com os cadastrados.
+            Todos os candidatos com votos (oficiais, catálogo e BU). O telão de
+            5 cards continua só com os cadastrados.
           </p>
         </div>
         <label className="flex flex-col gap-1 text-xs text-slate-400">
@@ -163,15 +166,18 @@ export function RankingGeral() {
                   </td>
                   <td className="px-3 py-2 font-medium text-white">
                     <span className="mr-2">{row.candidato.nome}</span>
-                    {isFeaturedCandidato(row.candidato.origem) ? (
-                      <span className="rounded bg-[#00ADEF]/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#00ADEF]">
-                        oficial
-                      </span>
-                    ) : (
-                      <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                        BU
-                      </span>
-                    )}
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                        isFeaturedCandidato(row.candidato.origem)
+                          ? "bg-[#00ADEF]/20 text-[#00ADEF]"
+                          : row.candidato.origem === "catalogo"
+                            ? "bg-amber-400/20 text-amber-200"
+                            : "bg-white/10 text-slate-400"
+                      )}
+                    >
+                      {origemLabel(row.candidato.origem)}
+                    </span>
                   </td>
                   <td className="px-3 py-2 tabular-nums text-slate-300">
                     {row.candidato.numero}
@@ -228,10 +234,12 @@ export function RankingGeral() {
                           "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
                           isFeaturedCandidato(c.origem)
                             ? "bg-[#00ADEF]/20 text-[#00ADEF]"
-                            : "bg-white/10 text-slate-400"
+                            : c.origem === "catalogo"
+                              ? "bg-amber-400/20 text-amber-200"
+                              : "bg-white/10 text-slate-400"
                         )}
                       >
-                        {isFeaturedCandidato(c.origem) ? "cadastro" : "bu"}
+                        {origemLabel(c.origem)}
                       </span>
                     </td>
                   </tr>

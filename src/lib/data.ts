@@ -22,6 +22,7 @@ import {
   placeholderCandidateName,
   resolveVoteCargo,
   validarNumeroCargo,
+  validarNumeroCargoChapada,
 } from "@/lib/cargos";
 import { normalizeCandidateNumero } from "@/lib/parser/bu-qr";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
@@ -574,10 +575,22 @@ export async function resolveBuVotes(
     cargo?: string;
   }>
 ): Promise<{ featured: ConfirmVoteRow[]; discovered: DiscoveredVote[] }> {
-  const featuredList = await listCandidatos({
-    activeRaceOnly: true,
-    featuredOnly: true,
-  });
+  const [featuredList, allList] = await Promise.all([
+    listCandidatos({
+      activeRaceOnly: true,
+      featuredOnly: true,
+    }),
+    listCandidatos({
+      activeRaceOnly: false,
+      featuredOnly: false,
+    }),
+  ]);
+  const knownByKey = new Map(
+    allList.map((c) => [
+      `${c.cargo}::${normalizeCandidateNumero(c.numero)}`,
+      c,
+    ])
+  );
   const featured: ConfirmVoteRow[] = [];
   const discovered: DiscoveredVote[] = [];
   const seenFeatured = new Set<string>();
@@ -587,8 +600,11 @@ export async function resolveBuVotes(
     const numero = normalizeCandidateNumero(vote.numero);
     if (!numero) continue;
     const cargo = resolveVoteCargo(vote.numero, vote.cargo);
+    const known = knownByKey.get(`${cargo}::${numero}`);
     const nome =
-      vote.nome?.trim() || placeholderCandidateName(numero);
+      (known && !/^Candidato\s/i.test(known.nome) ? known.nome : null) ||
+      vote.nome?.trim() ||
+      placeholderCandidateName(numero);
     const featuredCand = matchFeaturedCandidato(featuredList, numero, cargo);
     if (featuredCand) {
       if (seenFeatured.has(featuredCand.id)) continue;
@@ -1115,36 +1131,88 @@ export async function importCandidatos(
     nome: string;
     cargo: string;
     foto_url?: string | null;
-  }>
-): Promise<number> {
-  const normalized = rows.map((r) => {
-    const validated = validarNumeroCargo(r.cargo, r.numero);
-    if (!validated.ok) {
-      // Allow legacy cargos (Prefeito/Vereador) via import API
-      return {
-        numero: r.numero.replace(/\D/g, ""),
-        nome: r.nome.trim(),
-        cargo: r.cargo.trim(),
-        foto_url: r.foto_url?.trim() || null,
-      };
-    }
-    return {
-      numero: validated.numero,
-      nome: r.nome.trim(),
-      cargo: r.cargo.trim(),
+  }>,
+  opts?: { origem?: "catalogo" | "cadastro" }
+): Promise<{ upserted: number; skippedCadastro: number }> {
+  const origem = opts?.origem ?? "catalogo";
+  const normalized: Array<{
+    numero: string;
+    nome: string;
+    cargo: string;
+    foto_url: string | null;
+    origem: "catalogo" | "cadastro";
+  }> = [];
+
+  for (const r of rows) {
+    const chapada = validarNumeroCargoChapada(r.cargo, r.numero);
+    const legacy = validarNumeroCargo(r.cargo, r.numero);
+    const numero = chapada.ok
+      ? chapada.numero
+      : legacy.ok
+        ? legacy.numero
+        : r.numero.replace(/\D/g, "");
+    const nome = r.nome.trim();
+    const cargo = r.cargo.trim();
+    if (!numero || !nome || !cargo) continue;
+    normalized.push({
+      numero,
+      nome,
+      cargo,
       foto_url: r.foto_url?.trim() || null,
-    };
-  });
+      origem,
+    });
+  }
 
   const supabase = getSupabase();
-  if (!supabase) return upsertMockCandidatos(normalized);
+  if (!supabase) {
+    const existing = getMockCandidatos();
+    const skipKeys = new Set(
+      existing
+        .filter((c) => c.origem === "cadastro")
+        .map((c) => `${c.cargo}::${normalizeCandidateNumero(c.numero)}`)
+    );
+    const toUpsert = normalized.filter(
+      (r) => !skipKeys.has(`${r.cargo}::${normalizeCandidateNumero(r.numero)}`)
+    );
+    upsertMockCandidatos(toUpsert);
+    return {
+      upserted: toUpsert.length,
+      skippedCadastro: normalized.length - toUpsert.length,
+    };
+  }
 
-  const { error, count } = await supabase.from("candidatos").upsert(
-    normalized,
-    { onConflict: "numero,cargo", count: "exact" }
+  const { data: current, error: listError } = await supabase
+    .from("candidatos")
+    .select("numero, cargo, origem");
+  if (listError) throw new Error(listError.message);
+  const skipKeys = new Set(
+    ((current ?? []) as Array<{ numero: string; cargo: string; origem?: string }>)
+      .filter((c) => c.origem === "cadastro")
+      .map((c) => `${c.cargo}::${normalizeCandidateNumero(c.numero)}`)
   );
+  const toUpsert = normalized.filter(
+    (r) => !skipKeys.has(`${r.cargo}::${normalizeCandidateNumero(r.numero)}`)
+  );
+  if (toUpsert.length === 0) {
+    return {
+      upserted: 0,
+      skippedCadastro: normalized.length,
+    };
+  }
+
+  const payload = (await candidatosHasOrigemColumn())
+    ? toUpsert
+    : toUpsert.map(({ origem: _o, ...rest }) => rest);
+
+  const { error, count } = await supabase.from("candidatos").upsert(payload, {
+    onConflict: "numero,cargo",
+    count: "exact",
+  });
   if (error) throw supabaseWriteError("Falha ao importar candidatos", error.message);
-  return count ?? normalized.length;
+  return {
+    upserted: count ?? toUpsert.length,
+    skippedCadastro: normalized.length - toUpsert.length,
+  };
 }
 
 export function dataModeLabel(): "supabase" | "mock" {

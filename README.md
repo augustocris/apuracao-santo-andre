@@ -39,6 +39,7 @@ In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows 
    - [`supabase/migrations/004_bu_completo.sql`](supabase/migrations/004_bu_completo.sql) — `candidatos.origem` (`cadastro`/`bu`) + função `ingest_bu_completo`
    - [`supabase/migrations/005_chefe_pin.sql`](supabase/migrations/005_chefe_pin.sql) — PIN `/chefe` + ingest sem default Governador
    - [`supabase/migrations/006_catalogo_origem.sql`](supabase/migrations/006_catalogo_origem.sql) — `origem=catalogo` na tabela `candidatos` (chapada; **sem tabela nova**)
+   - [`supabase/migrations/007_favorito.sql`](supabase/migrations/007_favorito.sql) — `candidatos.favorito` (checkbox no `/chefe`; não altera o telão)
 3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
@@ -74,6 +75,10 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 3. **Zonas / Seções** — total esperado e/ou “Zona X tem N seções” (gera `locais_votacao`). Progresso do telão = enviadas / esperadas.
 4. **Relatório telão** — quais cargos aparecem no ranking/gráfico (`apuracao_config.relatorio_cargos` + localStorage).
 
+## Chefe (`/chefe`)
+
+PIN leve (`andre2026` por padrão, ou Cadastro → PIN do chefe). Ranking completo (incluindo Presidente), filtros de cargo, ordenação, busca e **favoritos** (checkbox entre # e nome; filtro Todos | Somente favoritos). Exige migration `007`. Não substitui o telão de 5 cards.
+
 ## Fiscal flow
 
 1. Open `/fiscal` on a phone (installable PWA).
@@ -96,9 +101,8 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 1. Push to `main` — Vercel auto-deploys if the project is connected.
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
-4. Run migration `003` if you want Storage photo uploads.
-4. Run SQL migrations `001` … `006` on Supabase (006 = `origem=catalogo` na tabela `candidatos`).
-5. Point fiscales to `/fiscal`, telão to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`).
+4. Run SQL migrations `001` … `007` on Supabase (007 = `candidatos.favorito` no `/chefe`). A Vercel não executa SQL.
+5. Point fiscales to `/fiscal`, telão to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`). Favoritos no ranking do chefe exigem a 007.
 
 ## Stack
 
@@ -117,6 +121,6 @@ src/lib/cargos.ts              Digit rules per cargo
 src/lib/parser/bu-qr.ts        BU QR + BU impresso (OCR colado)
 src/lib/parser/fixtures/       Dump TSE SIMULADO (ground-truth)
 src/lib/data.ts                Supabase + mock data layer
-supabase/migrations/           001–006 (006 = origem catalogo, mesma tabela)
+supabase/migrations/           001–007 (007 = favorito no /chefe)
 supabase/seed-chapada-exemplo.csv
 ```

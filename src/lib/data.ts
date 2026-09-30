@@ -111,6 +111,14 @@ function uniqueCargosForRanking(candidatos: Candidato[]): string[] {
 }
 
 let origemColumnCache: boolean | null = null;
+let favoritoColumnCache: boolean | null = null;
+
+function normalizeCandidato(raw: Candidato): Candidato {
+  return {
+    ...raw,
+    favorito: raw.favorito === true,
+  };
+}
 
 async function candidatosHasOrigemColumn(): Promise<boolean> {
   if (origemColumnCache != null) return origemColumnCache;
@@ -122,6 +130,18 @@ async function candidatosHasOrigemColumn(): Promise<boolean> {
   const { error } = await supabase.from("candidatos").select("origem").limit(1);
   origemColumnCache = !error;
   return origemColumnCache;
+}
+
+async function candidatosHasFavoritoColumn(): Promise<boolean> {
+  if (favoritoColumnCache != null) return favoritoColumnCache;
+  const supabase = getSupabase();
+  if (!supabase) {
+    favoritoColumnCache = true;
+    return true;
+  }
+  const { error } = await supabase.from("candidatos").select("favorito").limit(1);
+  favoritoColumnCache = !error;
+  return favoritoColumnCache;
 }
 
 function resolveCargoFilters(
@@ -370,6 +390,43 @@ export async function saveChefePin(pin: string): Promise<ApuracaoConfig> {
   return saveConfig({ chefe_pin: cleaned });
 }
 
+export async function setCandidatoFavorito(
+  id: string,
+  favorito: boolean
+): Promise<Candidato> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    const updated = updateMockCandidato(id, { favorito });
+    if (!updated) throw new Error("Candidato não encontrado.");
+    return normalizeCandidato(updated);
+  }
+
+  if (!(await candidatosHasFavoritoColumn())) {
+    throw new Error(
+      "Coluna favorito ausente. Cole a migration 007_favorito.sql no SQL Editor do Supabase."
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("candidatos")
+    .update({ favorito })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    if (/favorito/i.test(error.message) || error.code === "42703") {
+      favoritoColumnCache = false;
+      throw new Error(
+        "Coluna favorito ausente. Cole a migration 007_favorito.sql no SQL Editor do Supabase."
+      );
+    }
+    throw new Error(error.message);
+  }
+  if (!data) throw new Error("Candidato não encontrado.");
+  return normalizeCandidato(data as Candidato);
+}
+
 export async function listCandidatos(opts?: {
   activeRaceOnly?: boolean;
   featuredOnly?: boolean;
@@ -389,6 +446,8 @@ export async function listCandidatos(opts?: {
     if (error) throw new Error(error.message);
     list = (data ?? []) as Candidato[];
   }
+
+  list = list.map(normalizeCandidato);
 
   if (opts?.featuredOnly !== false) {
     list = list.filter((c) => isFeaturedCandidato(c.origem));
@@ -948,7 +1007,7 @@ export async function fetchDashboard(
 
   return buildSnapshot(
     (locaisRes.data ?? []) as LocalVotacao[],
-    (candRes.data ?? []) as Candidato[],
+    ((candRes.data ?? []) as Candidato[]).map(normalizeCandidato),
     buRes.data ?? [],
     config,
     "supabase",

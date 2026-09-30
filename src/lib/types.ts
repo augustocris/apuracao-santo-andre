@@ -25,6 +25,8 @@ export interface Candidato {
   foto_url: string | null;
   /** cadastro = telão; catalogo = chapada da cidade; bu = descoberto no scan. */
   origem?: CandidatoOrigem | null;
+  /** Marcado no ranking do /chefe. Não altera o telão. */
+  favorito?: boolean | null;
 }
 
 export interface BoletimUrna {

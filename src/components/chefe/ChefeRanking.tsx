@@ -15,8 +15,14 @@ import {
   resolveChefePin,
 } from "@/lib/cargos";
 import { CHAPADA_HINT } from "@/lib/chapada";
-import { fetchDashboard, getConfig, subscribeDashboard } from "@/lib/data";
-import type { DashboardSnapshot, RankingRow } from "@/lib/types";
+import {
+  filterChefeRankingRows,
+  isCandidatoFavorito,
+  type ChefeFavoritoFilter,
+  type ChefeSortKey,
+} from "@/lib/chefe-ranking";
+import { fetchDashboard, getConfig, setCandidatoFavorito, subscribeDashboard } from "@/lib/data";
+import type { Candidato, DashboardSnapshot } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
 
 const EMPTY: DashboardSnapshot = {
@@ -33,7 +39,7 @@ const EMPTY: DashboardSnapshot = {
   mode: "mock",
 };
 
-type SortKey = "votos" | "nome";
+type SortKey = ChefeSortKey;
 
 function isUnlocked(): boolean {
   if (typeof window === "undefined") return false;
@@ -53,8 +59,11 @@ export function ChefeRanking() {
   const [cargoFilter, setCargoFilter] = useState<string>("todos");
   const [sort, setSort] = useState<SortKey>("votos");
   const [query, setQuery] = useState("");
+  const [favoritoFilter, setFavoritoFilter] =
+    useState<ChefeFavoritoFilter>("todos");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setUnlocked(isUnlocked());
@@ -90,37 +99,16 @@ export function ChefeRanking() {
     }, 4000);
   }, [unlocked, reload]);
 
-  const rows = useMemo(() => {
-    const groups = snapshot.rankingGeralByCargo;
-    const selected =
-      cargoFilter === "todos"
-        ? groups.filter((g) => g.cargo !== CARGO_INDEFINIDO)
-        : groups.filter((g) => g.cargo === cargoFilter);
-
-    const flat: Array<RankingRow & { cargo: string }> = selected.flatMap((g) =>
-      g.rankings.map((row) => ({ ...row, cargo: g.cargo }))
-    );
-
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? flat.filter(
-          (r) =>
-            r.candidato.nome.toLowerCase().includes(q) ||
-            r.candidato.numero.includes(q.replace(/\D/g, "") || q)
-        )
-      : flat;
-
-    filtered.sort((a, b) => {
-      if (sort === "nome") {
-        return a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR");
-      }
-      return (
-        b.votos - a.votos ||
-        a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
-      );
-    });
-    return filtered.filter((r) => r.votos > 0);
-  }, [snapshot.rankingGeralByCargo, cargoFilter, sort, query]);
+  const rows = useMemo(
+    () =>
+      filterChefeRankingRows(snapshot.rankingGeralByCargo, {
+        cargoFilter,
+        sort,
+        query,
+        favoritoFilter,
+      }),
+    [snapshot.rankingGeralByCargo, cargoFilter, sort, query, favoritoFilter]
+  );
 
   const indefinidos = snapshot.rankingGeralByCargo.find(
     (g) => g.cargo === CARGO_INDEFINIDO
@@ -149,6 +137,45 @@ export function ChefeRanking() {
       /* ignore */
     }
     setUnlocked(false);
+  }
+
+  function patchFavoritoInSnapshot(id: string, favorito: boolean) {
+    setSnapshot((prev) => ({
+      ...prev,
+      rankingGeralByCargo: prev.rankingGeralByCargo.map((g) => ({
+        ...g,
+        rankings: g.rankings.map((row) =>
+          row.candidato.id === id
+            ? { ...row, candidato: { ...row.candidato, favorito } }
+            : row
+        ),
+      })),
+    }));
+  }
+
+  async function toggleFavorito(candidato: Candidato) {
+    if (savingIds.has(candidato.id)) return;
+    const next = !isCandidatoFavorito(candidato.favorito);
+    const previous = isCandidatoFavorito(candidato.favorito);
+    patchFavoritoInSnapshot(candidato.id, next);
+    setSavingIds((prev) => new Set(prev).add(candidato.id));
+    try {
+      await setCandidatoFavorito(candidato.id, next);
+      setError(null);
+    } catch (err) {
+      patchFavoritoInSnapshot(candidato.id, previous);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível salvar o favorito."
+      );
+    } finally {
+      setSavingIds((prev) => {
+        const copy = new Set(prev);
+        copy.delete(candidato.id);
+        return copy;
+      });
+    }
   }
 
   if (!unlocked) {
@@ -246,6 +273,35 @@ export function ChefeRanking() {
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-slate-500">
+          Favoritos
+          <div className="flex h-10 overflow-hidden rounded-lg border border-slate-300 bg-white text-sm text-slate-900">
+            <button
+              type="button"
+              onClick={() => setFavoritoFilter("todos")}
+              className={cn(
+                "px-3",
+                favoritoFilter === "todos"
+                  ? "bg-teal-700 font-semibold text-white"
+                  : "hover:bg-slate-50"
+              )}
+            >
+              Todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setFavoritoFilter("favoritos")}
+              className={cn(
+                "border-l border-slate-300 px-3",
+                favoritoFilter === "favoritos"
+                  ? "bg-teal-700 font-semibold text-white"
+                  : "font-semibold hover:bg-slate-50"
+              )}
+            >
+              Somente favoritos
+            </button>
+          </div>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-slate-500">
           Ordenar
           <select
             value={sort}
@@ -289,7 +345,9 @@ export function ChefeRanking() {
 
       {!loading && rows.length === 0 && (
         <p className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
-          Nenhum candidato neste filtro.
+          {favoritoFilter === "favoritos"
+            ? "Nenhum favorito neste filtro."
+            : "Nenhum candidato neste filtro."}
         </p>
       )}
 
@@ -299,6 +357,9 @@ export function ChefeRanking() {
             <thead className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2 font-semibold">#</th>
+                <th className="w-10 px-2 py-2 font-semibold">
+                  <span className="sr-only">Favorito</span>
+                </th>
                 <th className="px-3 py-2 font-semibold">Nome</th>
                 <th className="px-3 py-2 font-semibold">Número</th>
                 <th className="px-3 py-2 font-semibold">Cargo</th>
@@ -312,6 +373,16 @@ export function ChefeRanking() {
                 <tr key={`${row.candidato.id}-${row.cargo}`} className="bg-white">
                   <td className="px-3 py-2 tabular-nums text-slate-400">
                     {index + 1}
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="checkbox"
+                      className="size-4 cursor-pointer accent-amber-500"
+                      checked={isCandidatoFavorito(row.candidato.favorito)}
+                      disabled={savingIds.has(row.candidato.id)}
+                      onChange={() => void toggleFavorito(row.candidato)}
+                      aria-label={`Favorito: ${row.candidato.nome}`}
+                    />
                   </td>
                   <td className="px-3 py-2 font-medium text-slate-900">
                     {row.candidato.nome}

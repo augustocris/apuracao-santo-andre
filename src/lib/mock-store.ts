@@ -27,6 +27,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Governador",
     foto_url: null,
     origem: "cadastro",
+    favorito: false,
   },
   {
     id: "22222222-2222-2222-2222-222222222202",
@@ -35,6 +36,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Governador",
     foto_url: null,
     origem: "cadastro",
+    favorito: false,
   },
   {
     id: "22222222-2222-2222-2222-222222222211",
@@ -43,6 +45,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Senador",
     foto_url: null,
     origem: "cadastro",
+    favorito: false,
   },
   {
     id: "22222222-2222-2222-2222-222222222212",
@@ -51,6 +54,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Senador",
     foto_url: null,
     origem: "cadastro",
+    favorito: false,
   },
   {
     id: "22222222-2222-2222-2222-222222222221",
@@ -60,6 +64,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     foto_url:
       "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&h=500&q=80",
     origem: "cadastro",
+    favorito: false,
   },
   {
     id: "22222222-2222-2222-2222-222222222231",
@@ -69,6 +74,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     foto_url:
       "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=400&h=500&q=80",
     origem: "cadastro",
+    favorito: false,
   },
   {
     id: "bu-discovered-99999",
@@ -77,6 +83,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Deputado Estadual",
     foto_url: null,
     origem: "bu",
+    favorito: false,
   },
   {
     id: "bu-discovered-2211",
@@ -85,6 +92,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Deputado Federal",
     foto_url: null,
     origem: "bu",
+    favorito: false,
   },
   {
     id: "bu-discovered-17-pres",
@@ -93,6 +101,16 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     cargo: "Presidente",
     foto_url: null,
     origem: "bu",
+    favorito: false,
+  },
+  {
+    id: "cat-1001-df",
+    numero: "1001",
+    nome: "Keila Giselle",
+    cargo: "Deputado Federal",
+    foto_url: null,
+    origem: "catalogo",
+    favorito: false,
   },
 ];
 
@@ -236,6 +254,16 @@ const SEED_BOLETINS: BoletimUrna[] = [
     secao: "0010",
     candidato_id: "bu-discovered-17-pres",
     quantidade_votos: 80,
+    raw_text: "SEED",
+    fiscal_nome: "Demo",
+    created_at: new Date(Date.now() - 120_000).toISOString(),
+  },
+  {
+    id: "bu-seed-8",
+    zona: "002",
+    secao: "0010",
+    candidato_id: "cat-1001-df",
+    quantidade_votos: 22,
     raw_text: "SEED",
     fiscal_nome: "Demo",
     created_at: new Date(Date.now() - 120_000).toISOString(),
@@ -393,6 +421,9 @@ export function upsertMockCandidatos(
         if (row.foto_url !== undefined) existing.foto_url = row.foto_url;
         if (row.origem) existing.origem = row.origem;
       }
+      if (row.favorito !== undefined && row.favorito !== null) {
+        existing.favorito = row.favorito;
+      }
     } else {
       mockCandidatos.push({
         id: row.id ?? crypto.randomUUID(),
@@ -401,6 +432,7 @@ export function upsertMockCandidatos(
         cargo: row.cargo,
         foto_url: row.foto_url ?? null,
         origem: row.origem ?? "bu",
+        favorito: row.favorito === true,
       });
     }
     count += 1;
@@ -411,7 +443,9 @@ export function upsertMockCandidatos(
 
 export function updateMockCandidato(
   id: string,
-  patch: Partial<Pick<Candidato, "numero" | "nome" | "cargo" | "foto_url">>
+  patch: Partial<
+    Pick<Candidato, "numero" | "nome" | "cargo" | "foto_url" | "favorito">
+  >
 ): Candidato | null {
   const existing = mockCandidatos.find((c) => c.id === id);
   if (!existing) return null;

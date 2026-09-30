@@ -240,13 +240,14 @@ export function FiscalApp() {
         votes: payload.votes.map((v) => ({
           numero: v.numero,
           quantidade: v.quantidade,
+          cargo: v.cargo,
         })),
         rawText: [
           `MANUAL`,
           `ZONA:${payload.zona}`,
           `SECAO:${payload.secao}`,
           ...payload.votes.map(
-            (v) => `CAND:${v.numero} QTVO:${v.quantidade}`
+            (v) => `CARG:${v.cargo} CAND:${v.numero} QTVO:${v.quantidade}`
           ),
         ].join("\n"),
         mode: "featured",

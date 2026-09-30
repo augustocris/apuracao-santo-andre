@@ -2,7 +2,7 @@
 
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CARGOS_FISCAL_ORDEM, CARGOS_OFICIAIS, CARGOS_TAG_OPTIONS, CARGO_INDEFINIDO, labelCargoCurto } from "@/lib/cargos";
+import { CARGOS_CONFIRM_ORDEM, CARGOS_TAG_OPTIONS, CARGO_INDEFINIDO, labelCargoCurto } from "@/lib/cargos";
 import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao } from "@/lib/types";
 import { formatVotes } from "@/lib/utils";
 
@@ -40,14 +40,32 @@ export function ConfirmTransmitModal({
 }: ConfirmTransmitModalProps) {
   if (!open) return null;
 
-  const byCargo = CARGOS_FISCAL_ORDEM.map((cargo) => ({
-    cargo,
-    items: rows.filter((r) => r.candidato.cargo === cargo),
-  })).filter((g) => g.items.length > 0);
+  const confirmCargos = CARGOS_CONFIRM_ORDEM as readonly string[];
+  const byCargo = confirmCargos
+    .map((cargo) => ({
+      cargo,
+      items: [
+        ...rows.filter((r) => r.candidato.cargo === cargo),
+        ...discovered
+          .filter((d) => d.cargo === cargo)
+          .map((d) => ({
+            candidato: {
+              id: `disc-${d.cargo}-${d.numero}`,
+              nome: d.nome,
+              numero: d.numero,
+              cargo: d.cargo,
+              foto_url: null,
+            },
+            quantidade: d.quantidade,
+          })),
+      ],
+    }))
+    .filter((g) => g.items.length > 0);
 
   const others = rows.filter(
-    (r) => !(CARGOS_OFICIAIS as readonly string[]).includes(r.candidato.cargo)
+    (r) => !confirmCargos.includes(r.candidato.cargo)
   );
+  const demais = discovered.filter((d) => !confirmCargos.includes(d.cargo));
 
   const canSend = rows.length > 0 || discovered.length > 0;
 
@@ -133,19 +151,19 @@ export function ConfirmTransmitModal({
         <Section title="Outros" items={others} />
       </div>
 
-      {discovered.length > 0 ? (
+      {demais.length > 0 ? (
         <details className="rounded-lg border border-slate-200 bg-slate-50 open:bg-white">
           <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-slate-700 marker:content-none [&::-webkit-details-marker]:hidden">
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block text-slate-400">▸</span>
-              Demais candidatos neste BU ({discovered.length})
+              Demais candidatos neste BU ({demais.length})
             </span>
             <p className="mt-0.5 font-normal text-slate-500">
               Também serão gravados. Toque para revisar.
             </p>
           </summary>
           <ul className="max-h-48 divide-y divide-slate-200 overflow-y-auto border-t border-slate-200">
-            {discovered.map((row) => (
+            {demais.map((row) => (
               <li
                 key={`${row.cargo}-${row.numero}`}
                 className="flex items-center justify-between gap-3 px-3 py-1.5"

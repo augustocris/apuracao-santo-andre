@@ -14,6 +14,12 @@ export const CARGOS_FISCAL_ORDEM = [
   "Governador",
 ] as const;
 
+/** Confirmação do scan: inclui Presidente (não entra no Digitar/telão). */
+export const CARGOS_CONFIRM_ORDEM = [
+  ...CARGOS_FISCAL_ORDEM,
+  "Presidente",
+] as const;
+
 export type CargoOficial = (typeof CARGOS_OFICIAIS)[number];
 
 /** Quantidade esperada de candidatos por cargo no cadastro admin. */
@@ -143,10 +149,17 @@ const HEADER_CARGO_MAP: Array<{ re: RegExp; cargo: string }> = [
 ];
 
 export function cargoFromPrintedHeader(header: string): string | null {
+  let best: { cargo: string; index: number } | null = null;
   for (const { re, cargo } of HEADER_CARGO_MAP) {
-    if (re.test(header)) return cargo;
+    const global = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
+    let m: RegExpExecArray | null;
+    while ((m = global.exec(header)) !== null) {
+      if (!best || m.index >= best.index) {
+        best = { cargo, index: m.index };
+      }
+    }
   }
-  return null;
+  return best?.cargo ?? null;
 }
 
 export function cargoFromTseCarg(code: string): string | null {

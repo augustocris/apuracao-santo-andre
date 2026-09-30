@@ -14,6 +14,7 @@ import {
   upsertMockLocais,
 } from "@/lib/mock-store";
 import {
+  CARGO_INDEFINIDO,
   CARGOS_OFICIAIS,
   CARGOS_RANKING_ORDEM,
   DEFAULT_CHEFE_PIN,
@@ -583,47 +584,55 @@ export async function urnaJaCadastrada(
 }
 
 export async function resolveConfirmRows(
-  votes: Array<{ numero: string; quantidade: number }>
+  votes: Array<{ numero: string; quantidade: number; cargo?: string }>
 ): Promise<{ rows: ConfirmVoteRow[]; unknown: string[] }> {
   const candidatos = await listCandidatos({ activeRaceOnly: true });
-  // Match 17 ↔ 0017 / padded variants via canonical digit form.
-  const byNumero = new Map<string, (typeof candidatos)[number]>();
+  const byKey = new Map<string, (typeof candidatos)[number]>();
   for (const c of candidatos) {
-    byNumero.set(normalizeCandidateNumero(c.numero), c);
-    byNumero.set(c.numero, c);
+    byKey.set(
+      `${c.cargo}::${normalizeCandidateNumero(c.numero)}`,
+      c
+    );
   }
   const rows: ConfirmVoteRow[] = [];
   const unknown: string[] = [];
+  const seen = new Set<string>();
 
   for (const vote of votes) {
     const canon = normalizeCandidateNumero(vote.numero);
-    const candidato = byNumero.get(canon) ?? byNumero.get(vote.numero);
+    const cargo = vote.cargo?.trim();
+    if (!canon || !cargo || cargo === CARGO_INDEFINIDO || cargo === "Outro") {
+      unknown.push(vote.numero);
+      continue;
+    }
+    const candidato = byKey.get(`${cargo}::${canon}`);
     if (!candidato) {
       unknown.push(vote.numero);
       continue;
     }
+    if (seen.has(candidato.id)) continue;
+    seen.add(candidato.id);
     rows.push({ candidato, quantidade: vote.quantidade });
   }
 
   return { rows, unknown };
 }
 
-function matchFeaturedCandidato(
+/** Featured match is (numero, cargo) only — never numero alone. */
+export function matchFeaturedCandidato(
   featured: Candidato[],
   numero: string,
   cargo: string
 ): Candidato | undefined {
   const canon = normalizeCandidateNumero(numero);
-  const exact = featured.find(
-    (c) =>
-      normalizeCandidateNumero(c.numero) === canon && c.cargo === cargo
-  );
-  if (exact) return exact;
-  // Only fall back to numero-only when cargo is generic/unknown.
-  if (cargo === "Outro") {
-    return featured.find((c) => normalizeCandidateNumero(c.numero) === canon);
+  const resolved = resolveVoteCargo(numero, cargo);
+  if (!canon || resolved === CARGO_INDEFINIDO || resolved === "Outro") {
+    return undefined;
   }
-  return undefined;
+  return featured.find(
+    (c) =>
+      normalizeCandidateNumero(c.numero) === canon && c.cargo === resolved
+  );
 }
 
 export async function resolveBuVotes(
@@ -665,7 +674,7 @@ export async function resolveBuVotes(
       vote.nome?.trim() ||
       placeholderCandidateName(numero);
     const featuredCand = matchFeaturedCandidato(featuredList, numero, cargo);
-    if (featuredCand) {
+    if (featuredCand && cargo !== CARGO_INDEFINIDO && cargo !== "Outro") {
       if (seenFeatured.has(featuredCand.id)) continue;
       seenFeatured.add(featuredCand.id);
       featured.push({ candidato: featuredCand, quantidade: vote.quantidade });

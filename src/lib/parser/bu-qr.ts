@@ -162,26 +162,14 @@ function setVote(
     typeof quantidadeRaw === "number"
       ? quantidadeRaw
       : Number.parseInt(String(quantidadeRaw).replace(/\D/g, ""), 10);
-  if (!numero || !Number.isFinite(quantidade) || quantidade < 0) return;
+  if (!numero || !Number.isFinite(quantidade) || quantidade <= 0) return;
 
   const cargo = extra?.cargo?.trim() || undefined;
   const nome = extra?.nome?.trim() || undefined;
 
-  if (!cargo) {
-    const existingKey = Array.from(map.keys()).find(
-      (k) => map.get(k)!.numero === numero
-    );
-    if (existingKey) {
-      const prev = map.get(existingKey)!;
-      map.set(existingKey, {
-        numero,
-        quantidade,
-        nome: nome || prev.nome,
-        cargo: prev.cargo,
-      });
-      return;
-    }
-  } else {
+  // Promote an uncarged slice to a banner/CARG cargo — never the reverse
+  // (Presidente 10 must not collapse into Governador 10).
+  if (cargo) {
     const bareKey = voteKey(numero, undefined);
     if (map.has(bareKey)) {
       const prev = map.get(bareKey)!;
@@ -209,7 +197,7 @@ function setVote(
 function collectCandQtvo(text: string, map: Map<string, VoteAcc>) {
   let currentCargo: string | undefined;
   const lines = text.split(/\r?\n/);
-  const chunks = lines.length > 1 ? lines : [text];
+  const chunks = lines.length > 1 ? lines : text.split(/\s+/);
 
   for (const chunk of chunks) {
     const carg = chunk.match(/CARG\s*:\s*(\d+)/i);
@@ -328,7 +316,7 @@ function collectRegisteredLookups(
   for (const raw of registeredNumeros) {
     const canon = normalizeCandidateNumero(raw);
     if (!canon) continue;
-    if (map.has(canon)) continue;
+    if (Array.from(map.values()).some((acc) => acc.numero === canon)) continue;
 
     const esc = canon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // TSE / key:value — allow leading zeros on both sides.

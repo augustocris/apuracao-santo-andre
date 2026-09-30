@@ -12,7 +12,12 @@ import type { Candidato } from "@/lib/types";
 export interface ManualBuSubmit {
   zona: string;
   secao: string;
-  votes: Array<{ candidatoId: string; numero: string; quantidade: number }>;
+  votes: Array<{
+    candidatoId: string;
+    numero: string;
+    cargo: string;
+    quantidade: number;
+  }>;
 }
 
 interface ManualBuFormProps {
@@ -124,6 +129,7 @@ export function ManualBuForm({ onSubmit, busy, resetKey = 0 }: ManualBuFormProps
       votes.push({
         candidatoId: c.id,
         numero: c.numero,
+        cargo: c.cargo,
         quantidade,
       });
     }

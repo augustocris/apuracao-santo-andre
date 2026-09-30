@@ -30,9 +30,9 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     favorito: false,
   },
   {
-    id: "22222222-2222-2222-2222-222222222202",
-    numero: "45",
-    nome: "João Santos",
+    id: "22222222-2222-2222-2222-222222222203",
+    numero: "10",
+    nome: "Tarcísio de Freitas",
     cargo: "Governador",
     foto_url: null,
     origem: "cadastro",

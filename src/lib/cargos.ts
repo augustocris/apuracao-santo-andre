@@ -216,11 +216,18 @@ export const CARGO_DIGITOS_CHAPADA: Record<CargoChapada, number> = {
   Presidente: 2,
 };
 
+/** Strip non-digits and leading zeros (keep at least one digit). Unique key with cargo. */
+export function normalizeChapadaNumero(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.replace(/^0+(?=\d)/, "") || "0";
+}
+
 export function validarNumeroCargoChapada(
   cargo: string,
   numero: string
 ): { ok: true; numero: string } | { ok: false; message: string } {
-  const digits = numero.replace(/\D/g, "");
+  const digits = normalizeChapadaNumero(numero);
   const expected =
     (CARGO_DIGITOS_CHAPADA as Record<string, number>)[cargo] ?? null;
   if (expected == null) {
@@ -229,13 +236,13 @@ export function validarNumeroCargoChapada(
       message: `Cargo inválido. Use: ${CARGOS_CHAPADA.join(", ")}.`,
     };
   }
-  if (digits.length !== expected) {
+  if (!digits || digits.length !== expected) {
     return {
       ok: false,
       message: `${cargo} exige número com ${expected} dígitos (recebido: ${digits.length || 0}).`,
     };
   }
-  return { ok: true, numero: digits.replace(/^0+(?=\d)/, "") || digits };
+  return { ok: true, numero: digits };
 }
 
 /** Telão 5 cards: só origem=cadastro (ausência pre-004 conta como cadastro). */

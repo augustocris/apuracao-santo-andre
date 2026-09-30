@@ -89,6 +89,39 @@ describe("parseChapadaPayload", () => {
     const parsed = parseChapadaPayload(text);
     assert.equal(parsed.rows[0]?.nome, "JOSÉ DA SILVA");
   });
+
+  it("dedupes padded NR_CANDIDATO (02739 vs 2739) and party-change rows", () => {
+    const csv = `SG_UF;DS_CARGO;SQ_CANDIDATO;NR_CANDIDATO;NM_URNA_CANDIDATO;DS_SITUACAO_CANDIDATURA;DS_DETALHE_SITUACAO_CAND
+SP;DEPUTADO FEDERAL;250000000001;02739;NOME ANTIGO;INAPTO;INDEFERIDO
+SP;DEPUTADO FEDERAL;250000000002;2739;NOME NOVO;APTO;DEFERIDO
+SP;DEPUTADO FEDERAL;250000000003;02739;NOME MEIO;APTO;DEFERIDO
+SP;DEPUTADO ESTADUAL;250000000010;010001;ESTADUAL A;APTO;DEFERIDO
+SP;DEPUTADO ESTADUAL;250000000011;10001;ESTADUAL B;APTO;DEFERIDO
+`;
+    const parsed = parseChapadaPayload(csv);
+    assert.equal(parsed.format, "tse");
+    const federais = parsed.rows.filter((r) => r.cargo === "Deputado Federal");
+    assert.equal(federais.length, 1);
+    assert.equal(federais[0].numero, "2739");
+    assert.equal(federais[0].nome, "NOME MEIO");
+    const estaduais = parsed.rows.filter((r) => r.cargo === "Deputado Estadual");
+    assert.equal(estaduais.length, 1);
+    assert.equal(estaduais[0].numero, "10001");
+    assert.equal(estaduais[0].nome, "ESTADUAL B");
+    assert.ok(parsed.skipped.duplicates >= 1);
+    assert.ok(summarizeChapadaParse(parsed).includes("duplicata"));
+  });
+
+  it("prefers APTO when the same numero+cargo appears twice", () => {
+    const csv = `SG_UF;DS_CARGO;SQ_CANDIDATO;NR_CANDIDATO;NM_URNA_CANDIDATO;DS_SITUACAO_CANDIDATURA;DS_DETALHE_SITUACAO_CAND
+SP;SENADOR;1;130;PRIMEIRO;APTO;DEFERIDO
+SP;SENADOR;2;130;SEGUNDO;PENDENTE;OUTRO
+`;
+    const parsed = parseChapadaPayload(csv);
+    assert.equal(parsed.rows.length, 1);
+    assert.equal(parsed.rows[0].nome, "PRIMEIRO");
+    assert.equal(parsed.skipped.duplicates, 1);
+  });
 });
 
 describe("tse cargo and uf helpers", () => {
@@ -143,6 +176,23 @@ describe("import chapada", () => {
     );
     assert.equal(keila?.nome, "Keila Giselle");
     assert.equal(keila?.origem, "catalogo");
+  });
+
+  it("unifies padded duplicates before upsert and reports count", async () => {
+    const result = await importCandidatos(
+      [
+        { numero: "02739", nome: "A", cargo: "Deputado Federal" },
+        { numero: "2739", nome: "B", cargo: "Deputado Federal" },
+        { numero: "2739", nome: "C", cargo: "Deputado Federal" },
+      ],
+      { origem: "catalogo" }
+    );
+    assert.equal(result.duplicates, 2);
+    const matches = getMockCandidatos().filter(
+      (c) => c.numero === "2739" && c.cargo === "Deputado Federal"
+    );
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].nome, "C");
   });
 });
 

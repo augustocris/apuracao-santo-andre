@@ -1,5 +1,6 @@
 import {
   CARGOS_CHAPADA,
+  normalizeChapadaNumero,
   validarNumeroCargoChapada,
   type CargoChapada,
 } from "@/lib/cargos";
@@ -57,6 +58,8 @@ export interface ChapadaRow {
   /** TSE SQ_CANDIDATO — used to match urna photo filenames. */
   sq_candidato?: string;
   foto_url?: string | null;
+  /** Internal: true when situacao is clearly APTO/DEFERIDO. */
+  apto?: boolean;
 }
 
 export interface ChapadaSkipCounts {
@@ -64,6 +67,7 @@ export interface ChapadaSkipCounts {
   uf: number;
   situacao: number;
   invalid: number;
+  duplicates: number;
 }
 
 export type ChapadaFormat = "simplificado" | "tse" | "json";
@@ -76,11 +80,15 @@ export interface ParseChapadaResult {
 }
 
 export function emptySkipCounts(): ChapadaSkipCounts {
-  return { cargo: 0, uf: 0, situacao: 0, invalid: 0 };
+  return { cargo: 0, uf: 0, situacao: 0, invalid: 0, duplicates: 0 };
 }
 
 export function skippedTotal(s: ChapadaSkipCounts): number {
-  return s.cargo + s.uf + s.situacao + s.invalid;
+  return s.cargo + s.uf + s.situacao + s.invalid + s.duplicates;
+}
+
+export function chapadaRowKey(cargo: string, numero: string): string {
+  return `${cargo.trim()}::${normalizeChapadaNumero(numero)}`;
 }
 
 /** Decode TSE/simple CSV bytes: UTF-8, then latin1 if mojibake or header only makes sense as latin1. */
@@ -288,6 +296,7 @@ function parseNamedRow(
     return null;
   }
 
+  let apto: boolean | undefined;
   if (format === "tse") {
     const hasUf = Object.prototype.hasOwnProperty.call(rec, "SG_UF");
     if (hasUf && !keepByUf(rec.SG_UF, cargo)) {
@@ -303,6 +312,7 @@ function parseNamedRow(
         skipped.situacao += 1;
         return null;
       }
+      if (sit === "keep") apto = true;
     }
   }
 
@@ -322,23 +332,44 @@ function parseNamedRow(
   const sq = tseCell(rec.SQ_CANDIDATO || "").replace(/\D/g, "");
   const row: ChapadaRow = { numero: validated.numero, nome, cargo };
   if (sq) row.sq_candidato = sq;
+  if (apto) row.apto = true;
   return row;
 }
 
-function dedupeRows(rows: ChapadaRow[]): ChapadaRow[] {
+/**
+ * Collapse (numero, cargo) to one row before upsert.
+ * Prefer APTO/DEFERIDO; otherwise keep the last occurrence (partido novo / linha mais recente).
+ */
+export function dedupeChapadaRows(rows: ChapadaRow[]): {
+  rows: ChapadaRow[];
+  duplicates: number;
+} {
   const seen = new Map<string, ChapadaRow>();
+  let duplicates = 0;
   for (const row of rows) {
-    const key = `${row.cargo}::${row.numero}`;
+    const key = chapadaRowKey(row.cargo, row.numero);
     const prev = seen.get(key);
     if (!prev) {
       seen.set(key, row);
       continue;
     }
-    if (!prev.sq_candidato && row.sq_candidato) {
-      seen.set(key, row);
-    }
+    duplicates += 1;
+    if (prev.apto && !row.apto) continue;
+    seen.set(key, row);
   }
-  return Array.from(seen.values());
+  return { rows: Array.from(seen.values()), duplicates };
+}
+
+function finalizeRows(
+  rows: ChapadaRow[],
+  skipped: ChapadaSkipCounts
+): ChapadaRow[] {
+  const deduped = dedupeChapadaRows(rows);
+  skipped.duplicates += deduped.duplicates;
+  return deduped.rows.map((row) => {
+    const { apto: _apto, ...rest } = row;
+    return rest;
+  });
 }
 
 /** Parse CSV (simple or TSE consulta_cand) or JSON chapada. */
@@ -395,7 +426,7 @@ export function parseChapadaPayload(text: string): ParseChapadaResult {
           rows.push(parsed);
         }
       });
-      return { rows: dedupeRows(rows), errors, format: "json", skipped };
+      return { rows: finalizeRows(rows, skipped), errors, format: "json", skipped };
     } catch {
       return {
         rows: [],
@@ -427,7 +458,7 @@ export function parseChapadaPayload(text: string): ParseChapadaResult {
       const parsed = rowFromParts(splitCsvLine(line), i + 1, errors, skipped);
       if (parsed) rows.push(parsed);
     });
-    return { rows: dedupeRows(rows), errors, format, skipped };
+    return { rows: finalizeRows(rows, skipped), errors, format, skipped };
   }
 
   const hasSituacaoCols =
@@ -448,7 +479,7 @@ export function parseChapadaPayload(text: string): ParseChapadaResult {
     );
     if (parsed) rows.push(parsed);
   });
-  return { rows: dedupeRows(rows), errors, format, skipped };
+  return { rows: finalizeRows(rows, skipped), errors, format, skipped };
 }
 
 export function summarizeChapadaParse(parsed: ParseChapadaResult): string {
@@ -472,6 +503,9 @@ export function summarizeChapadaParse(parsed: ParseChapadaResult): string {
     }
     if (parsed.skipped.invalid) {
       detail.push(`${parsed.skipped.invalid} linha(s) inválida(s)`);
+    }
+    if (parsed.skipped.duplicates) {
+      detail.push(`${parsed.skipped.duplicates} duplicata(s) número+cargo`);
     }
     bits.push(`${skip} ignorado(s)` + (detail.length ? ` (${detail.join(", ")})` : ""));
   }

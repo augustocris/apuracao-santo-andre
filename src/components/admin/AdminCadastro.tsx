@@ -281,8 +281,12 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       result.skippedCadastro > 0
         ? ` ${result.skippedCadastro} oficial(is) do telão preservado(s).`
         : "";
+    const extraDups =
+      result.duplicates > 0 && parsed.skipped.duplicates === 0
+        ? ` ${result.duplicates} duplicata(s) número+cargo unificada(s).`
+        : "";
     setMessage(
-      `Chapada: ${summarizeChapadaParse(parsed)}. ${result.upserted} gravado(s) no catálogo.${skipOficiais}`
+      `Chapada: ${summarizeChapadaParse(parsed)}. ${result.upserted} gravado(s) no catálogo.${skipOficiais}${extraDups}`
     );
     setChapadaText("");
     await reload();

@@ -24,6 +24,7 @@ import {
   resolveVoteCargo,
   validarNumeroCargo,
   validarNumeroCargoChapada,
+  normalizeChapadaNumero,
 } from "@/lib/cargos";
 import { normalizeCandidateNumero } from "@/lib/parser/bu-qr";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
@@ -161,7 +162,7 @@ async function candidatosHasSqColumn(): Promise<boolean> {
   return sqCandidatoColumnCache;
 }
 
-const UPSERT_CHUNK = 400;
+const UPSERT_CHUNK = 200;
 
 function resolveCargoFilters(
   configCargos: string[],
@@ -1221,7 +1222,21 @@ type ImportRow = {
 };
 
 function cadastroKey(cargo: string, numero: string): string {
-  return `${cargo}::${normalizeCandidateNumero(numero)}`;
+  return `${cargo.trim()}::${normalizeChapadaNumero(numero)}`;
+}
+
+function uniqueImportRows(rows: ImportRow[]): {
+  rows: ImportRow[];
+  duplicates: number;
+} {
+  const seen = new Map<string, ImportRow>();
+  let duplicates = 0;
+  for (const row of rows) {
+    const key = cadastroKey(row.cargo, row.numero);
+    if (seen.has(key)) duplicates += 1;
+    seen.set(key, row);
+  }
+  return { rows: Array.from(seen.values()), duplicates };
 }
 
 export async function importCandidatos(
@@ -1233,23 +1248,20 @@ export async function importCandidatos(
     sq_candidato?: string | null;
   }>,
   opts?: { origem?: "catalogo" | "cadastro" }
-): Promise<{ upserted: number; skippedCadastro: number }> {
+): Promise<{ upserted: number; skippedCadastro: number; duplicates: number }> {
   const origem = opts?.origem ?? "catalogo";
-  const normalized: ImportRow[] = [];
+  const collected: ImportRow[] = [];
 
   for (const r of rows) {
-    const chapada = validarNumeroCargoChapada(r.cargo, r.numero);
-    const legacy = validarNumeroCargo(r.cargo, r.numero);
+    const cargo = r.cargo.trim();
+    const chapada = validarNumeroCargoChapada(cargo, r.numero);
     const numero = chapada.ok
       ? chapada.numero
-      : legacy.ok
-        ? legacy.numero
-        : r.numero.replace(/\D/g, "");
+      : normalizeChapadaNumero(r.numero);
     const nome = r.nome.trim();
-    const cargo = r.cargo.trim();
     if (!numero || !nome || !cargo) continue;
     const sq = (r.sq_candidato ?? "").replace(/\D/g, "") || null;
-    normalized.push({
+    collected.push({
       numero,
       nome,
       cargo,
@@ -1258,6 +1270,10 @@ export async function importCandidatos(
       origem,
     });
   }
+
+  const unique = uniqueImportRows(collected);
+  const normalized = unique.rows;
+  const duplicates = unique.duplicates;
 
   const hasOrigem = await candidatosHasOrigemColumn();
   const hasSq = await candidatosHasSqColumn();
@@ -1287,7 +1303,7 @@ export async function importCandidatos(
       toUpsert.push(row);
     }
     upsertMockCandidatos(toUpsert);
-    return { upserted: toUpsert.length, skippedCadastro };
+    return { upserted: toUpsert.length, skippedCadastro, duplicates };
   }
 
   const selectCols = hasSq
@@ -1355,10 +1371,11 @@ export async function importCandidatos(
   }
 
   if (toUpsert.length === 0) {
-    return { upserted: 0, skippedCadastro };
+    return { upserted: 0, skippedCadastro, duplicates };
   }
 
-  const payload = toUpsert.map((row) => {
+  const payloadMap = new Map<string, Record<string, unknown>>();
+  for (const row of toUpsert) {
     const rec: Record<string, unknown> = {
       numero: row.numero,
       nome: row.nome,
@@ -1367,8 +1384,9 @@ export async function importCandidatos(
     };
     if (hasOrigem) rec.origem = row.origem;
     if (hasSq && row.sq_candidato) rec.sq_candidato = row.sq_candidato;
-    return rec;
-  });
+    payloadMap.set(cadastroKey(row.cargo, row.numero), rec);
+  }
+  const payload = Array.from(payloadMap.values());
 
   let upserted = 0;
   for (let i = 0; i < payload.length; i += UPSERT_CHUNK) {
@@ -1383,7 +1401,7 @@ export async function importCandidatos(
     upserted += count ?? slice.length;
   }
 
-  return { upserted, skippedCadastro };
+  return { upserted, skippedCadastro, duplicates };
 }
 
 /**

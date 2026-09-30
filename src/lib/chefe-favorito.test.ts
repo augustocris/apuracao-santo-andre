@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { filterChefeRankingRows } from "./chefe-ranking";
+import {
+  chefeMiniaturaFallback,
+  filterChefeRankingRows,
+} from "./chefe-ranking";
+import { percentualNoCargo } from "./utils";
 import { setCandidatoFavorito, transmitBuCompleto } from "./data";
 import {
   getMockBoletins,
@@ -128,6 +132,108 @@ describe("filterChefeRankingRows", () => {
     });
     assert.equal(searchFav.length, 1);
     assert.equal(searchFav[0].candidato.cargo, "Presidente");
+  });
+});
+
+describe("percentual no cargo", () => {
+  it("does not recompute % from the filtered (favoritos) subset", () => {
+    const groups: CargoRanking[] = [
+      {
+        cargo: "Deputado Federal",
+        totalVotos: 110,
+        rankings: [
+          {
+            votos: 70,
+            percentual: 100,
+            candidato: {
+              id: "df-ana",
+              numero: "1313",
+              nome: "Ana Costa",
+              cargo: "Deputado Federal",
+              foto_url: null,
+              origem: "cadastro",
+              favorito: false,
+            },
+          },
+          {
+            votos: 22,
+            percentual: 100,
+            candidato: {
+              id: "df-keila",
+              numero: "1001",
+              nome: "Keila Giselle",
+              cargo: "Deputado Federal",
+              foto_url: null,
+              origem: "catalogo",
+              favorito: true,
+            },
+          },
+          {
+            votos: 18,
+            percentual: 100,
+            candidato: {
+              id: "df-paulo",
+              numero: "2211",
+              nome: "Paulo Serra",
+              cargo: "Deputado Federal",
+              foto_url: null,
+              origem: "bu",
+              favorito: false,
+            },
+          },
+          {
+            votos: 0,
+            percentual: 0,
+            candidato: {
+              id: "df-zero",
+              numero: "4444",
+              nome: "Catálogo zerado",
+              cargo: "Deputado Federal",
+              foto_url: null,
+              origem: "catalogo",
+              favorito: true,
+            },
+          },
+        ],
+      },
+    ];
+
+    const todos = filterChefeRankingRows(groups, {
+      cargoFilter: "Deputado Federal",
+      sort: "votos",
+      query: "",
+      favoritoFilter: "todos",
+    });
+    const fav = filterChefeRankingRows(groups, {
+      cargoFilter: "Deputado Federal",
+      sort: "votos",
+      query: "",
+      favoritoFilter: "favoritos",
+    });
+
+    assert.equal(todos.length, 3);
+    assert.equal(fav.length, 1);
+    assert.equal(fav[0].candidato.numero, "1001");
+    const keilaTodos = todos.find((r) => r.candidato.numero === "1001");
+    assert.ok(keilaTodos);
+    assert.equal(keilaTodos.percentual, percentualNoCargo(22, 110));
+    assert.equal(fav[0].percentual, keilaTodos.percentual);
+    assert.ok(Math.abs(fav[0].percentual - 20) < 0.01);
+    assert.notEqual(fav[0].percentual, 100);
+  });
+
+  it("ignores 0-vote catalog rows in numerator and denominator", () => {
+    assert.equal(percentualNoCargo(22, 110), percentualNoCargo(22, 110 + 0));
+    assert.equal(percentualNoCargo(0, 110), 0);
+  });
+});
+
+describe("chefeMiniaturaFallback", () => {
+  it("uses initials or the urna number", () => {
+    assert.equal(chefeMiniaturaFallback("Maria Silva", "13"), "MS");
+    assert.equal(chefeMiniaturaFallback("Keila Giselle", "1001"), "KG");
+    assert.equal(chefeMiniaturaFallback("Candidato 17", "17"), "17");
+    assert.equal(chefeMiniaturaFallback("Candidato 99999", "99999"), "9999");
   });
 });
 

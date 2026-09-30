@@ -28,6 +28,7 @@ import {
 } from "@/lib/cargos";
 import { normalizeCandidateNumero } from "@/lib/parser/bu-qr";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
+import { percentualNoCargo } from "@/lib/utils";
 import type {
   ApuracaoConfig,
   Candidato,
@@ -197,7 +198,7 @@ function buildRankingsForCargo(
       return {
         candidato,
         votos,
-        percentual: totalVotos > 0 ? (votos / totalVotos) * 100 : 0,
+        percentual: percentualNoCargo(votos, totalVotos),
       };
     })
     .sort((a, b) => b.votos - a.votos);

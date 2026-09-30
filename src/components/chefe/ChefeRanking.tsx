@@ -16,6 +16,7 @@ import {
 } from "@/lib/cargos";
 import { CHAPADA_HINT } from "@/lib/chapada";
 import {
+  chefeMiniaturaFallback,
   filterChefeRankingRows,
   isCandidatoFavorito,
   type ChefeFavoritoFilter,
@@ -40,6 +41,35 @@ const EMPTY: DashboardSnapshot = {
 };
 
 type SortKey = ChefeSortKey;
+
+const PCT_CARGO_HINT =
+  "Participação nos votos deste cargo (quem já tem voto).";
+
+function ChefeFoto({ candidato }: { candidato: Candidato }) {
+  const [failed, setFailed] = useState(false);
+  const src = candidato.foto_url?.trim() || "";
+  const showImg = Boolean(src) && !failed;
+  const fallback = chefeMiniaturaFallback(candidato.nome, candidato.numero);
+
+  return (
+    <span
+      className="inline-flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-100 text-[10px] font-bold leading-none text-teal-900"
+      title={candidato.nome}
+    >
+      {showImg ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          className="size-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span aria-hidden>{fallback}</span>
+      )}
+    </span>
+  );
+}
 
 function isUnlocked(): boolean {
   if (typeof window === "undefined") return false;
@@ -362,11 +392,22 @@ export function ChefeRanking() {
                 <th className="whitespace-nowrap px-2 py-2 font-semibold">
                   Favoritos
                 </th>
+                <th className="px-2 py-2 font-semibold">
+                  <span className="sr-only">Foto</span>
+                </th>
                 <th className="px-3 py-2 font-semibold">Nome</th>
                 <th className="px-3 py-2 font-semibold">Número</th>
                 <th className="px-3 py-2 font-semibold">Cargo</th>
                 <th className="px-3 py-2 text-right font-semibold">Votos</th>
-                <th className="px-3 py-2 text-right font-semibold">% no cargo</th>
+                <th
+                  className="px-3 py-2 text-right font-semibold"
+                  title={PCT_CARGO_HINT}
+                >
+                  % no cargo
+                  <span className="mt-0.5 block max-w-[9.5rem] text-[9px] font-normal normal-case tracking-normal text-slate-400">
+                    {PCT_CARGO_HINT}
+                  </span>
+                </th>
                 <th className="px-3 py-2 font-semibold">Origem</th>
               </tr>
             </thead>
@@ -387,6 +428,9 @@ export function ChefeRanking() {
                       aria-label={`Marcar como favorito: ${row.candidato.nome}`}
                     />
                   </td>
+                  <td className="px-2 py-2">
+                    <ChefeFoto candidato={row.candidato} />
+                  </td>
                   <td className="px-3 py-2 font-medium text-slate-900">
                     {row.candidato.nome}
                   </td>
@@ -399,7 +443,10 @@ export function ChefeRanking() {
                   <td className="px-3 py-2 text-right font-bold tabular-nums text-teal-800">
                     {formatVotes(row.votos)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                  <td
+                    className="px-3 py-2 text-right tabular-nums text-slate-600"
+                    title={PCT_CARGO_HINT}
+                  >
                     {formatPercent(row.percentual)}
                   </td>
                   <td className="px-3 py-2">

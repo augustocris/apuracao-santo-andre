@@ -10,6 +10,15 @@ export function formatPercent(value: number, digits = 1): string {
   return `${value.toFixed(digits)}%`;
 }
 
+/** votos do candidato / soma de todos os votos daquele cargo (dataset completo). */
+export function percentualNoCargo(
+  votos: number,
+  totalVotosCargo: number
+): number {
+  if (!Number.isFinite(votos) || !(totalVotosCargo > 0)) return 0;
+  return (votos / totalVotosCargo) * 100;
+}
+
 export function formatVotes(value: number): string {
   return new Intl.NumberFormat("pt-BR").format(value);
 }

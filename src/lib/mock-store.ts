@@ -25,7 +25,8 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     numero: "13",
     nome: "Maria Silva",
     cargo: "Governador",
-    foto_url: null,
+    foto_url:
+      "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&h=200&q=80",
     sq_candidato: null,
     origem: "cadastro",
     favorito: false,
@@ -35,7 +36,8 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     numero: "10",
     nome: "Tarcísio de Freitas",
     cargo: "Governador",
-    foto_url: null,
+    foto_url:
+      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&h=200&q=80",
     origem: "cadastro",
     favorito: false,
   },
@@ -109,7 +111,8 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     numero: "1001",
     nome: "Keila Giselle",
     cargo: "Deputado Federal",
-    foto_url: null,
+    foto_url:
+      "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=200&h=200&q=80",
     origem: "catalogo",
     favorito: false,
   },
@@ -203,7 +206,7 @@ const SEED_BOLETINS: BoletimUrna[] = [
     id: "bu-seed-2",
     zona: "002",
     secao: "0010",
-    candidato_id: "22222222-2222-2222-2222-222222222202",
+    candidato_id: "22222222-2222-2222-2222-222222222203",
     quantidade_votos: 95,
     raw_text: "SEED",
     fiscal_nome: "Demo",

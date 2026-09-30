@@ -359,8 +359,8 @@ export function ChefeRanking() {
             <thead className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2 font-semibold">#</th>
-                <th className="w-10 px-2 py-2 font-semibold">
-                  <span className="sr-only">Favorito</span>
+                <th className="whitespace-nowrap px-2 py-2 font-semibold">
+                  Favoritos
                 </th>
                 <th className="px-3 py-2 font-semibold">Nome</th>
                 <th className="px-3 py-2 font-semibold">Número</th>
@@ -383,7 +383,8 @@ export function ChefeRanking() {
                       checked={isCandidatoFavorito(row.candidato.favorito)}
                       disabled={savingIds.has(row.candidato.id)}
                       onChange={() => void toggleFavorito(row.candidato)}
-                      aria-label={`Favorito: ${row.candidato.nome}`}
+                      title="Marcar como favorito"
+                      aria-label={`Marcar como favorito: ${row.candidato.nome}`}
                     />
                   </td>
                   <td className="px-3 py-2 font-medium text-slate-900">

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseChapadaPayload } from "@/lib/chapada";
+import { parseChapadaPayload, summarizeChapadaParse } from "@/lib/chapada";
 import { importCandidatos } from "@/lib/data";
 
 export async function POST(request: Request) {
@@ -32,8 +32,10 @@ export async function POST(request: Request) {
         {
           error:
             parsed.errors[0] ??
-            "Nenhum candidato válido. CSV/JSON: numero,nome,cargo.",
+            "Nenhum candidato válido. Importe o CSV do TSE (SP) ou numero,nome,cargo.",
           details: parsed.errors,
+          skipped: parsed.skipped,
+          format: parsed.format,
         },
         { status: 400 }
       );
@@ -44,6 +46,9 @@ export async function POST(request: Request) {
       ok: true,
       upserted: result.upserted,
       skippedCadastro: result.skippedCadastro,
+      skipped: parsed.skipped,
+      format: parsed.format,
+      summary: summarizeChapadaParse(parsed),
       warnings: parsed.errors,
     });
   } catch (error) {

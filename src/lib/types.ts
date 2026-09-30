@@ -23,6 +23,8 @@ export interface Candidato {
   nome: string;
   cargo: Cargo;
   foto_url: string | null;
+  /** TSE SQ_CANDIDATO — opcional, para casar fotos de urna pelo filename. */
+  sq_candidato?: string | null;
   /** cadastro = telão; catalogo = chapada da cidade; bu = descoberto no scan. */
   origem?: CandidatoOrigem | null;
   /** Marcado no ranking do /chefe. Não altera o telão. */

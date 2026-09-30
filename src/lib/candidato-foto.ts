@@ -21,21 +21,37 @@ function extensionFor(mime: string): string {
  * Compress / resize an image client-side before upload.
  * Returns a Blob suitable for Supabase Storage (JPEG when canvas-backed).
  */
-export async function prepareCandidatePhoto(file: File): Promise<{
+export async function prepareCandidatePhoto(
+  file: File,
+  opts?: { skipCompressIfSmall?: boolean }
+): Promise<{
   blob: Blob;
   contentType: string;
   ext: string;
 }> {
-  if (!ALLOWED.has(file.type)) {
+  const type = ALLOWED.has(file.type)
+    ? file.type
+    : file.type === ""
+      ? "image/jpeg"
+      : file.type;
+  if (!ALLOWED.has(type)) {
     throw new Error("Use JPEG, PNG, WebP ou GIF.");
   }
   if (file.size > MAX_BYTES * 3) {
     throw new Error("Arquivo muito grande (máx. ~6 MB antes da compressão).");
   }
 
-  // Small enough already — upload as-is
-  if (file.size <= MAX_BYTES && file.type !== "image/gif") {
-    // Still downscale huge dimensions for TV cards
+  if (
+    opts?.skipCompressIfSmall &&
+    file.size <= MAX_BYTES &&
+    type !== "image/gif"
+  ) {
+    return { blob: file, contentType: type, ext: extensionFor(type) };
+  }
+
+  // Small enough already — still downscale huge dimensions for TV cards
+  if (file.size <= MAX_BYTES && type !== "image/gif") {
+    // fall through to canvas
   }
 
   const bitmap = await createImageBitmap(file);

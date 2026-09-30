@@ -40,6 +40,7 @@ In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows 
    - [`supabase/migrations/005_chefe_pin.sql`](supabase/migrations/005_chefe_pin.sql) — PIN `/chefe` + ingest sem default Governador
    - [`supabase/migrations/006_catalogo_origem.sql`](supabase/migrations/006_catalogo_origem.sql) — `origem=catalogo` na tabela `candidatos` (chapada; **sem tabela nova**)
    - [`supabase/migrations/007_favorito.sql`](supabase/migrations/007_favorito.sql) — `candidatos.favorito` (checkbox no `/chefe`; não altera o telão)
+   - [`supabase/migrations/008_sq_candidato.sql`](supabase/migrations/008_sq_candidato.sql) — `candidatos.sq_candidato` opcional (fotos de urna TSE)
 3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
@@ -66,7 +67,9 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 ## Cadastro admin (`/admin` → aba **Cadastro**)
 
 1. **Ranking geral** — tabela de todos os candidatos com votos + **Candidatos no banco** (inclui catálogo com 0 votos). Não altera o telão de 5 cards.
-2. **Candidatos** — 5 oficiais do telão + **Importar chapada** (CSV/JSON `numero,nome,cargo` → `origem=catalogo`). Não sobrescreve oficiais. Exemplo: `supabase/seed-chapada-exemplo.csv`.
+2. **Candidatos** — 5 oficiais do telão + **Importar chapada** (CSV do TSE `consulta_cand` **ou** `numero,nome,cargo`) → `origem=catalogo`. Não sobrescreve nomes oficiais. Depois: **Enviar ZIP de fotos de urna** (arquivos `SQ_CANDIDATO.jpg` / `NR_CANDIDATO.jpg`, processado no navegador → bucket `candidatos`).
+   - TSE: `NR_CANDIDATO`, `NM_URNA_CANDIDATO` (fallback `NM_CANDIDATO`), `DS_CARGO`; filtro `SG_UF` SP (Presidente também BR). Vice/suplente/prefeito/vereador ignorados.
+   - Simplificado: `supabase/seed-chapada-exemplo.csv`. TSE de exemplo: `supabase/seed-consulta-cand-exemplo.csv`.
    - Deputado Estadual → 5 dígitos (1)
    - Deputado Federal → 4 dígitos (1)
    - Senador → 3 dígitos (2)
@@ -101,7 +104,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 1. Push to `main` — Vercel auto-deploys if the project is connected.
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
-4. Run SQL migrations `001` … `007` on Supabase (007 = `candidatos.favorito` no `/chefe`). A Vercel não executa SQL.
+4. Run SQL migrations `001` … `008` on Supabase (008 = `sq_candidato` opcional para fotos de urna). A Vercel não executa SQL.
 5. Point fiscales to `/fiscal`, telão to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`). Favoritos no ranking do chefe exigem a 007.
 
 ## Stack
@@ -121,6 +124,7 @@ src/lib/cargos.ts              Digit rules per cargo
 src/lib/parser/bu-qr.ts        BU QR + BU impresso (OCR colado)
 src/lib/parser/fixtures/       Dump TSE SIMULADO (ground-truth)
 src/lib/data.ts                Supabase + mock data layer
-supabase/migrations/           001–007 (007 = favorito no /chefe)
+supabase/migrations/           001–008 (008 = sq_candidato opcional)
 supabase/seed-chapada-exemplo.csv
+supabase/seed-consulta-cand-exemplo.csv
 ```

@@ -113,6 +113,7 @@ function uniqueCargosForRanking(candidatos: Candidato[]): string[] {
 
 let origemColumnCache: boolean | null = null;
 let favoritoColumnCache: boolean | null = null;
+let sqCandidatoColumnCache: boolean | null = null;
 
 function normalizeCandidato(raw: Candidato): Candidato {
   return {
@@ -144,6 +145,23 @@ async function candidatosHasFavoritoColumn(): Promise<boolean> {
   favoritoColumnCache = !error;
   return favoritoColumnCache;
 }
+
+async function candidatosHasSqColumn(): Promise<boolean> {
+  if (sqCandidatoColumnCache != null) return sqCandidatoColumnCache;
+  const supabase = getSupabase();
+  if (!supabase) {
+    sqCandidatoColumnCache = true;
+    return true;
+  }
+  const { error } = await supabase
+    .from("candidatos")
+    .select("sq_candidato")
+    .limit(1);
+  sqCandidatoColumnCache = !error;
+  return sqCandidatoColumnCache;
+}
+
+const UPSERT_CHUNK = 400;
 
 function resolveCargoFilters(
   configCargos: string[],
@@ -1193,23 +1211,31 @@ export async function saveRelatorioCargos(
   return saveConfig({ relatorio_cargos: cleaned });
 }
 
+type ImportRow = {
+  numero: string;
+  nome: string;
+  cargo: string;
+  foto_url: string | null;
+  sq_candidato: string | null;
+  origem: "catalogo" | "cadastro";
+};
+
+function cadastroKey(cargo: string, numero: string): string {
+  return `${cargo}::${normalizeCandidateNumero(numero)}`;
+}
+
 export async function importCandidatos(
   rows: Array<{
     numero: string;
     nome: string;
     cargo: string;
     foto_url?: string | null;
+    sq_candidato?: string | null;
   }>,
   opts?: { origem?: "catalogo" | "cadastro" }
 ): Promise<{ upserted: number; skippedCadastro: number }> {
   const origem = opts?.origem ?? "catalogo";
-  const normalized: Array<{
-    numero: string;
-    nome: string;
-    cargo: string;
-    foto_url: string | null;
-    origem: "catalogo" | "cadastro";
-  }> = [];
+  const normalized: ImportRow[] = [];
 
   for (const r of rows) {
     const chapada = validarNumeroCargoChapada(r.cargo, r.numero);
@@ -1222,65 +1248,217 @@ export async function importCandidatos(
     const nome = r.nome.trim();
     const cargo = r.cargo.trim();
     if (!numero || !nome || !cargo) continue;
+    const sq = (r.sq_candidato ?? "").replace(/\D/g, "") || null;
     normalized.push({
       numero,
       nome,
       cargo,
       foto_url: r.foto_url?.trim() || null,
+      sq_candidato: sq,
       origem,
     });
   }
 
+  const hasOrigem = await candidatosHasOrigemColumn();
+  const hasSq = await candidatosHasSqColumn();
   const supabase = getSupabase();
+
   if (!supabase) {
     const existing = getMockCandidatos();
-    const skipKeys = new Set(
+    const cadastroMap = new Map(
       existing
         .filter((c) => c.origem === "cadastro")
-        .map((c) => `${c.cargo}::${normalizeCandidateNumero(c.numero)}`)
+        .map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
     );
-    const toUpsert = normalized.filter(
-      (r) => !skipKeys.has(`${r.cargo}::${normalizeCandidateNumero(r.numero)}`)
-    );
+    const toUpsert: ImportRow[] = [];
+    let skippedCadastro = 0;
+    for (const row of normalized) {
+      const featured = cadastroMap.get(cadastroKey(row.cargo, row.numero));
+      if (featured && origem !== "cadastro") {
+        skippedCadastro += 1;
+        if (hasSq && row.sq_candidato && !featured.sq_candidato) {
+          featured.sq_candidato = row.sq_candidato;
+        }
+        if (row.foto_url && !featured.foto_url) {
+          featured.foto_url = row.foto_url;
+        }
+        continue;
+      }
+      toUpsert.push(row);
+    }
     upsertMockCandidatos(toUpsert);
-    return {
-      upserted: toUpsert.length,
-      skippedCadastro: normalized.length - toUpsert.length,
+    return { upserted: toUpsert.length, skippedCadastro };
+  }
+
+  const selectCols = hasSq
+    ? "id, numero, cargo, origem, foto_url, sq_candidato"
+    : "id, numero, cargo, origem, foto_url";
+  const { data: current, error: listError } = await supabase
+    .from("candidatos")
+    .select(selectCols);
+  if (listError) throw new Error(listError.message);
+
+  type Existing = {
+    id: string;
+    numero: string;
+    cargo: string;
+    origem?: string | null;
+    foto_url?: string | null;
+    sq_candidato?: string | null;
+  };
+  const existingList = (current as unknown as Existing[] | null) ?? [];
+  const cadastroMap = new Map(
+    existingList
+      .filter((c) => c.origem === "cadastro")
+      .map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
+  );
+
+  const toUpsert: ImportRow[] = [];
+  const cadastroPatches: Array<{
+    id: string;
+    foto_url?: string;
+    sq_candidato?: string;
+  }> = [];
+  let skippedCadastro = 0;
+
+  for (const row of normalized) {
+    const featured = cadastroMap.get(cadastroKey(row.cargo, row.numero));
+    if (featured && origem !== "cadastro") {
+      skippedCadastro += 1;
+      const patch: { id: string; foto_url?: string; sq_candidato?: string } = {
+        id: featured.id,
+      };
+      if (row.foto_url && !featured.foto_url) patch.foto_url = row.foto_url;
+      if (hasSq && row.sq_candidato && !featured.sq_candidato) {
+        patch.sq_candidato = row.sq_candidato;
+      }
+      if (patch.foto_url || patch.sq_candidato) cadastroPatches.push(patch);
+      continue;
+    }
+    toUpsert.push(row);
+  }
+
+  for (const patch of cadastroPatches) {
+    const body: Record<string, string> = {};
+    if (patch.foto_url) body.foto_url = patch.foto_url;
+    if (patch.sq_candidato) body.sq_candidato = patch.sq_candidato;
+    const { error } = await supabase
+      .from("candidatos")
+      .update(body)
+      .eq("id", patch.id);
+    if (error) {
+      throw supabaseWriteError(
+        "Falha ao atualizar oficial do telão",
+        error.message
+      );
+    }
+  }
+
+  if (toUpsert.length === 0) {
+    return { upserted: 0, skippedCadastro };
+  }
+
+  const payload = toUpsert.map((row) => {
+    const rec: Record<string, unknown> = {
+      numero: row.numero,
+      nome: row.nome,
+      cargo: row.cargo,
+      foto_url: row.foto_url,
     };
+    if (hasOrigem) rec.origem = row.origem;
+    if (hasSq && row.sq_candidato) rec.sq_candidato = row.sq_candidato;
+    return rec;
+  });
+
+  let upserted = 0;
+  for (let i = 0; i < payload.length; i += UPSERT_CHUNK) {
+    const slice = payload.slice(i, i + UPSERT_CHUNK);
+    const { error, count } = await supabase.from("candidatos").upsert(slice, {
+      onConflict: "numero,cargo",
+      count: "exact",
+    });
+    if (error) {
+      throw supabaseWriteError("Falha ao importar candidatos", error.message);
+    }
+    upserted += count ?? slice.length;
+  }
+
+  return { upserted, skippedCadastro };
+}
+
+/**
+ * Grava foto_url por numero+cargo.
+ * Oficiais do telão (origem=cadastro) só recebem foto se ainda estiver vazia.
+ */
+export async function applyCandidatoFotos(
+  items: Array<{ numero: string; cargo: string; foto_url: string }>
+): Promise<{
+  updated: number;
+  skippedCadastroFoto: number;
+  notFound: number;
+}> {
+  let updated = 0;
+  let skippedCadastroFoto = 0;
+  let notFound = 0;
+  const supabase = getSupabase();
+
+  if (!supabase) {
+    const existing = getMockCandidatos();
+    for (const item of items) {
+      const key = cadastroKey(item.cargo, item.numero);
+      const row = existing.find((c) => cadastroKey(c.cargo, c.numero) === key);
+      if (!row) {
+        notFound += 1;
+        continue;
+      }
+      if (row.origem === "cadastro" && row.foto_url) {
+        skippedCadastroFoto += 1;
+        continue;
+      }
+      row.foto_url = item.foto_url;
+      updated += 1;
+    }
+    return { updated, skippedCadastroFoto, notFound };
   }
 
   const { data: current, error: listError } = await supabase
     .from("candidatos")
-    .select("numero, cargo, origem");
+    .select("id, numero, cargo, origem, foto_url");
   if (listError) throw new Error(listError.message);
-  const skipKeys = new Set(
-    ((current ?? []) as Array<{ numero: string; cargo: string; origem?: string }>)
-      .filter((c) => c.origem === "cadastro")
-      .map((c) => `${c.cargo}::${normalizeCandidateNumero(c.numero)}`)
+  const byKey = new Map(
+    (
+      (current ?? []) as Array<{
+        id: string;
+        numero: string;
+        cargo: string;
+        origem?: string | null;
+        foto_url?: string | null;
+      }>
+    ).map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
   );
-  const toUpsert = normalized.filter(
-    (r) => !skipKeys.has(`${r.cargo}::${normalizeCandidateNumero(r.numero)}`)
-  );
-  if (toUpsert.length === 0) {
-    return {
-      upserted: 0,
-      skippedCadastro: normalized.length,
-    };
+
+  for (const item of items) {
+    const row = byKey.get(cadastroKey(item.cargo, item.numero));
+    if (!row) {
+      notFound += 1;
+      continue;
+    }
+    if (row.origem === "cadastro" && row.foto_url) {
+      skippedCadastroFoto += 1;
+      continue;
+    }
+    const { error } = await supabase
+      .from("candidatos")
+      .update({ foto_url: item.foto_url })
+      .eq("id", row.id);
+    if (error) {
+      throw supabaseWriteError("Falha ao gravar foto", error.message);
+    }
+    row.foto_url = item.foto_url;
+    updated += 1;
   }
 
-  const payload = (await candidatosHasOrigemColumn())
-    ? toUpsert
-    : toUpsert.map(({ origem: _o, ...rest }) => rest);
-
-  const { error, count } = await supabase.from("candidatos").upsert(payload, {
-    onConflict: "numero,cargo",
-    count: "exact",
-  });
-  if (error) throw supabaseWriteError("Falha ao importar candidatos", error.message);
-  return {
-    upserted: count ?? toUpsert.length,
-    skippedCadastro: normalized.length - toUpsert.length,
-  };
+  return { updated, skippedCadastroFoto, notFound };
 }
 
 export function dataModeLabel(): "supabase" | "mock" {

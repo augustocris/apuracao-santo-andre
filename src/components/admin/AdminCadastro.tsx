@@ -8,9 +8,11 @@ import {
   type FormEvent,
 } from "react";
 import {
+  Archive,
   Check,
   FileUp,
   ImagePlus,
+  Images,
   Loader2,
   Pencil,
   Plus,
@@ -35,11 +37,27 @@ import {
   labelCargoCurto,
   type CargoOficial,
 } from "@/lib/cargos";
-import { CHAPADA_HINT, parseChapadaPayload } from "@/lib/chapada";
+import {
+  CHAPADA_HINT,
+  decodeChapadaBytes,
+  parseChapadaPayload,
+  summarizeChapadaParse,
+  type ChapadaRow,
+} from "@/lib/chapada";
 import {
   isProbablyImageUrl,
   uploadCandidatoFoto,
 } from "@/lib/candidato-foto";
+import {
+  indexFromChapadaRows,
+  indexFromDatabase,
+  listImagesFromFiles,
+  listImagesFromZip,
+  mergeUrnaFotoIndexes,
+  processUrnaFotos,
+  summarizeUrnaFotos,
+  type UrnaFotoProgress,
+} from "@/lib/urna-fotos";
 import {
   applyZonasExpectativa,
   dataModeLabel,
@@ -96,6 +114,11 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   const [chefePin, setChefePin] = useState(DEFAULT_CHEFE_PIN);
   const [chapadaText, setChapadaText] = useState("");
   const [chapadaBusy, setChapadaBusy] = useState(false);
+  const [lastChapadaRows, setLastChapadaRows] = useState<ChapadaRow[]>([]);
+  const [fotoBusy, setFotoBusy] = useState(false);
+  const [fotoProgress, setFotoProgress] = useState<UrnaFotoProgress | null>(
+    null
+  );
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -133,6 +156,17 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
 
   useEffect(() => {
     void reload();
+    try {
+      const raw = sessionStorage.getItem("apuracao-sa-tse-chapada");
+      if (raw) {
+        const parsed = JSON.parse(raw) as ChapadaRow[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setLastChapadaRows(parsed);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }, [reload]);
 
   const slotsHint = useMemo(() => {
@@ -227,26 +261,37 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   async function runChapadaImport(text: string) {
     const parsed = parseChapadaPayload(text);
     if (parsed.rows.length === 0) {
+      const extra = summarizeChapadaParse(parsed);
       throw new Error(
         parsed.errors[0] ??
-          "Nenhum candidato válido. CSV/JSON: numero,nome,cargo."
+          `Nenhum candidato válido. Importe o CSV do TSE (SP) ou numero,nome,cargo. ${extra}`
       );
     }
     const result = await importCandidatos(parsed.rows, { origem: "catalogo" });
-    const warn =
-      parsed.errors.length > 0
-        ? ` ${parsed.errors.length} linha(s) ignorada(s).`
-        : "";
-    const skip =
+    setLastChapadaRows(parsed.rows);
+    try {
+      sessionStorage.setItem(
+        "apuracao-sa-tse-chapada",
+        JSON.stringify(parsed.rows)
+      );
+    } catch {
+      /* ignore quota */
+    }
+    const skipOficiais =
       result.skippedCadastro > 0
         ? ` ${result.skippedCadastro} oficial(is) do telão preservado(s).`
         : "";
     setMessage(
-      `Chapada: ${result.upserted} candidato(s) no catálogo.${skip}${warn}`
+      `Chapada: ${summarizeChapadaParse(parsed)}. ${result.upserted} gravado(s) no catálogo.${skipOficiais}`
     );
     setChapadaText("");
     await reload();
     onConfigSaved?.();
+  }
+
+  async function readChapadaFile(file: File): Promise<string> {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    return decodeChapadaBytes(bytes);
   }
 
   async function handleChapadaPaste(e: FormEvent) {
@@ -269,12 +314,62 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     setError(null);
     setMessage(null);
     try {
-      const text = await file.text();
+      const text = await readChapadaFile(file);
       await runChapadaImport(text);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao importar chapada.");
     } finally {
       setChapadaBusy(false);
+    }
+  }
+
+  async function handleUrnaFotos(files: FileList | File[] | null) {
+    const list = files ? Array.from(files) : [];
+    if (list.length === 0) return;
+    setFotoBusy(true);
+    setError(null);
+    setMessage(null);
+    setFotoProgress({
+      done: 0,
+      total: 0,
+      uploaded: 0,
+      skippedCadastro: 0,
+      unmatched: 0,
+      ambiguous: 0,
+      failed: 0,
+    });
+    try {
+      const zipFiles = list.filter((f) =>
+        /\.zip$/i.test(f.name) || f.type === "application/zip"
+      );
+      const imageFiles = list.filter((f) =>
+        /\.(jpe?g|png|webp|gif)$/i.test(f.name)
+      );
+      const entries = [
+        ...(await Promise.all(zipFiles.map((z) => listImagesFromZip(z)))).flat(),
+        ...(await listImagesFromFiles(imageFiles)),
+      ];
+      if (entries.length === 0) {
+        throw new Error(
+          "Nenhuma foto JPG/PNG encontrada no ZIP ou na pasta. Nomeie os arquivos com SQ_CANDIDATO (ex.: 250000123456.jpg) ou o número de urna."
+        );
+      }
+      const fromCsv = indexFromChapadaRows(lastChapadaRows);
+      const fromDb = await indexFromDatabase();
+      const index = mergeUrnaFotoIndexes(fromCsv, fromDb);
+      const result = await processUrnaFotos(entries, index, setFotoProgress);
+      setMessage(summarizeUrnaFotos(result));
+      if (result.errors.length > 0) {
+        setError(result.errors.join(" "));
+      }
+      await reload();
+      onConfigSaved?.();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Falha ao enviar fotos de urna."
+      );
+    } finally {
+      setFotoBusy(false);
     }
   }
 
@@ -355,7 +450,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
         <div>
           <h2 className="text-lg font-bold text-white">Cadastro da apuração</h2>
           <p className="text-sm text-slate-400">
-            Telão: 5 oficiais. Ranking: importe a chapada de Santo André.
+            Telão: 5 oficiais. Ranking: CSV do TSE (SP) ou numero,nome,cargo.
             {config
               ? ` · ${config.secoes_esperadas} seções esperadas`
               : ""}
@@ -515,11 +610,32 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               Importar chapada
             </h3>
             <p className="text-sm text-slate-300">{CHAPADA_HINT}</p>
+            <ul className="list-disc space-y-1 pl-4 text-xs text-slate-400">
+              <li>
+                <strong className="text-slate-300">CSV do TSE (SP)</strong> —
+                consulta_cand com ponto-e-vírgula ou vírgula, aspas, latin1 ou
+                UTF-8. Usa{" "}
+                <code className="text-[#FFDE00]">NR_CANDIDATO</code>,{" "}
+                <code className="text-[#FFDE00]">NM_URNA_CANDIDATO</code> (ou{" "}
+                <code className="text-[#FFDE00]">NM_CANDIDATO</code>) e{" "}
+                <code className="text-[#FFDE00]">DS_CARGO</code>. Filtra{" "}
+                <code className="text-[#FFDE00]">SG_UF</code> SP; Presidente
+                entra mesmo com UF BR. Vice, suplente, prefeito e vereador são
+                ignorados.
+              </li>
+              <li>
+                <strong className="text-slate-300">Simplificado</strong> —{" "}
+                <code className="text-[#FFDE00]">numero,nome,cargo</code>{" "}
+                (Deputado Estadual, Deputado Federal, Senador, Governador,
+                Presidente). Ex.:{" "}
+                <code className="text-slate-400">
+                  supabase/seed-chapada-exemplo.csv
+                </code>
+              </li>
+            </ul>
             <p className="text-xs text-slate-500">
-              CSV ou JSON: <code className="text-[#FFDE00]">numero,nome,cargo</code>{" "}
-              (Deputado Estadual, Deputado Federal, Senador, Governador,
-              Presidente). Não altera os 5 oficiais do telão. Exemplo:{" "}
-              <code className="text-slate-400">supabase/seed-chapada-exemplo.csv</code>
+              Não altera os nomes dos 5 oficiais do telão (origem cadastro).
+              Depois do CSV, envie o ZIP de fotos de urna.
             </p>
             <textarea
               value={chapadaText}
@@ -546,7 +662,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                 Arquivo CSV/JSON
                 <input
                   type="file"
-                  accept=".csv,.json,text/csv,application/json,text/plain"
+                  accept=".csv,.json,.txt,text/csv,application/json,text/plain"
                   className="hidden"
                   disabled={chapadaBusy}
                   onChange={(e) => {
@@ -557,7 +673,78 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                 />
               </label>
             </div>
+            {lastChapadaRows.length > 0 && (
+              <p className="text-xs text-[#00ADEF]">
+                Última chapada nesta sessão: {lastChapadaRows.length} candidato(s)
+                para casar fotos pelo SQ_CANDIDATO.
+              </p>
+            )}
           </form>
+
+          <div className="space-y-3 rounded-xl border border-[#FFDE00]/25 bg-slate-900/50 p-4">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
+              <Archive className="size-4 text-[#FFDE00]" />
+              Enviar ZIP de fotos de urna
+            </h3>
+            <p className="text-sm text-slate-300">
+              Pacote TSE com arquivos{" "}
+              <code className="text-[#FFDE00]">SQ_CANDIDATO.jpg</code> (também{" "}
+              .jpeg/.png) ou pelo número{" "}
+              <code className="text-[#FFDE00]">NR_CANDIDATO.jpg</code>. O ZIP é
+              aberto no navegador e as fotos sobem em lotes para o bucket{" "}
+              <code className="text-[#00ADEF]">candidatos</code> — não envie o
+              ZIP inteiro para a API.
+            </p>
+            <p className="text-xs text-slate-500">
+              Oficiais do telão: a foto de cadastro só é preenchida se estiver
+              vazia. Sem Storage configurado a URL não é gravada.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg bg-[#00ADEF] px-3 text-sm font-semibold text-[#001a3a] hover:bg-[#33c0f3]">
+                {fotoBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Archive className="size-4" />
+                )}
+                Enviar ZIP de fotos de urna
+                <input
+                  type="file"
+                  accept=".zip,application/zip"
+                  className="hidden"
+                  disabled={fotoBusy || chapadaBusy}
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    e.target.value = "";
+                    void handleUrnaFotos(files);
+                  }}
+                />
+              </label>
+              <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-white/20 px-3 text-sm font-medium text-white hover:bg-white/5">
+                <Images className="size-4" />
+                Pasta de imagens
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  multiple
+                  className="hidden"
+                  disabled={fotoBusy || chapadaBusy}
+                  {...{ webkitdirectory: "", directory: "" }}
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    e.target.value = "";
+                    void handleUrnaFotos(files);
+                  }}
+                />
+              </label>
+            </div>
+            {fotoBusy && fotoProgress && (
+              <p className="text-xs text-slate-400">
+                Processando {fotoProgress.done}/{fotoProgress.total} ·{" "}
+                {fotoProgress.uploaded} enviada(s)
+                {fotoProgress.failed ? ` · ${fotoProgress.failed} falha(s)` : ""}
+              </p>
+            )}
+          </div>
 
         <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
           <form

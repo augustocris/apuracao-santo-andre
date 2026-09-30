@@ -26,6 +26,7 @@ export const MOCK_CANDIDATOS: Candidato[] = [
     nome: "Maria Silva",
     cargo: "Governador",
     foto_url: null,
+    sq_candidato: null,
     origem: "cadastro",
     favorito: false,
   },
@@ -419,6 +420,7 @@ export function upsertMockCandidatos(
       } else {
         existing.nome = row.nome;
         if (row.foto_url !== undefined) existing.foto_url = row.foto_url;
+        if (row.sq_candidato !== undefined) existing.sq_candidato = row.sq_candidato;
         if (row.origem) existing.origem = row.origem;
       }
       if (row.favorito !== undefined && row.favorito !== null) {
@@ -431,6 +433,7 @@ export function upsertMockCandidatos(
         nome: row.nome,
         cargo: row.cargo,
         foto_url: row.foto_url ?? null,
+        sq_candidato: row.sq_candidato ?? null,
         origem: row.origem ?? "bu",
         favorito: row.favorito === true,
       });
@@ -444,7 +447,10 @@ export function upsertMockCandidatos(
 export function updateMockCandidato(
   id: string,
   patch: Partial<
-    Pick<Candidato, "numero" | "nome" | "cargo" | "foto_url" | "favorito">
+    Pick<
+      Candidato,
+      "numero" | "nome" | "cargo" | "foto_url" | "favorito" | "sq_candidato"
+    >
   >
 ): Candidato | null {
   const existing = mockCandidatos.find((c) => c.id === id);

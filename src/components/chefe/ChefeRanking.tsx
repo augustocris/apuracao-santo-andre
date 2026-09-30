@@ -272,12 +272,13 @@ export function ChefeRanking() {
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-slate-500">
-          Favoritos
+        <div className="flex flex-col gap-1 text-xs text-slate-500">
+          <span>Favoritos</span>
           <div className="flex h-10 overflow-hidden rounded-lg border border-slate-300 bg-white text-sm text-slate-900">
             <button
               type="button"
               onClick={() => setFavoritoFilter("todos")}
+              aria-pressed={favoritoFilter === "todos"}
               className={cn(
                 "px-3",
                 favoritoFilter === "todos"
@@ -290,6 +291,7 @@ export function ChefeRanking() {
             <button
               type="button"
               onClick={() => setFavoritoFilter("favoritos")}
+              aria-pressed={favoritoFilter === "favoritos"}
               className={cn(
                 "border-l border-slate-300 px-3",
                 favoritoFilter === "favoritos"
@@ -300,7 +302,7 @@ export function ChefeRanking() {
               Somente favoritos
             </button>
           </div>
-        </label>
+        </div>
         <label className="flex flex-col gap-1 text-xs text-slate-500">
           Ordenar
           <select

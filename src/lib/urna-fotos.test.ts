@@ -8,6 +8,7 @@ import {
   isUrnaImagePath,
   listImagesFromZip,
   matchUrnaFotoFilename,
+  urnaFotoIdKeys,
 } from "./urna-fotos";
 
 const index = buildUrnaFotoIndex([
@@ -15,6 +16,13 @@ const index = buildUrnaFotoIndex([
     numero: "10001",
     cargo: "Deputado Estadual",
     sq_candidato: "250000111111",
+    origem: "catalogo",
+    foto_url: null,
+  },
+  {
+    numero: "2739",
+    cargo: "Deputado Federal",
+    sq_candidato: "250002530091",
     origem: "catalogo",
     foto_url: null,
   },
@@ -51,6 +59,30 @@ describe("urna photo filename matching", () => {
     assert.equal(nested.target.cargo, "Presidente");
   });
 
+  it("matches TSE FSP{sq}_div photos (any case, subfolders)", () => {
+    const samples = [
+      "FSP250002530091_div.jpg",
+      "fsp250002530091_DIV.PNG",
+      "250002530091_div.jpeg",
+      "FSP250002530091.jpg",
+      "foto_cand2026_SP_div/FSP250002530091_div.jpg",
+      "fotos\\FSP250002530091_div.JPG",
+    ];
+    for (const name of samples) {
+      const hit = matchUrnaFotoFilename(name, index);
+      assert.ok(hit && "target" in hit, name);
+      assert.equal(hit.via, "sq", name);
+      assert.equal(hit.target.numero, "2739", name);
+    }
+  });
+
+  it("extracts the long digit run instead of concatenating leftover digits", () => {
+    assert.deepEqual(urnaFotoIdKeys("2026_FSP250002530091_div.jpg")[0], "250002530091");
+    const hit = matchUrnaFotoFilename("2026_FSP250002530091_div.jpg", index);
+    assert.ok(hit && "target" in hit);
+    assert.equal(hit.target.sq_candidato, "250002530091");
+  });
+
   it("matches NR_CANDIDATO when unique and flags ambiguous 13", () => {
     const unique = matchUrnaFotoFilename("10001.png", index);
     assert.ok(unique && "target" in unique);
@@ -75,13 +107,22 @@ describe("zip listing", () => {
   it("extracts only image entries from a zip", async () => {
     const zipped = zipSync({
       "250000111111.jpg": new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+      "foto_cand2026_SP_div/FSP250002530091_div.jpg": new Uint8Array([
+        0xff, 0xd8, 0xff, 0xd9,
+      ]),
       "readme.txt": new Uint8Array([1, 2, 3]),
       "__MACOSX/._skip.jpg": new Uint8Array([0xff, 0xd8]),
     });
-    const file = new File([zipped], "fotos.zip", { type: "application/zip" });
+    const file = new File([zipped], "foto_cand2026_SP_div.zip", {
+      type: "application/zip",
+    });
     const entries = await listImagesFromZip(file);
-    assert.equal(entries.length, 1);
-    assert.equal(entries[0].name, "250000111111.jpg");
+    assert.equal(entries.length, 2);
+    const names = entries.map((e) => e.name).sort();
+    assert.deepEqual(names, [
+      "250000111111.jpg",
+      "foto_cand2026_SP_div/FSP250002530091_div.jpg",
+    ]);
   });
 });
 

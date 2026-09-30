@@ -149,28 +149,58 @@ export function isUrnaImagePath(path: string): boolean {
   return !file.startsWith(".");
 }
 
+/**
+ * TSE urna photos: FSP{SQ}_div.jpg, {SQ}_div.jpg, FSP{SQ}.jpg (any case).
+ * Capture the long digit run — never concatenate leftover digits (year, etc.).
+ */
+const TSE_FOTO_STEM = /^(?:f[a-z]{2})?(\d+)(?:_div)?$/i;
+const MAX_NR_CANDIDATO_DIGITS = 5;
+
+export function urnaFotoIdKeys(path: string): string[] {
+  const base = urnaFotoBasename(path);
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  const add = (raw: string) => {
+    for (const k of sqKeys(raw)) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+      keys.push(k);
+    }
+  };
+
+  const explicit = base.match(TSE_FOTO_STEM);
+  if (explicit?.[1]) add(explicit[1]);
+
+  const runs = [...base.matchAll(/\d+/g)].map((m) => m[0]);
+  runs.sort((a, b) => b.length - a.length);
+  for (const run of runs) add(run);
+
+  return keys;
+}
+
 export function matchUrnaFotoFilename(
   path: string,
   index: UrnaFotoIndex
 ): UrnaFotoMatch | { ambiguous: true } | null {
   if (!isUrnaImagePath(path)) return null;
-  const base = urnaFotoBasename(path);
-  const digits = base.replace(/\D/g, "");
-  const keys = new Set<string>();
-  if (base) keys.add(base);
-  for (const k of sqKeys(digits)) keys.add(k);
+  const keys = urnaFotoIdKeys(path);
 
   for (const key of keys) {
     const hit = index.bySq.get(key);
     if (hit) return { target: hit, via: "sq" };
   }
 
-  const numero = normalizeCandidateNumero(digits);
-  if (!numero) return null;
-  const list = index.byNumero.get(numero);
-  if (!list || list.length === 0) return null;
-  if (list.length === 1) return { target: list[0], via: "numero" };
-  return { ambiguous: true };
+  let ambiguous = false;
+  for (const key of keys) {
+    const numero = normalizeCandidateNumero(key);
+    if (!numero || numero.length > MAX_NR_CANDIDATO_DIGITS) continue;
+    const list = index.byNumero.get(numero);
+    if (!list || list.length === 0) continue;
+    if (list.length === 1) return { target: list[0], via: "numero" };
+    ambiguous = true;
+  }
+  if (ambiguous) return { ambiguous: true };
+  return null;
 }
 
 function mimeFromName(name: string): string {

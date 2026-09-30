@@ -355,7 +355,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       ];
       if (entries.length === 0) {
         throw new Error(
-          "Nenhuma foto JPG/PNG encontrada no ZIP ou na pasta. Nomeie os arquivos com SQ_CANDIDATO (ex.: 250000123456.jpg) ou o número de urna."
+          "Nenhuma foto JPG/PNG encontrada no ZIP ou na pasta. Nomeie os arquivos como FSP25000…_div.jpg (casam com SQ_CANDIDATO)."
         );
       }
       const fromCsv = indexFromChapadaRows(lastChapadaRows);
@@ -691,13 +691,16 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               Enviar ZIP de fotos de urna
             </h3>
             <p className="text-sm text-slate-300">
-              Pacote TSE com arquivos{" "}
-              <code className="text-[#FFDE00]">SQ_CANDIDATO.jpg</code> (também{" "}
-              .jpeg/.png) ou pelo número{" "}
-              <code className="text-[#FFDE00]">NR_CANDIDATO.jpg</code>. O ZIP é
-              aberto no navegador e as fotos sobem em lotes para o bucket{" "}
-              <code className="text-[#00ADEF]">candidatos</code> — não envie o
-              ZIP inteiro para a API.
+              Arquivos tipo{" "}
+              <code className="text-[#FFDE00]">FSP25000…_div.jpg</code> casam
+              com <code className="text-[#FFDE00]">SQ_CANDIDATO</code>. Também
+              vale <code className="text-slate-200">25000…_div.jpg</code> e{" "}
+              <code className="text-slate-200">FSP25000….jpg</code> (.jpeg/.png,
+              maiúsculas ou minúsculas, subpastas no ZIP). Número de urna{" "}
+              <code className="text-[#FFDE00]">NR_CANDIDATO</code> só se for
+              único. O ZIP é aberto no navegador e as fotos sobem em lotes para
+              o bucket <code className="text-[#00ADEF]">candidatos</code> — não
+              envie o ZIP inteiro para a API.
             </p>
             <p className="text-xs text-slate-500">
               Oficiais do telão: a foto de cadastro só é preenchida se estiver

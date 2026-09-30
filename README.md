@@ -67,7 +67,7 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 ## Cadastro admin (`/admin` → aba **Cadastro**)
 
 1. **Ranking geral** — tabela de todos os candidatos com votos + **Candidatos no banco** (inclui catálogo com 0 votos). Não altera o telão de 5 cards.
-2. **Candidatos** — 5 oficiais do telão + **Importar chapada** (CSV do TSE `consulta_cand` **ou** `numero,nome,cargo`) → `origem=catalogo`. Não sobrescreve nomes oficiais. Depois: **Enviar ZIP de fotos de urna** (arquivos `SQ_CANDIDATO.jpg` / `NR_CANDIDATO.jpg`, processado no navegador → bucket `candidatos`).
+2. **Candidatos** — 5 oficiais do telão + **Importar chapada** (CSV do TSE `consulta_cand` **ou** `numero,nome,cargo`) → `origem=catalogo`. Não sobrescreve nomes oficiais. Depois: **Enviar ZIP de fotos de urna** (arquivos tipo `FSP{SQ_CANDIDATO}_div.jpg`, `{SQ}_div.jpg` ou `FSP{SQ}.jpg`, processado no navegador → bucket `candidatos`).
    - TSE: `NR_CANDIDATO`, `NM_URNA_CANDIDATO` (fallback `NM_CANDIDATO`), `DS_CARGO`; filtro `SG_UF` SP (Presidente também BR). Vice/suplente/prefeito/vereador ignorados.
    - Simplificado: `supabase/seed-chapada-exemplo.csv`. TSE de exemplo: `supabase/seed-consulta-cand-exemplo.csv`.
    - Deputado Estadual → 5 dígitos (1)

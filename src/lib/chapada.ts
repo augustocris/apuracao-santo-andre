@@ -6,7 +6,7 @@ import {
 } from "@/lib/cargos";
 
 export const CHAPADA_HINT =
-  "Importe o CSV do TSE (SP) ou numero,nome,cargo. O ranking passa a mostrar o nome da urna em vez de só o número.";
+  "Importe o CSV do TSE de São Paulo (SP) e também o de Brasil/Presidente (SG_UF=BR, DS_CARGO=PRESIDENTE). Dois arquivos são aceitos (upsert). Ou use numero,nome,cargo.";
 
 const CARGO_ALIASES: Record<string, CargoChapada> = {
   "deputado estadual": "Deputado Estadual",
@@ -165,16 +165,19 @@ function mapTseCdCargo(raw: string): CargoChapada | null {
 }
 
 /**
- * SG_UF: keep SP for state offices; Presidente even if UF is BR or empty.
- * Missing column → do not filter.
+ * SG_UF filter:
+ * - State offices (Dep/Sen/Gov): only SP.
+ * - Presidente is national (`consulta_cand_*_BR`, SG_UF=BR). The SP file has
+ *   no PRESIDENTE rows. Keep Presidente when UF is BR, empty, BRASIL, or SP
+ *   (combined file / upsert). Missing column → do not filter.
  */
 export function keepByUf(ufRaw: string | undefined, cargo: CargoChapada): boolean {
   if (ufRaw == null) return true;
   const uf = stripAccentsUpper(ufRaw).replace(/\s+/g, "");
-  if (!uf) return cargo === "Presidente";
-  if (uf === "SP") return true;
-  if (uf === "BR") return cargo === "Presidente";
-  return cargo === "Presidente" && uf === "";
+  if (cargo === "Presidente") {
+    return uf === "" || uf === "BR" || uf === "BRASIL" || uf === "SP";
+  }
+  return uf === "SP";
 }
 
 /**

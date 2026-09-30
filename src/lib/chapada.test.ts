@@ -65,7 +65,57 @@ describe("parseChapadaPayload", () => {
     assert.equal(jaciara?.sq_candidato, "250000111111");
     const pres = parsed.rows.find((r) => r.cargo === "Presidente");
     assert.equal(pres?.numero, "13");
+    assert.equal(pres?.sq_candidato, "250000555555");
     assert.ok(summarizeChapadaParse(parsed).includes("5 importado"));
+  });
+
+  it("imports Presidente from a BR-only consulta_cand file", () => {
+    const csv = `SG_UF;DS_CARGO;SQ_CANDIDATO;NR_CANDIDATO;NM_URNA_CANDIDATO;DS_SITUACAO_CANDIDATURA;DS_DETALHE_SITUACAO_CAND
+BR;PRESIDENTE;250000555555;13;LEONARDO MATIAS;APTO;DEFERIDO
+BR;VICE-PRESIDENTE;250000555556;13;VICE NOME;APTO;DEFERIDO
+BR;PRESIDENTE;250000555557;22;OUTRO PRES;APTO;DEFERIDO
+`;
+    const parsed = parseChapadaPayload(csv);
+    assert.equal(parsed.format, "tse");
+    assert.equal(parsed.skipped.uf, 0);
+    assert.equal(parsed.skipped.cargo, 1);
+    const presidents = parsed.rows.filter((r) => r.cargo === "Presidente");
+    assert.equal(presidents.length, 2);
+    assert.ok(
+      presidents.some((r) => r.numero === "13" && r.sq_candidato === "250000555555")
+    );
+    assert.ok(presidents.some((r) => r.numero === "22"));
+  });
+
+  it("SP-only file without PRESIDENTE does not invent names; combined file upserts BR rows", () => {
+    const spOnly = `SG_UF;DS_CARGO;SQ_CANDIDATO;NR_CANDIDATO;NM_URNA_CANDIDATO;DS_SITUACAO_CANDIDATURA;DS_DETALHE_SITUACAO_CAND
+SP;DEPUTADO FEDERAL;250000222222;1001;KEILA GISELLE;APTO;DEFERIDO
+SP;GOVERNADOR;250000444444;10;RICARDO EDUARDO;APTO;DEFERIDO
+`;
+    const sp = parseChapadaPayload(spOnly);
+    assert.equal(sp.rows.length, 2);
+    assert.equal(
+      sp.rows.some((r) => r.cargo === "Presidente"),
+      false
+    );
+
+    const brOnly = `SG_UF;DS_CARGO;SQ_CANDIDATO;NR_CANDIDATO;NM_URNA_CANDIDATO;DS_SITUACAO_CANDIDATURA;DS_DETALHE_SITUACAO_CAND
+BR;PRESIDENTE;250000555555;13;LEONARDO MATIAS;APTO;DEFERIDO
+`;
+    const br = parseChapadaPayload(brOnly);
+    assert.equal(br.rows.length, 1);
+    assert.equal(br.rows[0].cargo, "Presidente");
+    assert.equal(br.skipped.uf, 0);
+
+    const combined = parseChapadaPayload(
+      `${spOnly.trim()}\n${brOnly.split("\n").slice(1).join("\n")}`
+    );
+    assert.equal(combined.rows.length, 3);
+    assert.equal(
+      combined.rows.find((r) => r.cargo === "Presidente")?.nome,
+      "LEONARDO MATIAS"
+    );
+    assert.equal(combined.skipped.uf, 0);
   });
 
   it("uses NM_CANDIDATO when urna name is empty and keeps Presidente with empty UF", () => {
@@ -135,12 +185,16 @@ describe("tse cargo and uf helpers", () => {
     assert.equal(mapTseCargo("GOVERNADOR"), "Governador");
   });
 
-  it("keeps SP state offices and Presidente on BR/empty", () => {
+  it("keeps SP state offices and Presidente on BR/empty/BRASIL", () => {
     assert.equal(keepByUf("SP", "Deputado Estadual"), true);
     assert.equal(keepByUf("BR", "Deputado Estadual"), false);
     assert.equal(keepByUf("BR", "Presidente"), true);
+    assert.equal(keepByUf("BRASIL", "Presidente"), true);
     assert.equal(keepByUf("", "Presidente"), true);
+    assert.equal(keepByUf("SP", "Presidente"), true);
     assert.equal(keepByUf("RJ", "Senador"), false);
+    assert.equal(keepByUf("RJ", "Presidente"), false);
+    assert.equal(keepByUf(undefined, "Presidente"), true);
   });
 
   it("skips indeferido without matching deferido substring trap", () => {

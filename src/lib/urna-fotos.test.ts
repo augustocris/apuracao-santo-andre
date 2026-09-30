@@ -76,6 +76,30 @@ describe("urna photo filename matching", () => {
     }
   });
 
+  it("matches TSE FBR{sq}_div photos the same way (digit run = SQ_CANDIDATO)", () => {
+    const samples = [
+      "FBR250000555555_div.jpg",
+      "fbr250000555555_DIV.PNG",
+      "250000555555_div.jpeg",
+      "FBR250000555555.jpg",
+      "foto_cand2026_BR_div/FBR250000555555_div.jpg",
+      "fotos\\FBR250000555555_div.JPG",
+      "2026_FBR250000555555_div.jpg",
+    ];
+    for (const name of samples) {
+      const hit = matchUrnaFotoFilename(name, index);
+      assert.ok(hit && "target" in hit, name);
+      assert.equal(hit.via, "sq", name);
+      assert.equal(hit.target.cargo, "Presidente", name);
+      assert.equal(hit.target.sq_candidato, "250000555555", name);
+    }
+    assert.deepEqual(urnaFotoIdKeys("FBR250000555555_div.jpg")[0], "250000555555");
+    assert.deepEqual(
+      urnaFotoIdKeys("2026_FBR250000555555_div.jpg")[0],
+      "250000555555"
+    );
+  });
+
   it("extracts the long digit run instead of concatenating leftover digits", () => {
     assert.deepEqual(urnaFotoIdKeys("2026_FSP250002530091_div.jpg")[0], "250002530091");
     const hit = matchUrnaFotoFilename("2026_FSP250002530091_div.jpg", index);
@@ -110,6 +134,9 @@ describe("zip listing", () => {
       "foto_cand2026_SP_div/FSP250002530091_div.jpg": new Uint8Array([
         0xff, 0xd8, 0xff, 0xd9,
       ]),
+      "foto_cand2026_BR_div/FBR250000555555_div.jpg": new Uint8Array([
+        0xff, 0xd8, 0xff, 0xd9,
+      ]),
       "readme.txt": new Uint8Array([1, 2, 3]),
       "__MACOSX/._skip.jpg": new Uint8Array([0xff, 0xd8]),
     });
@@ -117,10 +144,11 @@ describe("zip listing", () => {
       type: "application/zip",
     });
     const entries = await listImagesFromZip(file);
-    assert.equal(entries.length, 2);
+    assert.equal(entries.length, 3);
     const names = entries.map((e) => e.name).sort();
     assert.deepEqual(names, [
       "250000111111.jpg",
+      "foto_cand2026_BR_div/FBR250000555555_div.jpg",
       "foto_cand2026_SP_div/FSP250002530091_div.jpg",
     ]);
   });

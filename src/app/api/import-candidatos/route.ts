@@ -32,7 +32,7 @@ export async function POST(request: Request) {
         {
           error:
             parsed.errors[0] ??
-            "Nenhum candidato válido. Importe o CSV do TSE (SP) ou numero,nome,cargo.",
+            "Nenhum candidato válido. Importe o CSV do TSE de SP e o de Brasil/Presidente (SG_UF=BR), ou numero,nome,cargo.",
           details: parsed.errors,
           skipped: parsed.skipped,
           format: parsed.format,

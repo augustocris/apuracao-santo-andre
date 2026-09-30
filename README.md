@@ -67,9 +67,11 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 ## Cadastro admin (`/admin` → aba **Cadastro**)
 
 1. **Ranking geral** — tabela de todos os candidatos com votos + **Candidatos no banco** (inclui catálogo com 0 votos). Não altera o telão de 5 cards.
-2. **Candidatos** — 5 oficiais do telão + **Importar chapada** (CSV do TSE `consulta_cand` **ou** `numero,nome,cargo`) → `origem=catalogo`. Não sobrescreve nomes oficiais. Depois: **Enviar ZIP de fotos de urna** (arquivos tipo `FSP{SQ_CANDIDATO}_div.jpg`, `{SQ}_div.jpg` ou `FSP{SQ}.jpg`, processado no navegador → bucket `candidatos`).
-   - TSE: `NR_CANDIDATO`, `NM_URNA_CANDIDATO` (fallback `NM_CANDIDATO`), `DS_CARGO`; filtro `SG_UF` SP (Presidente também BR). Vice/suplente/prefeito/vereador ignorados.
-   - Simplificado: `supabase/seed-chapada-exemplo.csv`. TSE de exemplo: `supabase/seed-consulta-cand-exemplo.csv`.
+2. **Candidatos** — 5 oficiais do telão + **Importar chapada** (CSV do TSE `consulta_cand` **ou** `numero,nome,cargo`) → `origem=catalogo`. Não sobrescreve nomes oficiais. Depois: **Enviar ZIP de fotos de urna** (arquivos tipo `FSP{SQ}_div.jpg` / `FBR{SQ}_div.jpg`, `{SQ}_div.jpg` ou `FSP{SQ}.jpg` / `FBR{SQ}.jpg`, processado no navegador → bucket `candidatos`).
+   - TSE **SP** (`consulta_cand_2026_SP`): cargos estaduais; filtro `SG_UF` SP. **Não traz Presidente** (é nacional).
+   - TSE **Brasil/Presidente**: importe também o CSV com `SG_UF=BR` e `DS_CARGO=PRESIDENTE`. Dois arquivos são aceitos (upsert). Presidente entra com UF BR ou vazia.
+   - Colunas: `NR_CANDIDATO`, `NM_URNA_CANDIDATO` (fallback `NM_CANDIDATO`), `DS_CARGO`. Vice/suplente/prefeito/vereador ignorados.
+   - Simplificado: `supabase/seed-chapada-exemplo.csv`. TSE SP de exemplo: `supabase/seed-consulta-cand-exemplo.csv`. TSE BR: `supabase/seed-consulta-cand-br-exemplo.csv`.
    - Deputado Estadual → 5 dígitos (1)
    - Deputado Federal → 4 dígitos (1)
    - Senador → 3 dígitos (2)

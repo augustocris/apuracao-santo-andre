@@ -264,7 +264,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       const extra = summarizeChapadaParse(parsed);
       throw new Error(
         parsed.errors[0] ??
-          `Nenhum candidato válido. Importe o CSV do TSE (SP) ou numero,nome,cargo. ${extra}`
+          `Nenhum candidato válido. Importe o CSV do TSE de SP e o de Brasil/Presidente (SG_UF=BR), ou numero,nome,cargo. ${extra}`
       );
     }
     const result = await importCandidatos(parsed.rows, { origem: "catalogo" });
@@ -355,7 +355,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       ];
       if (entries.length === 0) {
         throw new Error(
-          "Nenhuma foto JPG/PNG encontrada no ZIP ou na pasta. Nomeie os arquivos como FSP25000…_div.jpg (casam com SQ_CANDIDATO)."
+          "Nenhuma foto JPG/PNG encontrada no ZIP ou na pasta. Nomeie os arquivos como FSP25000…_div.jpg ou FBR25000…_div.jpg (casam com SQ_CANDIDATO)."
         );
       }
       const fromCsv = indexFromChapadaRows(lastChapadaRows);
@@ -454,7 +454,8 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
         <div>
           <h2 className="text-lg font-bold text-white">Cadastro da apuração</h2>
           <p className="text-sm text-slate-400">
-            Telão: 5 oficiais. Ranking: CSV do TSE (SP) ou numero,nome,cargo.
+            Telão: 5 oficiais. Ranking: CSV TSE de SP + Brasil/Presidente, ou
+            numero,nome,cargo.
             {config
               ? ` · ${config.secoes_esperadas} seções esperadas`
               : ""}
@@ -614,18 +615,33 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               Importar chapada
             </h3>
             <p className="text-sm text-slate-300">{CHAPADA_HINT}</p>
-            <ul className="list-disc space-y-1 pl-4 text-xs text-slate-400">
+            <ul className="list-disc space-y-1.5 pl-4 text-xs text-slate-400">
               <li>
-                <strong className="text-slate-300">CSV do TSE (SP)</strong> —
-                consulta_cand com ponto-e-vírgula ou vírgula, aspas, latin1 ou
+                <strong className="text-slate-300">CSV do TSE (SP)</strong> —{" "}
+                <code className="text-slate-300">consulta_cand_2026_SP</code>{" "}
+                (cargos estaduais). Ponto-e-vírgula ou vírgula, aspas, latin1 ou
                 UTF-8. Usa{" "}
                 <code className="text-[#FFDE00]">NR_CANDIDATO</code>,{" "}
                 <code className="text-[#FFDE00]">NM_URNA_CANDIDATO</code> (ou{" "}
                 <code className="text-[#FFDE00]">NM_CANDIDATO</code>) e{" "}
                 <code className="text-[#FFDE00]">DS_CARGO</code>. Filtra{" "}
-                <code className="text-[#FFDE00]">SG_UF</code> SP; Presidente
-                entra mesmo com UF BR. Vice, suplente, prefeito e vereador são
-                ignorados.
+                <code className="text-[#FFDE00]">SG_UF</code> SP. Vice,
+                suplente, prefeito e vereador são ignorados.
+              </li>
+              <li>
+                <strong className="text-slate-300">
+                  CSV do TSE (Brasil/Presidente)
+                </strong>{" "}
+                — o arquivo de SP{" "}
+                <strong className="text-slate-300">não traz Presidente</strong>{" "}
+                (é nacional). Importe também o{" "}
+                <code className="text-slate-300">consulta_cand</code> de Brasil:{" "}
+                <code className="text-[#FFDE00]">SG_UF=BR</code>,{" "}
+                <code className="text-[#FFDE00]">DS_CARGO=PRESIDENTE</code>.
+                Dois arquivos são aceitos, um depois do outro (upsert). Ex.:{" "}
+                <code className="text-slate-400">
+                  supabase/seed-consulta-cand-br-exemplo.csv
+                </code>
               </li>
               <li>
                 <strong className="text-slate-300">Simplificado</strong> —{" "}
@@ -639,7 +655,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
             </ul>
             <p className="text-xs text-slate-500">
               Não altera os nomes dos 5 oficiais do telão (origem cadastro).
-              Depois do CSV, envie o ZIP de fotos de urna.
+              Depois dos CSVs, envie o ZIP de fotos de urna.
             </p>
             <textarea
               value={chapadaText}
@@ -692,10 +708,14 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
             </h3>
             <p className="text-sm text-slate-300">
               Arquivos tipo{" "}
-              <code className="text-[#FFDE00]">FSP25000…_div.jpg</code> casam
-              com <code className="text-[#FFDE00]">SQ_CANDIDATO</code>. Também
-              vale <code className="text-slate-200">25000…_div.jpg</code> e{" "}
-              <code className="text-slate-200">FSP25000….jpg</code> (.jpeg/.png,
+              <code className="text-[#FFDE00]">FSP25000…_div.jpg</code> (SP) e{" "}
+              <code className="text-[#FFDE00]">FBR25000…_div.jpg</code>{" "}
+              (Brasil/Presidente) casam com{" "}
+              <code className="text-[#FFDE00]">SQ_CANDIDATO</code> — o matcher
+              extrai a sequência de dígitos. Também vale{" "}
+              <code className="text-slate-200">25000…_div.jpg</code>,{" "}
+              <code className="text-slate-200">FSP25000….jpg</code> e{" "}
+              <code className="text-slate-200">FBR25000….jpg</code> (.jpeg/.png,
               maiúsculas ou minúsculas, subpastas no ZIP). Número de urna{" "}
               <code className="text-[#FFDE00]">NR_CANDIDATO</code> só se for
               único. O ZIP é aberto no navegador e as fotos sobem em lotes para

@@ -150,8 +150,10 @@ export function isUrnaImagePath(path: string): boolean {
 }
 
 /**
- * TSE urna photos: FSP{SQ}_div.jpg, {SQ}_div.jpg, FSP{SQ}.jpg (any case).
+ * TSE urna photos: FSP{SQ}_div.jpg (SP), FBR{SQ}_div.jpg (Brasil/Presidente),
+ * {SQ}_div.jpg, FSP{SQ}.jpg / FBR{SQ}.jpg (any case).
  * Capture the long digit run — never concatenate leftover digits (year, etc.).
+ * Prefix is F + 2-letter UF (`FSP`, `FBR`, …).
  */
 const TSE_FOTO_STEM = /^(?:f[a-z]{2})?(\d+)(?:_div)?$/i;
 const MAX_NR_CANDIDATO_DIGITS = 5;

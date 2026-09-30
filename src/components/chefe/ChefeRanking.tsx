@@ -404,9 +404,6 @@ export function ChefeRanking() {
                   title={PCT_CARGO_HINT}
                 >
                   % no cargo
-                  <span className="mt-0.5 block max-w-[9.5rem] text-[9px] font-normal normal-case tracking-normal text-slate-400">
-                    {PCT_CARGO_HINT}
-                  </span>
                 </th>
                 <th className="px-3 py-2 font-semibold">Origem</th>
               </tr>
@@ -468,6 +465,9 @@ export function ChefeRanking() {
             </tbody>
           </table>
         </div>
+      )}
+      {!loading && rows.length > 0 && (
+        <p className="text-[11px] text-slate-500">{PCT_CARGO_HINT}</p>
       )}
     </div>
   );

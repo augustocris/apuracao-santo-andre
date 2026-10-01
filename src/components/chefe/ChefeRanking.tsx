@@ -133,20 +133,8 @@ function HighlightCard({
   onToggle: (candidato: Candidato) => void;
 }) {
   return (
-    <article className="relative flex min-w-0 flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm md:flex-row md:items-stretch md:gap-4 md:p-4">
-      <div className="flex min-w-0 items-start gap-2 md:contents">
-        <ChefeFoto candidato={row.candidato} size="lg" />
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-teal-800">
-            {row.cargo} · {place}º
-          </p>
-          <p className="mt-0.5 line-clamp-2 text-[13px] font-bold leading-snug text-slate-900 md:text-lg">
-            {row.candidato.nome}
-          </p>
-          <p className="text-[11px] tabular-nums text-slate-500">
-            Nº {row.candidato.numero}
-          </p>
-        </div>
+    <article className="relative flex min-w-0 flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 pr-12 shadow-sm md:flex-row md:items-stretch md:gap-4 md:p-4 md:pr-4">
+      <div className="absolute right-1 top-1 md:static md:order-4 md:self-start">
         <StarButton
           candidato={row.candidato}
           favorito={favorito}
@@ -154,7 +142,21 @@ function HighlightCard({
           onToggle={onToggle}
         />
       </div>
-      <p className="font-bold tabular-nums text-teal-800 md:mt-auto md:text-xl">
+      <div className="flex min-w-0 items-start gap-2 md:contents">
+        <ChefeFoto candidato={row.candidato} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-teal-800">
+            {row.cargo} · {place}º
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[13px] font-bold leading-snug break-words text-slate-900 md:text-lg">
+            {row.candidato.nome}
+          </p>
+          <p className="text-[11px] tabular-nums text-slate-500">
+            Nº {row.candidato.numero}
+          </p>
+        </div>
+      </div>
+      <p className="font-bold tabular-nums text-teal-800 md:order-3 md:mt-auto md:text-xl">
         {formatVotes(row.votos)}
         <span className="ml-1 text-[11px] font-medium text-slate-500 md:text-sm">
           votos

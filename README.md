@@ -14,8 +14,8 @@ npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigi
 
 > Dev note: `next.config.ts` sets `allowedDevOrigins` for `127.0.0.1` / `localhost` so the client bundle hydrates when you open those hosts.
 
-- Fiscal (mobile): [http://127.0.0.1:43127/fiscal](http://127.0.0.1:43127/fiscal)
-- Admin telão + cadastro: [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
+- Fiscal (mobile, só QR): [http://127.0.0.1:43127/fiscal](http://127.0.0.1:43127/fiscal)
+- Admin telão + cadastro + BUs pendentes + Digitar BU: [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
 - `/dashboard` redirects to `/admin`
 
 ## Environment
@@ -41,6 +41,7 @@ In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows 
    - [`supabase/migrations/006_catalogo_origem.sql`](supabase/migrations/006_catalogo_origem.sql) — `origem=catalogo` na tabela `candidatos` (chapada; **sem tabela nova**)
    - [`supabase/migrations/007_favorito.sql`](supabase/migrations/007_favorito.sql) — `candidatos.favorito` (checkbox no `/chefe`; não altera o telão)
    - [`supabase/migrations/008_sq_candidato.sql`](supabase/migrations/008_sq_candidato.sql) — `candidatos.sq_candidato` opcional (fotos de urna TSE)
+   - [`supabase/migrations/009_fiscal_domingo.sql`](supabase/migrations/009_fiscal_domingo.sql) — `whatsapp_suporte`, fila `bus_pendentes`, realtime idempotente (sem 42710), `secoes_esperadas=1744` só se ainda for 0
 3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
@@ -84,13 +85,17 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 
 PIN leve (`andre2026` por padrão, ou Cadastro → PIN do chefe). Ranking completo (incluindo Presidente), filtros de cargo, ordenação, busca e **favoritos** (checkbox entre # e nome; filtro Todos | Somente favoritos). Exige migration `007`. Não substitui o telão de 5 cards.
 
-## Fiscal flow
+## Fiscal flow (domingo)
 
-1. Open `/fiscal` on a phone (installable PWA).
-2. Tap **Escanear** (QR) or **Digitar** (formulário manual: zona, seção e votos).
-3. QR/foto parser extrai **todos** os pares `numero:votos`. Cargo vem **só** de banners (`PRESIDENTE`, `GOVERNADOR`, `DEPUTADO FEDERAL`… inclusive colados tipo `DEPUTADOFEDERAL`) ou tags TSE `CARG`. Nunca infere cargo pela quantidade de dígitos. 2 dígitos sem banner → `Indefinido`. BUs longos (`1 de 2` / `QRBU:1:2`): **Ler próximo QR desta urna** até unir as partes. **Digitar** grava só oficiais.
-4. Confirmation shows zona, seção, número + nome + votos → **Enviar**.
-5. Duplicate urnas return: *Urna já cadastrada anteriormente* (pre-check + UNIQUE). Vários QRs da **mesma** urna não são duplicata até o envio.
+1. Open `/fiscal` on a phone (installable PWA). **Só QR** — sem digitação e sem colar texto.
+2. Filme o QR (ou envie foto do QR). BUs `1 de 2` **não gravam votos** até o último QR.
+3. Confirmação curta: zona, seção, comparecimento (se vier), votos dos **5 da campanha**. Confirmar ou ler de novo. Sem editar número no celular.
+4. Verde inequívoco **só** depois da confirmação do servidor: *BU zona X seção Y enviada.*
+5. Erro com causa + próximo passo (ler de novo / WhatsApp / esperar rede). Duplicata `(zona, seção)` = **já enviada**, não erro de câmera.
+6. Parser recusou → texto bruto vai para `/admin` → **BUs pendentes / com erro** → **Reprocessar**.
+7. Digitação fica em `/admin` → **Digitar BU**, atrás do PIN do chefe (fotos do WhatsApp). Mesma regra de urna única.
+
+WhatsApp da central: campo `whatsapp_suporte` em `apuracao_config`, editável no Cadastro. Vazio = “peça o WhatsApp à central”.
 
 ## Admin telão
 
@@ -106,7 +111,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 1. Push to `main` — Vercel auto-deploys if the project is connected.
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
-4. Run SQL migrations `001` … `008` on Supabase (008 = `sq_candidato` opcional para fotos de urna). A Vercel não executa SQL.
+4. Run SQL migrations `001` … `009` on Supabase. **009 é obrigatória para a fila de erro e o WhatsApp do fiscal.** A Vercel não executa SQL.
 5. Point fiscales to `/fiscal`, telão to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`). Favoritos no ranking do chefe exigem a 007.
 
 ## Stack
@@ -126,7 +131,7 @@ src/lib/cargos.ts              Digit rules per cargo
 src/lib/parser/bu-qr.ts        BU QR + BU impresso (OCR colado)
 src/lib/parser/fixtures/       Dump TSE SIMULADO (ground-truth)
 src/lib/data.ts                Supabase + mock data layer
-supabase/migrations/           001–008 (008 = sq_candidato opcional)
+supabase/migrations/           001–009 (009 = WhatsApp + bus_pendentes)
 supabase/seed-chapada-exemplo.csv
 supabase/seed-consulta-cand-exemplo.csv
 ```

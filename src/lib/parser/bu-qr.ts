@@ -466,6 +466,68 @@ export class BuParseError extends Error {
   }
 }
 
+export function parseComparecimento(text: string): number | null {
+  const m = String(text).match(/\bCOMP\s*:\s*(\d+)/i);
+  if (!m) return null;
+  const n = Number.parseInt(m[1], 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+export function peekZonaSecao(raw: string): { zona?: string; secao?: string } {
+  try {
+    const text = normalizePrintedBuText(decodeBuPayloadStrategies(String(raw)));
+    const zonaRaw = firstMatch(text, ZONA_PATTERNS);
+    const secaoRaw = firstMatch(text, SECAO_PATTERNS);
+    return {
+      zona: zonaRaw ? normalizeDigits(zonaRaw, 3) : undefined,
+      secao: secaoRaw ? normalizeDigits(secaoRaw, 4) : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+export function isQrSetComplete(parts: ParsedBu[]): boolean {
+  if (parts.length === 0) return false;
+  const total = parts.reduce((max, p) => Math.max(max, p.qrTotal ?? 0), 0);
+  if (total <= 1) return true;
+  const indexes = new Set(
+    parts
+      .map((p) => p.qrIndex)
+      .filter((n): n is number => typeof n === "number" && n >= 1)
+  );
+  return indexes.size >= total || parts.length >= total;
+}
+
+export function describeQrProgress(parts: ParsedBu[]): {
+  index: number;
+  total: number;
+  complete: boolean;
+} {
+  const total = parts.reduce((max, p) => Math.max(max, p.qrTotal ?? 0), 0);
+  const index = Math.max(
+    parts.length,
+    ...parts.map((p) => p.qrIndex ?? 0),
+    0
+  );
+  return {
+    index,
+    total: total || Math.max(parts.length, 1),
+    complete: isQrSetComplete(parts),
+  };
+}
+
+/** Merge only when every QR of the urna is present. Incomplete sets must not ingest. */
+export function assertQrSetReadyToIngest(parts: ParsedBu[]): ParsedBu {
+  if (!isQrSetComplete(parts)) {
+    const { index, total } = describeQrProgress(parts);
+    throw new BuParseError(
+      `QR ${index} de ${total} — filme o próximo QR desta urna. Não envie ainda.`
+    );
+  }
+  return mergeParsedBus(parts);
+}
+
 export function parseQrbuMeta(
   text: string
 ): { index: number; total: number } | null {
@@ -534,6 +596,9 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
     (max, p) => Math.max(max, p.qrTotal ?? 0, p.qrIndex ?? 0),
     0
   );
+  const comparecimento =
+    [...parts].reverse().find((p) => p.comparecimento != null)?.comparecimento ??
+    null;
 
   return {
     zona,
@@ -544,6 +609,7 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
       .join("\n"),
     qrIndex: parts.length,
     qrTotal: qrTotal || parts.length,
+    comparecimento,
   };
 }
 
@@ -566,16 +632,14 @@ export function parseBuQrText(
   options: ParseBuOptions = {}
 ): ParsedBu {
   if (raw == null || !String(raw).trim()) {
-    throw new BuParseError(
-      "Texto do BU vazio. Escaneie de novo, envie uma foto do QR ou use a aba Digitar."
-    );
+    throw new BuParseError("Texto do BU vazio. Escaneie de novo.");
   }
 
   if (looksBinaryPayload(raw)) {
     const recovered = decodeBuPayloadStrategies(raw);
     if (looksBinaryPayload(recovered) || recovered.length < 8) {
       throw new BuParseError(
-        "QR lido, mas o conteúdo parece binário/ilegível como texto. Tente Enviar foto do QR com boa luz ou use a aba Digitar (zona, seção e votos)."
+        "QR lido, mas o conteúdo parece binário/ilegível como texto. Tente outra foto do QR com boa luz."
       );
     }
     return parseBuQrText(recovered, options);
@@ -590,12 +654,12 @@ export function parseBuQrText(
 
   if (!zonaRaw) {
     throw new BuParseError(
-      "Zona não encontrada no QR. Formatos aceitos: ZONA:001, Zona Eleitoral: 0001 ou ZonaEleitoral 0001. Se falhar, use Digitar."
+      "Zona não encontrada no QR. Formatos aceitos: ZONA:001, Zona Eleitoral: 0001 ou ZonaEleitoral 0001."
     );
   }
   if (!secaoRaw) {
     throw new BuParseError(
-      "Seção não encontrada no QR. Formatos aceitos: SECA:0483, Seção Eleitoral: 0483 ou SecaoEleitoral 0477. Se falhar, use Digitar."
+      "Seção não encontrada no QR. Formatos aceitos: SECA:0483, Seção Eleitoral: 0483 ou SecaoEleitoral 0477."
     );
   }
 
@@ -611,7 +675,7 @@ export function parseBuQrText(
       const list = formatRegisteredList(registered);
       if (allVotes.length > 0) {
         throw new BuParseError(
-          `QR lido, mas nenhum número cadastrado encontrado no boletim. Números cadastrados: ${list}. Use Digitar se o BU não listar esses candidatos.`
+          `QR lido, mas nenhum número cadastrado encontrado no boletim. Números cadastrados: ${list}.`
         );
       }
       throw new BuParseError(
@@ -634,14 +698,16 @@ export function parseBuQrText(
     });
   } else {
     votes = allVotes;
-    if (votes.length === 0) {
-      throw new BuParseError(
-        "Nenhum voto de candidato encontrado no QR. Formatos aceitos: 4545:11 (TSE), CAND:4545 QTVO:11, CANDIDATO:4545 VOTOS:11, ou linhas Nome 4545 0011. Se o QR for ilegível, use Digitar."
-      );
-    }
   }
 
   const qrbu = parseQrbuMeta(text);
+  const incomplete = qrbu != null && qrbu.index < qrbu.total;
+
+  if (votes.length === 0 && !incomplete) {
+    throw new BuParseError(
+      "Nenhum voto de candidato encontrado no QR. Formatos aceitos: 4545:11 (TSE), CAND:4545 QTVO:11, CANDIDATO:4545 VOTOS:11, ou linhas Nome 4545 0011."
+    );
+  }
 
   return {
     zona: normalizeDigits(zonaRaw, 3),
@@ -650,6 +716,7 @@ export function parseBuQrText(
     rawText: text,
     qrIndex: qrbu?.index,
     qrTotal: qrbu?.total,
+    comparecimento: parseComparecimento(text),
   };
 }
 

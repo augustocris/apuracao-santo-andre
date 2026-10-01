@@ -68,6 +68,7 @@ import {
   saveChefePin,
   saveRelatorioCargos,
   saveSecoesEsperadas,
+  saveWhatsappSuporte,
   upsertCandidato,
 } from "@/lib/data";
 import type { ApuracaoConfig, Candidato, ZonaConfigRow } from "@/lib/types";
@@ -112,6 +113,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     ...CARGOS_OFICIAIS,
   ]);
   const [chefePin, setChefePin] = useState(DEFAULT_CHEFE_PIN);
+  const [whatsappSuporte, setWhatsappSuporte] = useState("");
   const [chapadaText, setChapadaText] = useState("");
   const [chapadaBusy, setChapadaBusy] = useState(false);
   const [lastChapadaRows, setLastChapadaRows] = useState<ChapadaRow[]>([]);
@@ -130,6 +132,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       setCandidatos(cands);
       setConfig(cfg);
       setChefePin(cfg.chefe_pin?.trim() || DEFAULT_CHEFE_PIN);
+      setWhatsappSuporte(cfg.whatsapp_suporte?.trim() || "");
       setTotalEsperado(String(cfg.secoes_esperadas || 10));
       if (cfg.zonas_config.length > 0) {
         setZonaRows(cfg.zonas_config);
@@ -573,6 +576,60 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                 className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
               >
                 Salvar PIN
+              </Button>
+            </div>
+          </form>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void (async () => {
+                setBusy(true);
+                setError(null);
+                setMessage(null);
+                try {
+                  await saveWhatsappSuporte(whatsappSuporte);
+                  setMessage(
+                    whatsappSuporte.trim()
+                      ? "WhatsApp da central atualizado."
+                      : "WhatsApp limpo. O fiscal verá: peça o WhatsApp à central."
+                  );
+                  onConfigSaved?.();
+                } catch (err) {
+                  setError(
+                    err instanceof Error
+                      ? err.message
+                      : "Falha ao salvar o WhatsApp."
+                  );
+                } finally {
+                  setBusy(false);
+                }
+              })();
+            }}
+            className="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-4"
+          >
+            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-300">
+              WhatsApp da central
+            </h3>
+            <p className="text-xs text-slate-400">
+              Aparece nas telas de erro do fiscal. Vazio = “peça o WhatsApp à
+              central”. Não invente número. Cole a migration 009 no Supabase.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                type="tel"
+                value={whatsappSuporte}
+                onChange={(e) => setWhatsappSuporte(e.target.value)}
+                className="max-w-xs border-white/15 bg-slate-950 text-white"
+                autoComplete="off"
+                placeholder="DDD + número (só se já tiver)"
+                disabled={busy}
+              />
+              <Button
+                type="submit"
+                disabled={busy}
+                className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
+              >
+                Salvar WhatsApp
               </Button>
             </div>
           </form>

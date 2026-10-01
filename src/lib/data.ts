@@ -5,14 +5,19 @@ import {
   getMockCandidatos,
   getMockConfig,
   getMockLocais,
+  getMockPendentes,
   insertMockBoletins,
+  insertMockPendente,
+  markMockPendenteReprocessado,
   replaceMockLocaisForZonas,
   setMockConfig,
   subscribeMock,
   updateMockCandidato,
+  updateMockPendenteErro,
   upsertMockCandidatos,
   upsertMockLocais,
 } from "@/lib/mock-store";
+import { duplicateUrnaMessage } from "@/lib/fiscal-feedback";
 import {
   CARGO_INDEFINIDO,
   CARGOS_OFICIAIS,
@@ -31,6 +36,7 @@ import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
 import { percentualNoCargo } from "@/lib/utils";
 import type {
   ApuracaoConfig,
+  BuPendente,
   Candidato,
   CargoRanking,
   ConfirmVoteRow,
@@ -95,6 +101,8 @@ function normalizeConfig(raw: Partial<ApuracaoConfig> | null): ApuracaoConfig {
       typeof raw?.chefe_pin === "string" && raw.chefe_pin.trim()
         ? raw.chefe_pin.trim()
         : DEFAULT_CHEFE_PIN,
+    whatsapp_suporte:
+      typeof raw?.whatsapp_suporte === "string" ? raw.whatsapp_suporte.trim() : "",
   };
 }
 
@@ -333,7 +341,7 @@ export async function getConfig(): Promise<ApuracaoConfig> {
     // Table may not exist until migration 002 — fall back gracefully
     console.warn("[apuracao] apuracao_config:", error.message);
     return normalizeConfig({
-      secoes_esperadas: 0,
+      secoes_esperadas: 1744,
       relatorio_cargos: [...DEFAULT_RELATORIO_CARGOS],
       zonas_config: [],
     });
@@ -341,7 +349,7 @@ export async function getConfig(): Promise<ApuracaoConfig> {
 
   if (!data) {
     const seed = normalizeConfig({
-      secoes_esperadas: 0,
+      secoes_esperadas: 1744,
       relatorio_cargos: [...DEFAULT_RELATORIO_CARGOS],
       zonas_config: [],
     });
@@ -356,7 +364,11 @@ export async function saveConfig(
   patch: Partial<
     Pick<
       ApuracaoConfig,
-      "secoes_esperadas" | "relatorio_cargos" | "zonas_config" | "chefe_pin"
+      | "secoes_esperadas"
+      | "relatorio_cargos"
+      | "zonas_config"
+      | "chefe_pin"
+      | "whatsapp_suporte"
     >
   >
 ): Promise<ApuracaoConfig> {
@@ -379,6 +391,7 @@ export async function saveConfig(
     zonas_config: next.zonas_config,
     updated_at: next.updated_at,
     chefe_pin: next.chefe_pin,
+    whatsapp_suporte: next.whatsapp_suporte ?? "",
   };
 
   const { data, error } = await supabase
@@ -388,8 +401,13 @@ export async function saveConfig(
     .single();
 
   if (error) {
+    if (/whatsapp_suporte/i.test(error.message)) {
+      delete payload.whatsapp_suporte;
+    }
     if (/chefe_pin/i.test(error.message)) {
       delete payload.chefe_pin;
+    }
+    if (/whatsapp_suporte|chefe_pin/i.test(error.message)) {
       const retry = await supabase
         .from("apuracao_config")
         .upsert(payload)
@@ -409,6 +427,114 @@ export async function saveChefePin(pin: string): Promise<ApuracaoConfig> {
     throw new Error("O PIN do chefe precisa ter ao menos 4 caracteres.");
   }
   return saveConfig({ chefe_pin: cleaned });
+}
+
+export async function saveWhatsappSuporte(
+  value: string
+): Promise<ApuracaoConfig> {
+  return saveConfig({ whatsapp_suporte: value.trim() });
+}
+
+export async function listBusPendentes(): Promise<BuPendente[]> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return getMockPendentes().filter((p) => p.status === "pendente");
+  }
+
+  const { data, error } = await supabase
+    .from("bus_pendentes")
+    .select("*")
+    .eq("status", "pendente")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    if (/bus_pendentes|42P01|42703/i.test(error.message) || error.code === "42P01") {
+      return [];
+    }
+    throw new Error(error.message);
+  }
+  return (data ?? []) as BuPendente[];
+}
+
+export async function saveBuPendente(input: {
+  rawText: string;
+  erro: string;
+  zona?: string | null;
+  secao?: string | null;
+}): Promise<BuPendente | null> {
+  const raw = input.rawText.trim();
+  if (!raw) return null;
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    return insertMockPendente({
+      raw_text: raw,
+      erro: input.erro,
+      zona: input.zona ?? null,
+      secao: input.secao ?? null,
+    });
+  }
+
+  const { data, error } = await supabase
+    .from("bus_pendentes")
+    .insert({
+      raw_text: raw,
+      erro: input.erro,
+      zona: input.zona ?? null,
+      secao: input.secao ?? null,
+      status: "pendente",
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    if (/bus_pendentes|42P01/i.test(error.message) || error.code === "42P01") {
+      console.warn("[apuracao] bus_pendentes ausente — rode a migration 009.");
+      return null;
+    }
+    throw new Error(error.message);
+  }
+  return data as BuPendente;
+}
+
+export async function markBuPendenteReprocessado(
+  id: string
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    if (!markMockPendenteReprocessado(id)) {
+      throw new Error("BU pendente não encontrado.");
+    }
+    return;
+  }
+
+  const { error } = await supabase
+    .from("bus_pendentes")
+    .update({ status: "reprocessado", updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function updateBuPendenteErro(
+  id: string,
+  erro: string
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    if (!updateMockPendenteErro(id, erro)) {
+      throw new Error("BU pendente não encontrado.");
+    }
+    return;
+  }
+
+  const { error } = await supabase
+    .from("bus_pendentes")
+    .update({ erro, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw new Error(error.message);
 }
 
 export async function setCandidatoFavorito(
@@ -740,7 +866,7 @@ async function ingestBuCompletoClient(
     return {
       ok: false,
       duplicate: true,
-      message: "Urna já cadastrada anteriormente",
+      message: duplicateUrnaMessage(zona, secao),
     };
   }
 
@@ -810,7 +936,7 @@ async function ingestBuCompletoClient(
       return {
         ok: false,
         duplicate: true,
-        message: "Urna já cadastrada anteriormente",
+        message: duplicateUrnaMessage(zona, secao),
       };
     }
     throw new Error(error.message);
@@ -836,7 +962,7 @@ export async function transmitBuCompleto(
       return {
         ok: false,
         duplicate: true,
-        message: "Urna já cadastrada anteriormente",
+        message: duplicateUrnaMessage(zona, secao),
       };
     }
     const boletimRows: Array<{
@@ -886,7 +1012,7 @@ export async function transmitBuCompleto(
       return {
         ok: false,
         duplicate: true,
-        message: "Urna já cadastrada anteriormente",
+        message: duplicateUrnaMessage(zona, secao),
       };
     }
     return { ok: true };
@@ -916,7 +1042,7 @@ export async function transmitBuCompleto(
         return {
           ok: false,
           duplicate: true,
-          message: parsed.message || "Urna já cadastrada anteriormente",
+          message: duplicateUrnaMessage(zona, secao),
         };
       }
       if (parsed.ok) return { ok: true };
@@ -957,7 +1083,7 @@ export async function transmitVotes(
       return {
         ok: false,
         duplicate: true,
-        message: "Urna já cadastrada anteriormente",
+        message: duplicateUrnaMessage(zona, secao),
       };
     }
     return { ok: true };
@@ -975,7 +1101,7 @@ export async function transmitVotes(
     return {
       ok: false,
       duplicate: true,
-      message: "Urna já cadastrada anteriormente",
+      message: duplicateUrnaMessage(zona, secao),
     };
   }
 
@@ -994,7 +1120,7 @@ export async function transmitVotes(
       return {
         ok: false,
         duplicate: true,
-        message: "Urna já cadastrada anteriormente",
+        message: duplicateUrnaMessage(zona, secao),
       };
     }
     throw new Error(error.message);
@@ -1074,6 +1200,11 @@ export function subscribeDashboard(
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "candidatos" },
+      () => onChange()
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "bus_pendentes" },
       () => onChange()
     )
     .subscribe();

@@ -13,8 +13,8 @@ export default function HomePage() {
             Apuração Eleitoral Paralela
           </h1>
           <p className="max-w-xl text-lg text-slate-700">
-            Fiscais escaneiam o QR do Boletim de Urna no celular. O telão
-            atualiza os resultados em tempo real.
+            Fiscais só escaneiam o QR do Boletim de Urna no celular. Verde
+            só depois que a central confirma. Digitação fica no admin, com PIN.
           </p>
         </div>
 
@@ -26,7 +26,7 @@ export default function HomePage() {
             <Smartphone className="mb-3 size-8 text-teal-700" />
             <h2 className="text-xl font-bold text-slate-900">Área do Fiscal</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Escanear BU, confirmar votos e transmitir.
+              Só QR. Confirme zona, seção e os 5 da campanha.
             </p>
           </Link>
           <Link

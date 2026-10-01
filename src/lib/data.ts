@@ -31,7 +31,11 @@ import {
   validarNumeroCargoChapada,
   normalizeChapadaNumero,
 } from "@/lib/cargos";
-import { normalizeCandidateNumero } from "@/lib/parser/bu-qr";
+import {
+  normalizeCandidateNumero,
+  normalizeSecao,
+  normalizeZona,
+} from "@/lib/parser/bu-qr";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
 import { percentualNoCargo } from "@/lib/utils";
 import type {
@@ -64,11 +68,11 @@ function supabaseWriteError(action: string, message: string): Error {
 }
 
 function padZona(zona: string): string {
-  return zona.replace(/\D/g, "").padStart(3, "0");
+  return normalizeZona(zona);
 }
 
 function padSecao(secao: string): string {
-  return secao.replace(/\D/g, "").padStart(4, "0");
+  return normalizeSecao(secao);
 }
 
 function normalizeZonasConfig(raw: unknown): ZonaConfigRow[] {

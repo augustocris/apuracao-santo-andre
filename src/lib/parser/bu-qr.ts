@@ -114,6 +114,11 @@ const LINE_NUM_VOTOS_RE =
 export interface ParseBuOptions {
   /** When set, only return votes for these registered candidate numbers. */
   registeredNumeros?: string[];
+  /**
+   * Continuation QR (TSE part 2+) often has only votes — no ZONA/SECAO.
+   * Caller must inherit from part 1. Single-QR still requires both.
+   */
+  allowMissingZonaSecao?: boolean;
 }
 
 export function normalizeCandidateNumero(value: string): string {
@@ -130,6 +135,22 @@ function normalizeDigits(value: string, pad = 0): string {
   // Strip leading zeros before padding so "0001" → "001" (zona 3) / "0001" (seção 4).
   const stripped = digits.replace(/^0+(?=\d)/, "") || "0";
   return pad > 0 ? stripped.padStart(pad, "0") : stripped;
+}
+
+/** Zona 1–3 dígitos. 5+ dígitos = token TSE colado (ZONA:00117:103 → 001). */
+export function normalizeZona(raw: string): string {
+  const digits = String(raw).replace(/\D/g, "");
+  if (!digits) return "";
+  const capped = digits.length > 4 ? digits.slice(0, 3) : digits;
+  return normalizeDigits(capped, 3);
+}
+
+/** Seção 1–4 dígitos. 5+ (ex. 04777) é glitch/cola do próximo token — não inventa 5 dígitos. */
+export function normalizeSecao(raw: string): string {
+  const digits = String(raw).replace(/\D/g, "");
+  if (!digits) return "";
+  const capped = digits.length > 4 ? digits.slice(0, 4) : digits;
+  return normalizeDigits(capped, 4);
 }
 
 function firstMatch(text: string, patterns: RegExp[]): string | null {
@@ -479,8 +500,8 @@ export function peekZonaSecao(raw: string): { zona?: string; secao?: string } {
     const zonaRaw = firstMatch(text, ZONA_PATTERNS);
     const secaoRaw = firstMatch(text, SECAO_PATTERNS);
     return {
-      zona: zonaRaw ? normalizeDigits(zonaRaw, 3) : undefined,
-      secao: secaoRaw ? normalizeDigits(secaoRaw, 4) : undefined,
+      zona: zonaRaw ? normalizeZona(zonaRaw) : undefined,
+      secao: secaoRaw ? normalizeSecao(secaoRaw) : undefined,
     };
   } catch {
     return {};
@@ -565,14 +586,28 @@ export function parseQrbuMeta(
  * Merge complementary QR slices of the same urna.
  * zona+seção must match. Same numero+cargo → last fragment wins.
  */
+export function inheritQrZonaSecao(part: ParsedBu, from: ParsedBu): ParsedBu {
+  return {
+    ...part,
+    zona: part.zona || from.zona,
+    secao: part.secao || from.secao,
+  };
+}
+
 export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
   if (parts.length === 0) {
     throw new BuParseError("Nenhum QR para unir.");
   }
-  const zona = parts[0].zona;
-  const secao = parts[0].secao;
+  const donor = parts.find((p) => p.zona && p.secao);
+  if (!donor) {
+    throw new BuParseError(
+      "Zona/seção ausentes no conjunto de QRs. Filme primeiro o QR que traz zona e seção."
+    );
+  }
+  const zona = donor.zona;
+  const secao = donor.secao;
   for (const part of parts) {
-    if (part.zona !== zona || part.secao !== secao) {
+    if (part.zona && part.secao && (part.zona !== zona || part.secao !== secao)) {
       throw new BuParseError(
         `Este QR é de outra urna (zona ${part.zona} / seção ${part.secao}; esperado zona ${zona} / seção ${secao}).`
       );
@@ -648,16 +683,20 @@ export function parseBuQrText(
   const decoded = decodeBuPayloadStrategies(raw);
   const text = normalizePrintedBuText(decoded);
   const registered = options.registeredNumeros;
+  const qrbuEarly = parseQrbuMeta(text);
+  const continuation =
+    options.allowMissingZonaSecao === true ||
+    Boolean(qrbuEarly && qrbuEarly.total > 1 && qrbuEarly.index > 1);
 
   const zonaRaw = firstMatch(text, ZONA_PATTERNS);
   const secaoRaw = firstMatch(text, SECAO_PATTERNS);
 
-  if (!zonaRaw) {
+  if (!zonaRaw && !continuation) {
     throw new BuParseError(
       "Zona não encontrada no QR. Formatos aceitos: ZONA:001, Zona Eleitoral: 0001 ou ZonaEleitoral 0001."
     );
   }
-  if (!secaoRaw) {
+  if (!secaoRaw && !continuation) {
     throw new BuParseError(
       "Seção não encontrada no QR. Formatos aceitos: SECA:0483, Seção Eleitoral: 0483 ou SecaoEleitoral 0477."
     );
@@ -700,7 +739,7 @@ export function parseBuQrText(
     votes = allVotes;
   }
 
-  const qrbu = parseQrbuMeta(text);
+  const qrbu = qrbuEarly;
   const incomplete = qrbu != null && qrbu.index < qrbu.total;
 
   if (votes.length === 0 && !incomplete) {
@@ -710,8 +749,8 @@ export function parseBuQrText(
   }
 
   return {
-    zona: normalizeDigits(zonaRaw, 3),
-    secao: normalizeDigits(secaoRaw, 4),
+    zona: zonaRaw ? normalizeZona(zonaRaw) : "",
+    secao: secaoRaw ? normalizeSecao(secaoRaw) : "",
     votes,
     rawText: text,
     qrIndex: qrbu?.index,

@@ -15,8 +15,11 @@ import {
   assertQrSetReadyToIngest,
   decodeBuPayloadStrategies,
   looksBinaryPayload,
+  inheritQrZonaSecao,
   mergeParsedBus,
   normalizeCandidateNumero,
+  normalizeSecao,
+  normalizeZona,
   parseBuQrText,
   parseComparecimento,
   parseQrbuMeta,
@@ -386,6 +389,34 @@ describe("multi-QR merge", () => {
         return true;
       }
     );
+  });
+
+  it("inherits zona/seção from part 1 when TSE part 2 has only votes", () => {
+    const a = parseBuQrText(`QRBU:1:2 ZONA:001 SECA:0477 CARG:1 13:10 17:8`);
+    const b = parseBuQrText(`QRBU:2:2 CARG:6 4545:11 45045:7 CARG:3 10:55`);
+    assert.equal(b.zona, "");
+    assert.equal(b.secao, "");
+    const inherited = inheritQrZonaSecao(b, a);
+    assert.equal(inherited.zona, "001");
+    assert.equal(inherited.secao, "0477");
+    const merged = assertQrSetReadyToIngest([a, inherited]);
+    assert.equal(merged.zona, "001");
+    assert.equal(merged.secao, "0477");
+    assert.equal(
+      merged.votes.find((v) => v.numero === "4545")?.quantidade,
+      11
+    );
+    assert.equal(merged.votes.find((v) => v.numero === "13")?.quantidade, 10);
+    assert.throws(() => assertQrSetReadyToIngest([a]), /1 de 2/);
+  });
+
+  it("caps glued seção 04777 to 0477 and does not invent a 5-digit section", () => {
+    assert.equal(normalizeSecao("04777"), "0477");
+    assert.equal(normalizeSecao("0477"), "0477");
+    assert.equal(normalizeZona("00117"), "001");
+    const parsed = parseBuQrText("QRBU:1:2 ZONA:001 SECA:04777 ORIG:VOTA");
+    assert.equal(parsed.secao, "0477");
+    assert.equal(parsed.zona, "001");
   });
 });
 

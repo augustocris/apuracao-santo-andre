@@ -1,4 +1,3 @@
-import { CARGO_INDEFINIDO } from "@/lib/cargos";
 import type { CargoRanking, RankingRow } from "@/lib/types";
 import { percentualNoCargo } from "@/lib/utils";
 
@@ -22,7 +21,7 @@ export function filterChefeRankingRows(
 ): ChefeRankingFlatRow[] {
   const selected =
     opts.cargoFilter === "todos"
-      ? groups.filter((g) => g.cargo !== CARGO_INDEFINIDO)
+      ? groups
       : groups.filter((g) => g.cargo === opts.cargoFilter);
 
   // % vem sempre de g.totalVotos (dataset completo do cargo: todas as origens,

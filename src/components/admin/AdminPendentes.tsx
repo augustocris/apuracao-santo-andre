@@ -5,7 +5,6 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { ConfirmTransmitModal } from "@/components/fiscal/ConfirmTransmitModal";
 import { Button } from "@/components/ui/button";
 import {
-  findLocal,
   listBusPendentes,
   markBuPendenteReprocessado,
   resolveBuVotes,
@@ -15,11 +14,12 @@ import {
   urnaJaCadastrada,
 } from "@/lib/data";
 import { duplicateUrnaMessage } from "@/lib/fiscal-feedback";
+import { pickConfirmPreview } from "@/lib/fiscal-confirm";
 import {
   assertQrSetReadyToIngest,
   parseBuQrText,
 } from "@/lib/parser/bu-qr";
-import type { BuPendente, ConfirmVoteRow, DiscoveredVote, LocalVotacao, ParsedBu } from "@/lib/types";
+import type { BuPendente, ConfirmVoteRow, DiscoveredVote, ParsedBu } from "@/lib/types";
 
 export function AdminPendentes() {
   const [rows, setRows] = useState<BuPendente[]>([]);
@@ -32,7 +32,6 @@ export function AdminPendentes() {
     parsed: ParsedBu;
     featured: ConfirmVoteRow[];
     discovered: DiscoveredVote[];
-    local: LocalVotacao | null;
   } | null>(null);
   const [transmitting, setTransmitting] = useState(false);
 
@@ -80,13 +79,11 @@ export function AdminPendentes() {
       if (resolved.featured.length === 0 && resolved.discovered.length === 0) {
         throw new Error("Parser ok, mas nenhum voto para gravar.");
       }
-      const local = await findLocal(merged.zona, merged.secao);
       setConfirm({
         pendente: item,
         parsed: merged,
         featured: resolved.featured,
         discovered: resolved.discovered,
-        local,
       });
     } catch (err) {
       const cause = err instanceof Error ? err.message : "Falha ao reprocessar.";
@@ -184,15 +181,16 @@ export function AdminPendentes() {
             onOpenChange={(open) => {
               if (!open) setConfirm(null);
             }}
-            local={confirm.local}
             zona={confirm.parsed.zona}
             secao={confirm.parsed.secao}
-            rows={confirm.featured}
-            comparecimento={confirm.parsed.comparecimento}
+            preview={pickConfirmPreview(confirm.featured, confirm.discovered)}
             onConfirm={() => void handleConfirm()}
             onRescan={() => setConfirm(null)}
+            rescanLabel="Voltar"
             transmitting={transmitting}
-            hasMoreVotes={confirm.discovered.length > 0}
+            canSend={
+              confirm.featured.length > 0 || confirm.discovered.length > 0
+            }
           />
         </div>
       ) : null}

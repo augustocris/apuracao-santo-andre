@@ -5,15 +5,15 @@ import { ManualBuForm, type ManualBuSubmit } from "@/components/fiscal/ManualBuF
 import { ConfirmTransmitModal } from "@/components/fiscal/ConfirmTransmitModal";
 import { PinGate } from "@/components/admin/PinGate";
 import {
-  findLocal,
   padSecao,
   padZona,
   resolveConfirmRows,
   transmitVotes,
   urnaJaCadastrada,
 } from "@/lib/data";
+import { pickConfirmPreview } from "@/lib/fiscal-confirm";
 import { duplicateFeedback, fiscalSuccessMessage } from "@/lib/fiscal-feedback";
-import type { ConfirmVoteRow, LocalVotacao } from "@/lib/types";
+import type { ConfirmVoteRow } from "@/lib/types";
 
 export function AdminDigitarBu() {
   const [processing, setProcessing] = useState(false);
@@ -25,7 +25,6 @@ export function AdminDigitarBu() {
   const [secao, setSecao] = useState("");
   const [rawText, setRawText] = useState("");
   const [rows, setRows] = useState<ConfirmVoteRow[]>([]);
-  const [local, setLocal] = useState<LocalVotacao | null>(null);
   const [formResetKey, setFormResetKey] = useState(0);
 
   const handleManual = useCallback(async (payload: ManualBuSubmit) => {
@@ -36,7 +35,7 @@ export function AdminDigitarBu() {
       const z = padZona(payload.zona);
       const s = padSecao(payload.secao);
       if (await urnaJaCadastrada(z, s)) {
-        setError(duplicateFeedback(z, s).cause);
+        setError(duplicateFeedback(z, s).nextStep);
         return;
       }
       const resolved = await resolveConfirmRows(
@@ -54,7 +53,6 @@ export function AdminDigitarBu() {
       setZona(z);
       setSecao(s);
       setRows(resolved.rows);
-      setLocal(await findLocal(z, s));
       setRawText(
         [
           `MANUAL`,
@@ -78,7 +76,7 @@ export function AdminDigitarBu() {
     setError(null);
     try {
       if (await urnaJaCadastrada(zona, secao)) {
-        setError(duplicateFeedback(zona, secao).cause);
+        setError(duplicateFeedback(zona, secao).nextStep);
         setConfirmOpen(false);
         return;
       }
@@ -143,13 +141,14 @@ export function AdminDigitarBu() {
               onOpenChange={(open) => {
                 if (!open) setConfirmOpen(false);
               }}
-              local={local}
               zona={zona}
               secao={secao}
-              rows={rows}
+              preview={pickConfirmPreview(rows, [])}
               onConfirm={() => void handleConfirm()}
               onRescan={() => setConfirmOpen(false)}
+              rescanLabel="Voltar"
               transmitting={transmitting}
+              canSend={rows.length > 0}
             />
           </div>
         ) : (

@@ -58,9 +58,6 @@ export function FiscalSuccessCard({
         <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-emerald-600" />
         {fiscalSuccessMessage(zona, secao)}
       </p>
-      <p className="mt-1 pl-8 text-sm font-semibold text-emerald-900">
-        Próxima urna.
-      </p>
     </div>
   );
 }

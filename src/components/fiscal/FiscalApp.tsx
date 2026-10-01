@@ -1,14 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Sun } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { BuScanner } from "@/components/fiscal/BuScanner";
 import { ConfirmTransmitModal } from "@/components/fiscal/ConfirmTransmitModal";
 import { FiscalErrorCard, FiscalSuccessCard } from "@/components/fiscal/FiscalFeedback";
-import { Button } from "@/components/ui/button";
 import {
-  dataModeLabel,
-  findLocal,
   getConfig,
   resolveBuVotes,
   saveBuPendente,
@@ -17,6 +14,7 @@ import {
   padZona,
   padSecao,
 } from "@/lib/data";
+import { pickConfirmPreview } from "@/lib/fiscal-confirm";
 import {
   duplicateFeedback,
   feedbackFromError,
@@ -24,6 +22,7 @@ import {
   networkFeedback,
   parseFeedback,
   qrMismatchFeedback,
+  SUCCESS_CLEAR_MS,
   waitingSecondQrLabel,
   type FiscalFeedback,
 } from "@/lib/fiscal-feedback";
@@ -32,12 +31,14 @@ import {
   BuParseError,
   describeQrProgress,
   isQrSetComplete,
+  parseBuQrText,
   parseFiscalQrChunk,
   peekZonaSecao,
   SameQrRepeatError,
+  SAMPLE_TSE_QR_TEXT,
   sameQrPayload,
 } from "@/lib/parser/bu-qr";
-import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao, ParsedBu } from "@/lib/types";
+import type { ConfirmVoteRow, DiscoveredVote, ParsedBu } from "@/lib/types";
 
 const QR_SESSION_KEY = "apuracao-fiscal-qr-parts";
 
@@ -72,7 +73,6 @@ export function FiscalApp() {
   );
   const [whatsapp, setWhatsapp] = useState<string>("");
   const [parsed, setParsed] = useState<ParsedBu | null>(null);
-  const [local, setLocal] = useState<LocalVotacao | null>(null);
   const [rows, setRows] = useState<ConfirmVoteRow[]>([]);
   const [discovered, setDiscovered] = useState<DiscoveredVote[]>([]);
   const [fragments, setFragments] = useState<ParsedBu[]>([]);
@@ -107,6 +107,23 @@ export function FiscalApp() {
     if (!feedback && !success && !processing) return;
     feedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [feedback, success, processing]);
+
+  useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => {
+      setSuccess(null);
+      fragmentsRef.current = [];
+      writeQrSession([]);
+      setFragments([]);
+      setScanNonce((n) => n + 1);
+      setFeedback(null);
+      setConfirmOpen(false);
+      setParsed(null);
+      setRows([]);
+      setDiscovered([]);
+    }, SUCCESS_CLEAR_MS);
+    return () => window.clearTimeout(timer);
+  }, [success]);
 
   const persistParseFailure = useCallback(async (raw: string, cause: string) => {
     const peek = peekZonaSecao(raw);
@@ -146,13 +163,11 @@ export function FiscalApp() {
         return;
       }
 
-      const found = await findLocal(zona, secao);
       setParsed({
         ...merged,
         zona,
         secao,
       });
-      setLocal(found);
       setRows(resolved.featured);
       setDiscovered(resolved.discovered);
       setConfirmOpen(true);
@@ -167,6 +182,24 @@ export function FiscalApp() {
       setProcessing(false);
     }
   }, [persistParseFailure]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (typeof window === "undefined") return;
+    const ui = new URLSearchParams(window.location.search).get("ui");
+    if (ui === "success") {
+      setSuccess({ zona: "247", secao: "0123" });
+      return;
+    }
+    if (ui !== "confirm") return;
+    void (async () => {
+      try {
+        await openConfirmFromMerged(parseBuQrText(SAMPLE_TSE_QR_TEXT));
+      } catch {
+        /* preview local — não bloqueia o fiscal */
+      }
+    })();
+  }, [openConfirmFromMerged]);
 
   const handleRawText = useCallback(
     async (raw: string) => {
@@ -286,7 +319,6 @@ export function FiscalApp() {
       setSuccess({ zona: parsed.zona, secao: parsed.secao });
       setConfirmOpen(false);
       setParsed(null);
-      setLocal(null);
       setRows([]);
       setDiscovered([]);
       fragmentsRef.current = [];
@@ -305,24 +337,20 @@ export function FiscalApp() {
 
   const progress = describeQrProgress(fragments);
   const awaitingMore = fragments.length > 0 && !progress.complete;
+  const preview = pickConfirmPreview(rows, discovered);
+  const showIdleLine = !success && !confirmOpen && !awaitingMore;
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-4">
-      <header className="space-y-0.5">
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
-          <Sun className="size-3" />
-          Modo fiscal · tela clara
-        </div>
-        <h1 className="text-xl font-bold leading-tight tracking-tight text-slate-900 sm:text-2xl">
-          Apuração Paralela
+    <div className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-4 px-3 py-4 sm:px-4">
+      <header className="space-y-3">
+        <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900 sm:text-3xl">
+          Apuração Santo André
         </h1>
-        <p className="text-sm font-medium leading-snug text-slate-700">
-          Santo André. Filme o QR. Verde = enviada.
-        </p>
-        <p className="text-xs text-slate-500">
-          Fonte:{" "}
-          <span className="font-semibold uppercase">{dataModeLabel()}</span>
-        </p>
+        {showIdleLine ? (
+          <p className="text-lg font-bold leading-snug text-teal-900">
+            Clique abaixo e Filme o QRCODE da BU.
+          </p>
+        ) : null}
       </header>
 
       <div ref={feedbackRef} className="space-y-2">
@@ -340,52 +368,36 @@ export function FiscalApp() {
           <FiscalSuccessCard zona={success.zona} secao={success.secao} />
         ) : null}
 
-        {feedback ? (
+        {!success && feedback ? (
           <FiscalErrorCard error={feedback} whatsapp={whatsapp} />
         ) : null}
       </div>
 
-      {confirmOpen ? (
+      {success ? null : confirmOpen ? (
         <ConfirmTransmitModal
           open={confirmOpen}
           onOpenChange={(open) => {
             if (!open) handleCancelFragments();
           }}
-          local={local}
           zona={parsed?.zona ?? ""}
           secao={parsed?.secao ?? ""}
-          rows={rows}
-          comparecimento={parsed?.comparecimento}
+          preview={preview}
           onConfirm={() => void handleConfirm()}
           onRescan={handleCancelFragments}
           transmitting={transmitting}
-          hasMoreVotes={discovered.length > 0}
+          canSend={rows.length > 0 || discovered.length > 0}
         />
       ) : (
-        <div className="w-full space-y-2">
+        <div className="w-full space-y-3">
           {fragments.length > 0 &&
           awaitingMore &&
           (!feedback || feedback.kind === "incomplete_qr") ? (
-            <div
+            <p
               role="status"
-              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-600 bg-teal-50 px-3 py-2 text-teal-950"
+              className="text-base font-bold leading-snug text-teal-900"
             >
-              <p className="text-base font-bold leading-snug">
-                {waitingSecondQrLabel(
-                  fragments[0].zona,
-                  fragments[0].secao
-                )}
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-slate-300"
-                onClick={handleCancelFragments}
-              >
-                Cancelar
-              </Button>
-            </div>
+              {waitingSecondQrLabel(fragments[0].zona, fragments[0].secao)}
+            </p>
           ) : null}
           <BuScanner
             onScan={(text) => void handleRawText(text)}
@@ -393,7 +405,6 @@ export function FiscalApp() {
             resetKey={scanNonce}
             nextQr={awaitingMore}
             ignoreExactPayloads={fragments.map((part) => part.rawText)}
-            showHelp={!feedback || feedback.kind === "incomplete_qr"}
             whatsapp={whatsapp}
           />
         </div>

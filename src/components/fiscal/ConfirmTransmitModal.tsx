@@ -2,56 +2,40 @@
 
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CARGOS_CONFIRM_ORDEM, labelCargoCurto } from "@/lib/cargos";
-import type { ConfirmVoteRow, LocalVotacao } from "@/lib/types";
+import { labelCargoCurto } from "@/lib/cargos";
+import type { ConfirmPreview } from "@/lib/fiscal-confirm";
 import { formatVotes } from "@/lib/utils";
 
 interface ConfirmTransmitModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  local: LocalVotacao | null;
   zona: string;
   secao: string;
-  rows: ConfirmVoteRow[];
-  comparecimento?: number | null;
+  preview: ConfirmPreview | null;
   onConfirm: () => void;
   onRescan?: () => void;
+  rescanLabel?: string;
   transmitting: boolean;
-  notice?: string | null;
-  /** Full BU has votes even if none of the 5 appeared. */
-  hasMoreVotes?: boolean;
+  canSend: boolean;
 }
 
 /**
- * Confirmação curta no celular: zona, seção, comparecimento e os 5 oficiais.
- * Sem edição de votos.
+ * Confirmação curta: zona, seção e um candidato. Sem edição de votos.
+ * O envio ainda grava o BU completo no servidor.
  */
 export function ConfirmTransmitModal({
   open,
   onOpenChange,
-  local,
   zona,
   secao,
-  rows,
-  comparecimento,
+  preview,
   onConfirm,
   onRescan,
+  rescanLabel = "Filmar de novo",
   transmitting,
-  notice,
-  hasMoreVotes = false,
+  canSend,
 }: ConfirmTransmitModalProps) {
   if (!open) return null;
-
-  const confirmCargos = CARGOS_CONFIRM_ORDEM as readonly string[];
-  const byCargo = confirmCargos
-    .map((cargo) => ({
-      cargo,
-      items: rows.filter((r) => r.candidato.cargo === cargo),
-    }))
-    .filter((g) => g.items.length > 0);
-
-  const others = rows.filter((r) => !confirmCargos.includes(r.candidato.cargo));
-  const canSend = rows.length > 0 || hasMoreVotes;
 
   function handleRescan() {
     if (onRescan) onRescan();
@@ -62,125 +46,59 @@ export function ConfirmTransmitModal({
     <section
       role="region"
       aria-labelledby="confirm-envio-title"
-      className="flex flex-col gap-2 rounded-xl border-2 border-teal-600 bg-white px-3 py-3 shadow-sm"
+      className="flex flex-col gap-3 rounded-xl border-2 border-teal-600 bg-white px-4 py-4 shadow-sm"
     >
-      <div>
-        <h2
-          id="confirm-envio-title"
-          className="text-base font-bold text-slate-900"
-        >
-          Confirmar envio
-        </h2>
-        <p className="text-xs text-slate-600">
-          Confira zona, seção e os 5 da campanha. Números não se editam aqui.
-        </p>
-      </div>
+      <h2
+        id="confirm-envio-title"
+        className="text-lg font-bold leading-snug text-slate-900"
+      >
+        Confirme a zona = {zona}, seção = {secao}
+      </h2>
 
-      <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
-        <p className="text-sm font-semibold text-teal-900">
-          Zona {zona} · Seção {secao}
-        </p>
-        {comparecimento != null ? (
-          <p className="text-xs font-medium text-teal-900">
-            Comparecimento: {formatVotes(comparecimento)}
+      {preview ? (
+        <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-3">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-teal-800">
+            {labelCargoCurto(preview.cargo)}
           </p>
-        ) : null}
-        <p className="text-xs text-teal-800/80">
-          {local?.nome_escola ?? "Local não cadastrado (envio permitido)"}
-          {local?.bairro ? ` · ${local.bairro}` : ""}
-        </p>
-      </div>
-
-      {notice ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-          {notice}
-        </p>
-      ) : null}
-
-      <div className="flex flex-col gap-1.5">
-        {byCargo.map((g) => (
-          <div key={g.cargo} className="space-y-1">
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-              {labelCargoCurto(g.cargo)}
-            </h3>
-            <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-              {g.items.map((row) => (
-                <li
-                  key={row.candidato.id}
-                  className="flex items-center justify-between gap-3 px-3 py-1.5"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">
-                      {row.candidato.nome}
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      Nº {row.candidato.numero}
-                    </p>
-                  </div>
-                  <p className="text-base font-bold tabular-nums text-teal-800">
-                    {formatVotes(row.quantidade)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        {others.length > 0 ? (
-          <div className="space-y-1">
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-              Outros oficiais
-            </h3>
-            <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-              {others.map((row) => (
-                <li
-                  key={row.candidato.id}
-                  className="flex items-center justify-between gap-3 px-3 py-1.5"
-                >
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {row.candidato.nome}
-                  </p>
-                  <p className="text-base font-bold tabular-nums text-teal-800">
-                    {formatVotes(row.quantidade)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
-
-      {rows.length === 0 && (
+          <p className="mt-0.5 text-base font-bold text-slate-900">
+            {preview.nome}
+          </p>
+          <p className="text-sm text-slate-600">Nº {preview.numero}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-teal-800">
+            {formatVotes(preview.quantidade)}
+          </p>
+        </div>
+      ) : (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          {hasMoreVotes
-            ? "Nenhum dos 5 da campanha neste QR. O BU completo ainda pode ser gravado."
-            : "Nenhum dos 5 da campanha apareceu neste BU. Leia de novo ou mande foto no WhatsApp da central."}
+          Nenhum candidato com voto neste QR. Filme de novo ou mande foto no
+          WhatsApp.
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 pt-1">
-        <Button
+      <Button
+        type="button"
+        size="lg"
+        className="h-14 w-full text-lg font-bold bg-teal-700 text-white hover:bg-teal-800"
+        onClick={onConfirm}
+        disabled={transmitting || !canSend}
+      >
+        {transmitting ? (
+          <Loader2 className="size-5 animate-spin" />
+        ) : (
+          <Send className="size-5" />
+        )}
+        Enviar
+      </Button>
+      {onRescan ? (
+        <button
           type="button"
-          variant="outline"
-          className="h-11 border-slate-300"
+          className="text-center text-sm font-medium text-slate-500 underline underline-offset-2"
           onClick={handleRescan}
           disabled={transmitting}
         >
-          Ler de novo
-        </Button>
-        <Button
-          type="button"
-          className="h-11 bg-teal-700 text-white hover:bg-teal-800"
-          onClick={onConfirm}
-          disabled={transmitting || !canSend}
-        >
-          {transmitting ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Send className="size-4" />
-          )}
-          Confirmar
-        </Button>
-      </div>
+          {rescanLabel}
+        </button>
+      ) : null}
     </section>
   );
 }

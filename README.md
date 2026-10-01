@@ -87,15 +87,16 @@ PIN leve (`andre2026` por padrão, ou Cadastro → PIN do chefe). Ranking comple
 
 ## Fiscal flow (domingo)
 
-1. Open `/fiscal` on a phone (installable PWA). **Só QR** — sem digitação e sem colar texto.
-2. Filme o QR (ou envie foto do QR). BUs `1 de 2` **não gravam votos** até o último QR.
-3. Confirmação curta: zona, seção, comparecimento (se vier), votos dos **5 da campanha**. Confirmar ou ler de novo. Sem editar número no celular.
-4. Verde inequívoco **só** depois da confirmação do servidor: *BU zona X seção Y enviada.*
-5. Erro com causa + próximo passo (ler de novo / WhatsApp / esperar rede). Duplicata `(zona, seção)` = **já enviada**, não erro de câmera.
-6. Parser recusou → texto bruto vai para `/admin` → **BUs pendentes / com erro** → **Reprocessar**.
-7. Digitação fica em `/admin` → **Digitar BU**, atrás do PIN do chefe (fotos do WhatsApp). Mesma regra de urna única.
+1. Abra `/fiscal` no celular (PWA). **Só QR** — sem digitação e sem colar texto.
+2. Tela inicial: título **Apuração Santo André**, a linha **Clique abaixo e Filme o QRCODE da BU.** e o botão verde **Filmar o QR**. Sem badge Fonte SUPABASE/MOCK.
+3. BUs `1 de 2` não gravam votos até o último QR. Enquanto falta o QR 2, só uma linha: **Falta o 2º QR · zona … seção …**.
+4. Confirmação: **Confirme a zona = …, seção = …**, votos de **um** candidato oficial da campanha que apareceu neste BU (se nenhum dos 5, um candidato parseado). Botão **Enviar**. Opcional: **Filmar de novo**. Sem edição de votos.
+5. Depois da confirmação do servidor: **Zona … seção … enviada com sucesso. Vá para a próxima.** A tela volta sozinha ao idle em ~4 s.
+6. Duplicata `(zona, seção)` = **já enviada**. Parser recusou → texto bruto vai para `/admin` → **BUs pendentes**.
+7. **Deu erro? Foto no WhatsApp** tira foto do BU (`capture=environment`) e abre o compartilhar do sistema com o arquivo (`navigator.share({ files, text })`) para mandar à central. Não tenta ler QR nessa foto. Sem Web Share: Compartilhar / Baixar + `wa.me`.
+8. Digitação fica em `/admin` → **Digitar BU**, atrás do PIN do chefe.
 
-WhatsApp da central: campo `whatsapp_suporte` em `apuracao_config`, editável no Cadastro. Vazio = “peça o WhatsApp à central”.
+WhatsApp da central: campo `whatsapp_suporte` em `apuracao_config`, editável no Cadastro. Vazio = “peça o WhatsApp à central”. O badge **Fonte: Supabase** vs **Fonte: MOCK** continua só no Cadastro admin.
 
 ## Admin telão
 

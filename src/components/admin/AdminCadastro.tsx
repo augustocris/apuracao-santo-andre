@@ -13,6 +13,7 @@ import {
   FileUp,
   ImagePlus,
   Images,
+  KeyRound,
   Loader2,
   Pencil,
   Plus,
@@ -33,7 +34,6 @@ import {
   CARGO_SLOTS,
   CARGOS_OFICIAIS,
   CONFIG_STORAGE_KEY,
-  DEFAULT_CHEFE_PIN,
   labelCargoCurto,
   type CargoOficial,
 } from "@/lib/cargos";
@@ -60,18 +60,20 @@ import {
 } from "@/lib/urna-fotos";
 import {
   applyZonasExpectativa,
+  createChefe,
   dataModeLabel,
+  deleteChefe,
   getConfig,
   importCandidatos,
   listCandidatos,
+  listChefes,
   removeCandidato,
-  saveChefePin,
   saveRelatorioCargos,
   saveSecoesEsperadas,
   saveWhatsappSuporte,
   upsertCandidato,
 } from "@/lib/data";
-import type { ApuracaoConfig, Candidato, ZonaConfigRow } from "@/lib/types";
+import type { ApuracaoConfig, Candidato, Chefe, ZonaConfigRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type CadastroTab = "candidatos" | "secoes" | "relatorio" | "ranking";
@@ -112,8 +114,10 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   const [relatorioCargos, setRelatorioCargos] = useState<string[]>([
     ...CARGOS_OFICIAIS,
   ]);
-  const [chefePin, setChefePin] = useState(DEFAULT_CHEFE_PIN);
   const [whatsappSuporte, setWhatsappSuporte] = useState("");
+  const [chefes, setChefes] = useState<Chefe[]>([]);
+  const [chefeNome, setChefeNome] = useState("");
+  const [chefePinNovo, setChefePinNovo] = useState("");
   const [chapadaText, setChapadaText] = useState("");
   const [chapadaBusy, setChapadaBusy] = useState(false);
   const [lastChapadaRows, setLastChapadaRows] = useState<ChapadaRow[]>([]);
@@ -125,13 +129,14 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [cands, cfg] = await Promise.all([
+      const [cands, cfg, acessos] = await Promise.all([
         listCandidatos({ activeRaceOnly: true }),
         getConfig(),
+        listChefes(),
       ]);
       setCandidatos(cands);
       setConfig(cfg);
-      setChefePin(cfg.chefe_pin?.trim() || DEFAULT_CHEFE_PIN);
+      setChefes(acessos);
       setWhatsappSuporte(cfg.whatsapp_suporte?.trim() || "");
       setTotalEsperado(String(cfg.secoes_esperadas || 10));
       if (cfg.zonas_config.length > 0) {
@@ -534,47 +539,124 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               setError(null);
               setMessage(null);
               try {
-                await saveChefePin(chefePin);
-                setMessage("PIN do chefe atualizado.");
+                await createChefe({ nome: chefeNome, pin: chefePinNovo });
+                setChefeNome("");
+                setChefePinNovo("");
+                setChefes(await listChefes());
+                setMessage("Acesso chefe adicionado.");
                 onConfigSaved?.();
               } catch (err) {
                 setError(
-                  err instanceof Error ? err.message : "Falha ao salvar o PIN."
+                  err instanceof Error
+                    ? err.message
+                    : "Falha ao adicionar o acesso chefe."
                 );
               } finally {
                 setBusy(false);
               }
             })();
           }}
-          className="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-4"
+          className="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-4 md:col-span-2"
         >
           <h3 className="text-sm font-bold uppercase tracking-wide text-slate-300">
-            PIN do acesso chefe
+            <span className="inline-flex items-center gap-1.5">
+              <KeyRound className="size-3.5" />
+              Acessos chefe
+            </span>
           </h3>
           <p className="text-xs text-slate-400">
-            Página{" "}
+            Cada PIN entra em{" "}
             <a href="/chefe" className="text-[#00ADEF] underline">
               /chefe
-            </a>
-            {" "}e Digitar BU. Padrão{" "}
-            <code className="text-[#FFDE00]">andre2026</code>. Cole a
-            migration 005 no Supabase para persistir no banco.
+            </a>{" "}
+            e no Digitar BU. Ranking e votos são iguais para todos; as estrelas
+            são só daquele PIN. Seed: Cristiano /{" "}
+            <code className="text-[#FFDE00]">andre2026</code>. Cole a migration
+            011 no Supabase. 3–6 pessoas no máximo.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Input
-              type="text"
-              value={chefePin}
-              onChange={(e) => setChefePin(e.target.value)}
-              className="max-w-xs border-white/15 bg-slate-950 text-white"
-              autoComplete="off"
-              disabled={busy}
-            />
+          {chefes.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-white/15 px-3 py-2 text-xs text-slate-400">
+              Nenhum acesso. Rode a 011 ou adicione nome + PIN abaixo. Sem
+              linhas, o PIN legado{" "}
+              <code className="text-[#FFDE00]">andre2026</code> ainda funciona.
+            </p>
+          ) : (
+            <ul className="divide-y divide-white/10 overflow-hidden rounded-lg border border-white/10">
+              {chefes.map((row) => (
+                <li
+                  key={row.id}
+                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+                >
+                  <div>
+                    <p className="font-semibold text-white">{row.nome}</p>
+                    <p className="font-mono text-xs text-slate-400">{row.pin}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    className="h-8 text-red-300 hover:bg-red-950/40 hover:text-red-200"
+                    onClick={() => {
+                      void (async () => {
+                        setBusy(true);
+                        setError(null);
+                        setMessage(null);
+                        try {
+                          await deleteChefe(row.id);
+                          setChefes(await listChefes());
+                          setMessage(`Acesso de ${row.nome} removido.`);
+                          onConfigSaved?.();
+                        } catch (err) {
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Falha ao remover o acesso."
+                          );
+                        } finally {
+                          setBusy(false);
+                        }
+                      })();
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                    Excluir
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="space-y-1 text-xs text-slate-400">
+              Nome
+              <Input
+                type="text"
+                value={chefeNome}
+                onChange={(e) => setChefeNome(e.target.value)}
+                className="h-10 min-w-[10rem] border-white/15 bg-slate-950 text-white"
+                autoComplete="off"
+                placeholder="Ex.: Maria"
+                disabled={busy}
+              />
+            </label>
+            <label className="space-y-1 text-xs text-slate-400">
+              PIN
+              <Input
+                type="text"
+                value={chefePinNovo}
+                onChange={(e) => setChefePinNovo(e.target.value)}
+                className="h-10 min-w-[10rem] border-white/15 bg-slate-950 text-white"
+                autoComplete="off"
+                placeholder="PIN exclusivo"
+                disabled={busy}
+              />
+            </label>
             <Button
               type="submit"
-              disabled={busy}
-              className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
+              disabled={busy || !chefeNome.trim() || chefePinNovo.trim().length < 4}
+              className="h-10 bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
             >
-              Salvar PIN
+              <Plus className="size-4" />
+              Adicionar
             </Button>
           </div>
         </form>

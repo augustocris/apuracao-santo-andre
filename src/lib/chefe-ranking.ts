@@ -91,6 +91,100 @@ export function filterChefeRankingRows(
   return filtered.filter((r) => r.votos > 0);
 }
 
+export function chefeGreeting(hour: number, nome: string): string {
+  const who = nome.trim() || "chefe";
+  const h = ((hour % 24) + 24) % 24;
+  if (h >= 5 && h < 12) return `Bom dia, ${who}`;
+  if (h >= 12 && h < 18) return `Boa tarde, ${who}`;
+  return `Boa noite, ${who}`;
+}
+
+function matchesChefeQuery(row: ChefeRankingFlatRow, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const digits = q.replace(/\D/g, "");
+  return (
+    row.candidato.nome.toLowerCase().includes(q) ||
+    row.candidato.numero.includes(digits || q)
+  );
+}
+
+function origemFillRank(row: ChefeRankingFlatRow): number {
+  const origem = row.candidato.origem;
+  if (origem == null || origem === "" || origem === "cadastro") return 0;
+  if (origem === "catalogo") return 1;
+  return 2;
+}
+
+/** Todas as linhas do cargo (inclui 0 voto), com % no cargo. */
+export function cargoRowsForChefe(
+  groups: CargoRanking[],
+  cargo: string,
+  query = ""
+): ChefeRankingFlatRow[] {
+  const group = groups.find((g) => g.cargo === cargo);
+  if (!group) return [];
+  return group.rankings
+    .map((row) => ({
+      ...row,
+      cargo,
+      percentual: percentualNoCargo(row.votos, group.totalVotos),
+    }))
+    .filter((row) => matchesChefeQuery(row, query));
+}
+
+/**
+ * Os dois com mais votos. Sem votos (ou empate em zero), preenche com
+ * cadastro/catálogo — sem nomes fixos, para o 1º acompanhar a apuração.
+ */
+export function pickHighlightPair(
+  rows: ChefeRankingFlatRow[],
+  limit = 2
+): ChefeRankingFlatRow[] {
+  if (rows.length === 0 || limit <= 0) return [];
+  const ranked = [...rows].sort(
+    (a, b) =>
+      b.votos - a.votos ||
+      origemFillRank(a) - origemFillRank(b) ||
+      a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
+  );
+  const withVotes = ranked.filter((r) => r.votos > 0);
+  if (withVotes.length >= limit) return withVotes.slice(0, limit);
+  return ranked.slice(0, limit);
+}
+
+/** Favoritos deste PIN no topo; depois o restante por votos. */
+export function sortChefeFavoritesFirst(
+  rows: ChefeRankingFlatRow[],
+  favoritoIds?: ReadonlySet<string> | null
+): ChefeRankingFlatRow[] {
+  const ids = favoritoIds ?? new Set<string>();
+  const visible = rows.filter(
+    (r) => r.votos > 0 || isChefeFavoritoId(r.candidato.id, ids)
+  );
+  return [...visible].sort((a, b) => {
+    const af = isChefeFavoritoId(a.candidato.id, ids) ? 0 : 1;
+    const bf = isChefeFavoritoId(b.candidato.id, ids) ? 0 : 1;
+    return (
+      af - bf ||
+      b.votos - a.votos ||
+      a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
+    );
+  });
+}
+
+export function leftoverAfterPair(
+  rows: ChefeRankingFlatRow[],
+  pair: ChefeRankingFlatRow[],
+  favoritoIds?: ReadonlySet<string> | null
+): ChefeRankingFlatRow[] {
+  const used = new Set(pair.map((r) => r.candidato.id));
+  return sortChefeFavoritesFirst(
+    rows.filter((r) => !used.has(r.candidato.id)),
+    favoritoIds
+  );
+}
+
 /** Iniciais do nome, ou o número se o nome for placeholder / vazio. */
 export function chefeMiniaturaFallback(nome: string, numero: string): string {
   const trimmed = nome.trim();

@@ -82,10 +82,15 @@ export function FiscalErrorCard({
   return (
     <div role="alert" className={cn("rounded-xl border-2 px-3 py-3", tone)}>
       <p className="text-base font-bold">{error.title}</p>
-      <p className="mt-1 text-sm font-medium leading-snug">{error.cause}</p>
-      <p className="mt-2 text-sm font-semibold leading-snug">
-        {error.nextStep}
-      </p>
+      {error.cause.trim() ? (
+        <p className="mt-1 text-sm font-medium leading-snug">{error.cause}</p>
+      ) : null}
+      <p className="mt-1 text-sm font-semibold leading-snug">{error.nextStep}</p>
+      {error.debug ? (
+        <p className="mt-2 font-mono text-[11px] font-medium leading-snug opacity-80">
+          {error.debug}
+        </p>
+      ) : null}
       {error.kind !== "duplicate" && error.kind !== "incomplete_qr" ? (
         <WhatsAppSupport number={whatsapp} className="mt-2" />
       ) : null}

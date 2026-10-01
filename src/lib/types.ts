@@ -74,9 +74,9 @@ export interface ParsedBu {
   /** TSE QRBU / SEQL / ORQR index when present. */
   qrIndex?: number;
   qrTotal?: number;
-  /** TSE HASH — same urna across QR parts. */
+  /** TSE HASH — integrity of that QR payload, not a shared urna id. */
   urnaHash?: string | null;
-  /** TSE IDUE / IDCA when HASH is absent. */
+  /** TSE IDUE / NR_UE — binds QR 1 and QR 2 of the same urna. */
   urnaId?: string | null;
   /** TSE COMP:n when present. */
   comparecimento?: number | null;

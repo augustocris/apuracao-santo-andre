@@ -28,6 +28,9 @@ import {
   SameQrRepeatError,
   extractBuVotes,
   sameQrPayload,
+  formatQrPairDebug,
+  BuParseError,
+  parseUrnaFingerprint,
 } from "./bu-qr";
 import { normalizePrintedBuText } from "./ocr-bu";
 
@@ -513,19 +516,82 @@ describe("multi-QR merge", () => {
     assert.equal(votes.find((v) => v.numero === "45045")?.quantidade, 7);
   });
 
-  it("rejects QR 2 with a different HASH", () => {
+  it("binds QR 2 by IDUE/SEQL even when HASH differs per payload", () => {
     const part1 = parseFiscalQrChunk(
-      "SEQL:01/02 HASH:AAA ZONA:001 SECA:0807 CARG:1 13:1",
+      "SEQL:01/02 HASH:AAAA1111 IDUE:1760649 ZONA:001 SECA:0477 CARG:1 13:10",
+      []
+    );
+    const part2 = parseFiscalQrChunk(
+      "SEQL:02/02 ORQR:2 HASH:BBBB2222 IDUE:1760649 CARG:6 4545:11",
+      [part1]
+    );
+    const merged = assertQrSetReadyToIngest([part1, part2]);
+    assert.equal(merged.zona, "001");
+    assert.equal(merged.secao, "0477");
+    assert.ok(merged.votes.some((v) => v.numero === "4545"));
+    assert.ok(merged.votes.some((v) => v.numero === "13"));
+  });
+
+  it("binds QR 2 via NR_UE when IDUE is absent", () => {
+    const part1 = parseFiscalQrChunk(
+      "SEQL:01/02 NR_UE:8801 HASH:H1 ZONA:001 SECA:0477 CARG:1 13:4",
+      []
+    );
+    assert.equal(part1.urnaId, "8801");
+    const part2 = parseFiscalQrChunk(
+      "2 de 2 NRUE:8801 HASH:H2 CARG:6 4545:3",
+      [part1]
+    );
+    const merged = assertQrSetReadyToIngest([part1, part2]);
+    assert.ok(merged.votes.some((v) => v.numero === "4545"));
+  });
+
+  it("rejects QR 2 with a different IDUE and exposes a compact debug line", () => {
+    const part1 = parseFiscalQrChunk(
+      "SEQL:01/02 HASH:AAA11111 IDUE:11 ZONA:001 SECA:0807 CARG:1 13:1",
       []
     );
     assert.throws(
       () =>
         parseFiscalQrChunk(
-          "SEQL:02/02 HASH:BBB CARG:6 4545:2",
+          "SEQL:02/02 HASH:BBB22222 IDUE:99 CARG:6 4545:2",
           [part1]
         ),
-      /HASH diferente/
+      (err: unknown) => {
+        assert.ok(err instanceof BuParseError);
+        assert.match(err.message, /outra urna/i);
+        assert.doesNotMatch(err.message, /HASH diferente/);
+        assert.match(err.debug ?? "", /1: SEQL 01\/02 IDUE 11 HASH AAA11111/);
+        assert.match(err.debug ?? "", /2: SEQL 02\/02 IDUE 99 HASH BBB22222/);
+        return true;
+      }
     );
+  });
+
+  it("formats a compact part1 vs part2 debug line", () => {
+    assert.equal(
+      formatQrPairDebug(
+        {
+          qrIndex: 1,
+          qrTotal: 2,
+          urnaId: "99",
+          urnaHash: "ABCDEF123",
+        },
+        {
+          qrIndex: 2,
+          qrTotal: 2,
+          urnaId: "99",
+          urnaHash: "XYZ00000",
+        }
+      ),
+      "1: SEQL 01/02 IDUE 99 HASH ABCDEF12 · 2: SEQL 02/02 IDUE 99 HASH XYZ00000"
+    );
+  });
+
+  it("reads IDUE and NR_UE as urna id, not HASH", () => {
+    const fp = parseUrnaFingerprint("HASH:DEADBEEF IDUE:123 NR_UE:123");
+    assert.equal(fp.hash, "DEADBEEF");
+    assert.equal(fp.urnaId, "123");
   });
 });
 

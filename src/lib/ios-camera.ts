@@ -125,3 +125,51 @@ export function watchAndHardenLiveVideo(root: HTMLElement | null): () => void {
   observer.observe(root, { childList: true, subtree: true });
   return () => observer.disconnect();
 }
+
+/** First getUserMedia payload — facingMode only, no min/1920/aspectRatio. */
+export const GESTURE_CAMERA_CONSTRAINTS: MediaStreamConstraints = {
+  audio: false,
+  video: { facingMode: "environment" },
+};
+
+/**
+ * Invoke getUserMedia in the same synchronous turn as the click/touch.
+ * Returning the Promise is fine; awaiting anything *before* this call is not
+ * (iOS Safari drops the user-gesture and never shows the camera prompt).
+ */
+export function requestCameraFromUserGesture(
+  gum?: Pick<MediaDevices, "getUserMedia"> | null
+): Promise<MediaStream> {
+  const media = gum ?? (typeof navigator === "undefined" ? null : navigator.mediaDevices);
+  if (!media?.getUserMedia) {
+    return Promise.reject(new Error("Requested device not found"));
+  }
+  return media.getUserMedia(GESTURE_CAMERA_CONSTRAINTS);
+}
+
+/**
+ * html5-qrcode.start() awaits CameraFactory before getUserMedia, which is
+ * already too late on iOS. Hand that later call the stream opened in the click.
+ */
+export async function withPrefetchedMediaStream<T>(
+  streamPromise: Promise<MediaStream>,
+  run: () => Promise<T>,
+  devices?: Pick<MediaDevices, "getUserMedia"> | null
+): Promise<T> {
+  const media = devices ?? (typeof navigator === "undefined" ? null : navigator.mediaDevices);
+  if (!media) return run();
+  const original = media.getUserMedia.bind(media);
+  let handedOff = false;
+  media.getUserMedia = ((constraints?: MediaStreamConstraints) => {
+    if (!handedOff) {
+      handedOff = true;
+      return streamPromise;
+    }
+    return original(constraints ?? GESTURE_CAMERA_CONSTRAINTS);
+  }) as MediaDevices["getUserMedia"];
+  try {
+    return await run();
+  } finally {
+    media.getUserMedia = original;
+  }
+}

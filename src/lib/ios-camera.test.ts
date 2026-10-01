@@ -4,9 +4,12 @@ import {
   cameraConstraintLadder,
   cameraErrorKind,
   cameraStartAttempts,
+  GESTURE_CAMERA_CONSTRAINTS,
   isAppleTouchDevice,
   liveScanConfig,
+  requestCameraFromUserGesture,
   useBarcodeDetector,
+  withPrefetchedMediaStream,
 } from "./ios-camera";
 
 describe("iPhone / Safari camera helpers", () => {
@@ -63,6 +66,53 @@ describe("iPhone / Safari camera helpers", () => {
   it("turns BarcodeDetector off on iOS, on on Android", () => {
     assert.equal(useBarcodeDetector(true), false);
     assert.equal(useBarcodeDetector(false), true);
+  });
+
+  it("gesture getUserMedia is facingMode environment with no min/1920/aspectRatio", () => {
+    const json = JSON.stringify(GESTURE_CAMERA_CONSTRAINTS);
+    assert.deepEqual(GESTURE_CAMERA_CONSTRAINTS.video, { facingMode: "environment" });
+    assert.equal(GESTURE_CAMERA_CONSTRAINTS.audio, false);
+    assert.doesNotMatch(json, /1920/);
+    assert.doesNotMatch(json, /aspectRatio/);
+    assert.doesNotMatch(json, /"min"/);
+  });
+
+  it("requestCameraFromUserGesture calls getUserMedia in the same tick", () => {
+    const fake = { getTracks: () => [] } as unknown as MediaStream;
+    let calls = 0;
+    const gum = {
+      getUserMedia: (constraints: MediaStreamConstraints) => {
+        calls += 1;
+        assert.deepEqual(constraints, GESTURE_CAMERA_CONSTRAINTS);
+        return Promise.resolve(fake);
+      },
+    };
+    const pending = requestCameraFromUserGesture(gum);
+    assert.equal(calls, 1, "getUserMedia must run before any await");
+    return pending.then((stream) => {
+      assert.equal(stream, fake);
+    });
+  });
+
+  it("withPrefetchedMediaStream hands html5-qrcode the click stream", async () => {
+    const fake = { getTracks: () => [] } as unknown as MediaStream;
+    const later = { getTracks: () => [] } as unknown as MediaStream;
+    const devices = {
+      getUserMedia: async (_constraints?: MediaStreamConstraints) => later,
+    };
+    const seen: MediaStream[] = [];
+    await withPrefetchedMediaStream(
+      Promise.resolve(fake),
+      async () => {
+        seen.push(await devices.getUserMedia({ video: true }));
+        seen.push(await devices.getUserMedia({ video: true }));
+      },
+      devices
+    );
+    assert.equal(seen[0], fake);
+    assert.equal(seen[1], later);
+    const restored = await devices.getUserMedia();
+    assert.equal(restored, later);
   });
 
   it("distinguishes Overconstrained from missing camera", () => {

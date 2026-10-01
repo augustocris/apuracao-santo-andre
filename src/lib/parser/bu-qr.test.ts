@@ -22,9 +22,8 @@ import {
   normalizeSecao,
   normalizeZona,
   parseBuQrText,
-  parseFiscalQrChunk,
-  parseQrbuMeta,
   parseComparecimento,
+  parseFiscalQrChunk,
   parseQrbuMeta,
 } from "./bu-qr";
 import { normalizePrintedBuText } from "./ocr-bu";

@@ -32,6 +32,8 @@ import {
   isQrSetComplete,
   parseFiscalQrChunk,
   peekZonaSecao,
+  SameQrRepeatError,
+  sameQrPayload,
 } from "@/lib/parser/bu-qr";
 import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao, ParsedBu } from "@/lib/types";
 
@@ -172,6 +174,10 @@ export function FiscalApp() {
       try {
         await new Promise((r) => setTimeout(r, 80));
         const previous = fragmentsRef.current;
+        if (previous.some((part) => sameQrPayload(part.rawText, raw))) {
+          setScanNonce((n) => n + 1);
+          return;
+        }
         const result = parseFiscalQrChunk(raw, previous);
 
         if (previous.length === 0 && (await urnaJaCadastrada(result.zona, result.secao))) {
@@ -205,6 +211,10 @@ export function FiscalApp() {
         const merged = assertQrSetReadyToIngest(nextFragments);
         await openConfirmFromMerged(merged);
       } catch (err) {
+        if (err instanceof SameQrRepeatError) {
+          setScanNonce((n) => n + 1);
+          return;
+        }
         const cause =
           err instanceof Error ? err.message : "Falha ao processar o BU.";
         setFeedback(parseFeedback(cause));
@@ -374,6 +384,7 @@ export function FiscalApp() {
             busy={processing || transmitting}
             resetKey={scanNonce}
             nextQr={awaitingMore}
+            ignoreExactPayloads={fragments.map((part) => part.rawText)}
             whatsapp={whatsapp}
           />
         </div>

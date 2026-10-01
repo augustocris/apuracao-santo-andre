@@ -192,9 +192,56 @@ export function resolveVoteCargo(
   _numero: string,
   knownCargo?: string | null
 ): string {
-  const known = knownCargo?.trim();
-  if (known) return known;
+  const known = canonicalCargoLabel(knownCargo);
+  if (known && known !== CARGO_INDEFINIDO) return known;
   return CARGO_INDEFINIDO;
+}
+
+const CARGO_LABEL_ALIASES: Record<string, string> = {
+  "deputado estadual": "Deputado Estadual",
+  "dep estadual": "Deputado Estadual",
+  "dep. estadual": "Deputado Estadual",
+  "deputado federal": "Deputado Federal",
+  "dep federal": "Deputado Federal",
+  "dep. federal": "Deputado Federal",
+  senador: "Senador",
+  governador: "Governador",
+  presidente: "Presidente",
+  "deputado distrital": "Deputado Distrital",
+  prefeito: "Prefeito",
+  vereador: "Vereador",
+  indefinido: CARGO_INDEFINIDO,
+  "1": "Presidente",
+  "3": "Governador",
+  "5": "Senador",
+  "6": "Deputado Federal",
+  "7": "Deputado Estadual",
+  "8": "Deputado Distrital",
+  "11": "Prefeito",
+  "13": "Vereador",
+};
+
+function foldCargoKey(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Map TSE / CSV / UI variants onto the ranking labels. Unknown labels stay as-is. */
+export function canonicalCargoLabel(raw?: string | null): string {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return CARGO_INDEFINIDO;
+  if (
+    (CARGOS_CHAPADA as readonly string[]).includes(trimmed) ||
+    trimmed === CARGO_INDEFINIDO
+  ) {
+    return trimmed;
+  }
+  const folded = foldCargoKey(trimmed);
+  return CARGO_LABEL_ALIASES[folded] ?? CARGO_LABEL_ALIASES[trimmed] ?? trimmed;
 }
 
 export function placeholderCandidateName(numero: string): string {

@@ -25,6 +25,9 @@ import {
   parseComparecimento,
   parseFiscalQrChunk,
   parseQrbuMeta,
+  SameQrRepeatError,
+  extractBuVotes,
+  sameQrPayload,
 } from "./bu-qr";
 import { normalizePrintedBuText } from "./ocr-bu";
 
@@ -457,6 +460,57 @@ describe("multi-QR merge", () => {
     assert.ok(merged.votes.some((v) => v.numero === "4545"));
     assert.ok(merged.votes.some((v) => v.numero === "13"));
     assert.throws(() => assertQrSetReadyToIngest([part1]), /1 de 2/);
+  });
+
+  it("does not require votes on SEQL 02/02 alone; concatenates then parses", () => {
+    const part1 = parseFiscalQrChunk(
+      "SEQL:01/02 ORQR:1 HASH:ZZ9 IDUE:77 ZONA:001 SECA:0477 CARG:1 13:10 17:8",
+      []
+    );
+    const part2 = parseFiscalQrChunk(
+      "SEQL:02/02 ORQR:2 HASH:ZZ9 IDUE:77 45455:11CARG:3 10:55",
+      [part1]
+    );
+    assert.equal(part2.zona, "001");
+    assert.equal(part2.secao, "0477");
+    const merged = assertQrSetReadyToIngest([part1, part2]);
+    assert.equal(
+      merged.votes.find((v) => v.numero === "45455")?.quantidade,
+      11
+    );
+    assert.equal(merged.votes.find((v) => v.numero === "13")?.quantidade, 10);
+    assert.equal(merged.votes.find((v) => v.numero === "10")?.quantidade, 55);
+  });
+
+  it("accepts QR 2 with no isolatable votes and recovers them from the combined text", () => {
+    const part1 = parseFiscalQrChunk(
+      "SEQL:01/02 HASH:COMBO ZONA:001 SECA:0807 CARG:6 4545:11 45045:7",
+      []
+    );
+    const part2 = parseFiscalQrChunk("SEQL:02/02 ORQR:2 HASH:COMBO", [part1]);
+    assert.equal(part2.votes.length, 0);
+    const merged = assertQrSetReadyToIngest([part1, part2]);
+    assert.ok(merged.votes.some((v) => v.numero === "4545"));
+    assert.ok(merged.votes.some((v) => v.numero === "45045"));
+  });
+
+  it("ignores a repeat of the exact part-1 payload", () => {
+    const raw1 =
+      "SEQL:01/02 HASH:SAME ZONA:001 SECA:0477 CARG:1 13:10 17:8";
+    const part1 = parseFiscalQrChunk(raw1, []);
+    assert.equal(sameQrPayload(part1.rawText, raw1), true);
+    assert.throws(
+      () => parseFiscalQrChunk(raw1, [part1]),
+      (err: unknown) => err instanceof SameQrRepeatError
+    );
+  });
+
+  it("reads denser glued pairs from the concatenation", () => {
+    const votes = extractBuVotes(
+      "SEQL:01/02 ZONA:1 SECA:1 CARG:7 45455:11HASH:ABC 45045:7"
+    );
+    assert.equal(votes.find((v) => v.numero === "45455")?.quantidade, 11);
+    assert.equal(votes.find((v) => v.numero === "45045")?.quantidade, 7);
   });
 
   it("rejects QR 2 with a different HASH", () => {

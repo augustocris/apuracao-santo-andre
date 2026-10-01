@@ -24,6 +24,7 @@ import {
   CARGOS_RANKING_ORDEM,
   DEFAULT_CHEFE_PIN,
   DEFAULT_RELATORIO_CARGOS,
+  canonicalCargoLabel,
   isFeaturedCandidato,
   placeholderCandidateName,
   resolveVoteCargo,
@@ -111,16 +112,17 @@ function normalizeConfig(raw: Partial<ApuracaoConfig> | null): ApuracaoConfig {
 }
 
 function uniqueCargosForRanking(candidatos: Candidato[]): string[] {
+  const labels = candidatos.map((c) => canonicalCargoLabel(c.cargo));
   const seen = new Set<string>();
   const ordered: string[] = [];
   for (const cargo of CARGOS_RANKING_ORDEM) {
-    if (candidatos.some((c) => c.cargo === cargo)) {
+    if (labels.some((c) => c === cargo)) {
       ordered.push(cargo);
       seen.add(cargo);
     }
   }
   const extras = Array.from(
-    new Set(candidatos.map((c) => c.cargo).filter((c) => !seen.has(c)))
+    new Set(labels.filter((c) => c && !seen.has(c)))
   ).sort((a, b) => a.localeCompare(b, "pt-BR"));
   return [...ordered, ...extras];
 }
@@ -133,7 +135,75 @@ function normalizeCandidato(raw: Candidato): Candidato {
   return {
     ...raw,
     favorito: raw.favorito === true,
+    cargo: canonicalCargoLabel(raw.cargo),
   };
+}
+
+type SnapshotBoletim = {
+  id: string;
+  zona: string;
+  secao: string;
+  candidato_id: string;
+  quantidade_votos: number;
+  fiscal_nome: string | null;
+  created_at: string;
+};
+
+function boletimVoteCount(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function mergeCandidatosForRanking(
+  listed: Candidato[],
+  extras: Candidato[]
+): Candidato[] {
+  const map = new Map<string, Candidato>();
+  for (const raw of [...listed, ...extras]) {
+    const cand = normalizeCandidato(raw);
+    if (!cand.id) continue;
+    map.set(String(cand.id), cand);
+  }
+  return Array.from(map.values());
+}
+
+async function fetchAllSupabaseRows<T>(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  table: string,
+  columns: string
+): Promise<T[]> {
+  const pageSize = 1000;
+  const all: T[] = [];
+  for (let from = 0; from < 200_000; from += pageSize) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as T[];
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return all;
+}
+
+async function fetchCandidatosByIds(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  ids: string[]
+): Promise<Candidato[]> {
+  const uniq = Array.from(new Set(ids.map(String).filter(Boolean)));
+  const out: Candidato[] = [];
+  const chunk = 200;
+  for (let i = 0; i < uniq.length; i += chunk) {
+    const slice = uniq.slice(i, i + chunk);
+    const { data, error } = await supabase
+      .from("candidatos")
+      .select("*")
+      .in("id", slice);
+    if (error) throw new Error(error.message);
+    out.push(...((data ?? []) as Candidato[]));
+  }
+  return out;
 }
 
 async function candidatosHasOrigemColumn(): Promise<boolean> {
@@ -199,14 +269,16 @@ function buildRankingsForCargo(
   byCand: Map<string, number>,
   cargo: string
 ): CargoRanking {
-  const filtered = candidatos.filter((c) => c.cargo === cargo);
+  const filtered = candidatos.filter(
+    (c) => canonicalCargoLabel(c.cargo) === cargo
+  );
   const totalVotos = filtered.reduce(
-    (sum, c) => sum + (byCand.get(c.id) ?? 0),
+    (sum, c) => sum + (byCand.get(String(c.id)) ?? 0),
     0
   );
   const rankings: RankingRow[] = filtered
     .map((candidato) => {
-      const votos = byCand.get(candidato.id) ?? 0;
+      const votos = byCand.get(String(candidato.id)) ?? 0;
       return {
         candidato,
         votos,
@@ -218,7 +290,7 @@ function buildRankingsForCargo(
   return { cargo, rankings, totalVotos };
 }
 
-function buildSnapshot(
+export function buildDashboardSnapshot(
   locais: LocalVotacao[],
   candidatos: Candidato[],
   boletins: Array<{
@@ -234,12 +306,13 @@ function buildSnapshot(
   mode: "supabase" | "mock",
   cargoOverride?: string | string[]
 ): DashboardSnapshot {
+  candidatos = mergeCandidatosForRanking(candidatos, []);
   const byCand = new Map<string, number>();
   for (const b of boletins) {
-    byCand.set(
-      b.candidato_id,
-      (byCand.get(b.candidato_id) ?? 0) + b.quantidade_votos
-    );
+    const id = String(b.candidato_id ?? "");
+    const qtd = boletimVoteCount(b.quantidade_votos);
+    if (!id || qtd <= 0) continue;
+    byCand.set(id, (byCand.get(id) ?? 0) + qtd);
   }
 
   const cargoFilters = resolveCargoFilters(
@@ -1138,7 +1211,7 @@ export async function fetchDashboard(
 ): Promise<DashboardSnapshot> {
   const supabase = getSupabase();
   if (!supabase) {
-    return buildSnapshot(
+    return buildDashboardSnapshot(
       getMockLocais(),
       getMockCandidatos(),
       getMockBoletins(),
@@ -1148,26 +1221,30 @@ export async function fetchDashboard(
     );
   }
 
-  const [locaisRes, candRes, buRes, config] = await Promise.all([
-    supabase.from("locais_votacao").select("*"),
-    supabase.from("candidatos").select("*"),
-    supabase
-      .from("boletins_urna")
-      .select(
-        "id, zona, secao, candidato_id, quantidade_votos, fiscal_nome, created_at"
-      )
-      .order("created_at", { ascending: false }),
+  const [locais, listedCandidatos, boletins, config] = await Promise.all([
+    fetchAllSupabaseRows<LocalVotacao>(supabase, "locais_votacao", "*"),
+    fetchAllSupabaseRows<Candidato>(supabase, "candidatos", "*"),
+    fetchAllSupabaseRows<SnapshotBoletim>(
+      supabase,
+      "boletins_urna",
+      "id, zona, secao, candidato_id, quantidade_votos, fiscal_nome, created_at"
+    ),
     getConfig(),
   ]);
 
-  if (locaisRes.error) throw new Error(locaisRes.error.message);
-  if (candRes.error) throw new Error(candRes.error.message);
-  if (buRes.error) throw new Error(buRes.error.message);
+  const have = new Set(listedCandidatos.map((c) => String(c.id)));
+  const missingIds = boletins
+    .map((b) => String(b.candidato_id ?? ""))
+    .filter((id) => id && !have.has(id));
+  const extras =
+    missingIds.length > 0
+      ? await fetchCandidatosByIds(supabase, missingIds)
+      : [];
 
-  return buildSnapshot(
-    (locaisRes.data ?? []) as LocalVotacao[],
-    ((candRes.data ?? []) as Candidato[]).map(normalizeCandidato),
-    buRes.data ?? [],
+  return buildDashboardSnapshot(
+    locais,
+    mergeCandidatosForRanking(listedCandidatos, extras),
+    boletins,
     config,
     "supabase",
     cargoOverride

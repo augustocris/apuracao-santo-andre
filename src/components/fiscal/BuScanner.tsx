@@ -12,8 +12,10 @@ import {
   currentAppleTouchDevice,
   hardenLiveVideo,
   liveScanConfig,
+  requestCameraFromUserGesture,
   useBarcodeDetector,
   watchAndHardenLiveVideo,
+  withPrefetchedMediaStream,
 } from "@/lib/ios-camera";
 import { sameQrPayload } from "@/lib/parser/bu-qr";
 import {
@@ -43,9 +45,7 @@ function mapCameraError(err: unknown, appleTouch: boolean): string {
       : "A câmera só funciona em HTTPS (ou localhost). Abra o site seguro ou mande foto no WhatsApp.";
   }
   if (kind === "permission") {
-    return appleTouch
-      ? "O Safari bloqueou a câmera. Ajustes → Safari → Câmera → Permitir, ou mande foto no WhatsApp."
-      : "Permissão de câmera negada. Libere o acesso nas configurações do navegador ou mande foto no WhatsApp.";
+    return "Câmera bloqueada. Mande foto no WhatsApp.";
   }
   if (kind === "notfound") {
     return "Nenhuma câmera encontrada. Mande foto no WhatsApp.";
@@ -171,6 +171,7 @@ export function BuScanner({
   ignorePayloadsRef.current = ignoreExactPayloads;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const unwatchVideoRef = useRef<(() => void) | null>(null);
+  const startingRef = useRef(false);
   const appleTouch = currentAppleTouchDevice();
   const barcodeDetector = useBarcodeDetector(appleTouch);
 
@@ -262,19 +263,32 @@ export function BuScanner({
     hardenLiveVideo(document.getElementById("bu-qr-reader"));
   }
 
-  async function startScanner() {
-    setError(null);
-    handledRef.current = false;
-    sessionLiveRef.current = false;
-
+  /**
+   * Must stay synchronous until getUserMedia is invoked. Any await/setState/rAF
+   * before that call drops the iOS user-gesture and the camera never opens.
+   */
+  function handleFilmarClick() {
+    if (busy || uploading || startingRef.current || active) return;
     if (typeof window !== "undefined" && !window.isSecureContext) {
-      showCameraError(mapCameraError(new Error("Only secure origins are allowed"), appleTouch));
+      showCameraError(
+        mapCameraError(new Error("Only secure origins are allowed"), appleTouch)
+      );
       return;
     }
+    startingRef.current = true;
+    handledRef.current = false;
+    sessionLiveRef.current = false;
+    // First statement that talks to the camera — still inside the click/touch.
+    const streamPromise = requestCameraFromUserGesture();
+    void attachScanner(streamPromise);
+  }
 
+  async function attachScanner(streamPromise: Promise<MediaStream>) {
+    setError(null);
+    setActive(true);
+    let handedStream: MediaStream | null = null;
     try {
-      await stopScanner();
-      setActive(true);
+      handedStream = await streamPromise;
       await waitForReaderLayout();
 
       const scanner = scannerFactory("bu-qr-reader");
@@ -287,20 +301,41 @@ export function BuScanner({
 
       const attempts = cameraStartAttempts(appleTouch);
       let lastErr: unknown;
-      for (const attempt of attempts) {
-        try {
-          if (scanner.isScanning) {
-            try {
-              await scanner.stop();
-            } catch {
-              /* ignore */
-            }
+      try {
+        await withPrefetchedMediaStream(Promise.resolve(handedStream), () =>
+          startWithAttempt(scanner, attempts[0])
+        );
+        handedStream = null;
+        lastErr = null;
+      } catch (err) {
+        lastErr = err;
+        if (cameraErrorKind(err) === "permission") throw err;
+        handedStream?.getTracks().forEach((track) => {
+          try {
+            track.stop();
+          } catch {
+            /* ignore */
           }
-          await startWithAttempt(scanner, attempt);
-          lastErr = null;
-          break;
-        } catch (err) {
-          lastErr = err;
+        });
+        handedStream = null;
+      }
+
+      if (lastErr) {
+        for (const attempt of attempts.slice(1)) {
+          try {
+            if (scanner.isScanning) {
+              try {
+                await scanner.stop();
+              } catch {
+                /* ignore */
+              }
+            }
+            await startWithAttempt(scanner, attempt);
+            lastErr = null;
+            break;
+          } catch (err) {
+            lastErr = err;
+          }
         }
       }
       if (lastErr) throw lastErr;
@@ -319,8 +354,17 @@ export function BuScanner({
       sessionLiveRef.current = true;
     } catch (err) {
       sessionLiveRef.current = false;
-      setActive(false);
+      handedStream?.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          /* ignore */
+        }
+      });
+      await stopScanner();
       showCameraError(mapCameraError(err, appleTouch));
+    } finally {
+      startingRef.current = false;
     }
   }
 
@@ -381,7 +425,7 @@ export function BuScanner({
           type="button"
           size="lg"
           className="h-16 w-full text-lg font-bold bg-teal-700 hover:bg-teal-800 text-white shadow-md"
-          onClick={() => void startScanner()}
+          onClick={handleFilmarClick}
           disabled={busy || uploading}
         >
           <Camera className="size-6" />

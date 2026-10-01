@@ -16,11 +16,14 @@ import {
   decodeBuPayloadStrategies,
   looksBinaryPayload,
   inheritQrZonaSecao,
+  isQrSetComplete,
   mergeParsedBus,
   normalizeCandidateNumero,
   normalizeSecao,
   normalizeZona,
   parseBuQrText,
+  parseFiscalQrChunk,
+  parseQrbuMeta,
   parseComparecimento,
   parseQrbuMeta,
 } from "./bu-qr";
@@ -417,6 +420,59 @@ describe("multi-QR merge", () => {
     const parsed = parseBuQrText("QRBU:1:2 ZONA:001 SECA:04777 ORIG:VOTA");
     assert.equal(parsed.secao, "0477");
     assert.equal(parsed.zona, "001");
+  });
+
+  it("reads SEQL:01/02 and ORQR:2 without QRBU", () => {
+    assert.deepEqual(parseQrbuMeta("SEQL:01/02 ORQR:1 ZONA:001 SECA:0477"), {
+      index: 1,
+      total: 2,
+    });
+    assert.deepEqual(parseQrbuMeta("SEQL:02/02 ORQR:2 CARG:6 4545:11"), {
+      index: 2,
+      total: 2,
+    });
+    assert.deepEqual(parseQrbuMeta("ORQR:2 13:10"), { index: 2, total: 2 });
+  });
+
+  it("fiscal pipeline: SEQL 2/2 without zona inherits part 1 and merges", () => {
+    const part1 = parseFiscalQrChunk(
+      "SEQL:01/02 ORQR:1 HASH:ABC123 IDUE:99 ZONA:001 SECA:0477 CARG:1 13:10 17:8",
+      []
+    );
+    assert.equal(part1.zona, "001");
+    assert.equal(part1.secao, "0477");
+    assert.equal(part1.urnaHash, "ABC123");
+    assert.equal(isQrSetComplete([part1]), false);
+
+    const part2 = parseFiscalQrChunk(
+      "SEQL:02/02 ORQR:2 HASH:ABC123 IDUE:99 CARG:6 4545:11 CARG:3 10:55",
+      [part1]
+    );
+    assert.equal(part2.zona, "001");
+    assert.equal(part2.secao, "0477");
+    assert.doesNotMatch(part2.rawText, /ZONA\s*:/i);
+
+    const merged = assertQrSetReadyToIngest([part1, part2]);
+    assert.equal(merged.zona, "001");
+    assert.equal(merged.secao, "0477");
+    assert.ok(merged.votes.some((v) => v.numero === "4545"));
+    assert.ok(merged.votes.some((v) => v.numero === "13"));
+    assert.throws(() => assertQrSetReadyToIngest([part1]), /1 de 2/);
+  });
+
+  it("rejects QR 2 with a different HASH", () => {
+    const part1 = parseFiscalQrChunk(
+      "SEQL:01/02 HASH:AAA ZONA:001 SECA:0807 CARG:1 13:1",
+      []
+    );
+    assert.throws(
+      () =>
+        parseFiscalQrChunk(
+          "SEQL:02/02 HASH:BBB CARG:6 4545:2",
+          [part1]
+        ),
+      /HASH diferente/
+    );
   });
 });
 

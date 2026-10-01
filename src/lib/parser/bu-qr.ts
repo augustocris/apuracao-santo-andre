@@ -63,6 +63,8 @@ const METADATA_KEYS = new Set(
     "NULO",
     "TOTC",
     "HASH",
+    "SEQL",
+    "ORQR",
     "ASSI",
     "MAJO",
     "PROP",
@@ -549,16 +551,48 @@ export function assertQrSetReadyToIngest(parts: ParsedBu[]): ParsedBu {
   return mergeParsedBus(parts);
 }
 
+export function parseUrnaFingerprint(text: string): {
+  hash: string | null;
+  urnaId: string | null;
+} {
+  const folded = normalizePrintedBuText(String(text));
+  const hash = folded.match(/HASH\s*:\s*([A-Za-z0-9]+)/i)?.[1] ?? null;
+  const idue = folded.match(/IDUE\s*:\s*(\d+)/i)?.[1] ?? null;
+  const idca = folded.match(/IDCA\s*:\s*(\d+)/i)?.[1] ?? null;
+  return { hash, urnaId: idue || idca };
+}
+
+export function isContinuationSequence(meta: { index: number; total: number } | null): boolean {
+  return Boolean(meta && meta.total > 1 && meta.index > 1);
+}
+
 export function parseQrbuMeta(
   text: string
 ): { index: number; total: number } | null {
   const folded = normalizePrintedBuText(String(text));
+  const seql = folded.match(/SEQL\s*:\s*0*(\d+)\s*\/\s*0*(\d+)/i);
+  if (seql) {
+    const index = Number.parseInt(seql[1], 10);
+    const total = Number.parseInt(seql[2], 10);
+    if (Number.isFinite(index) && Number.isFinite(total) && index >= 1 && total >= 1) {
+      return { index, total };
+    }
+  }
+
   const qrbu = folded.match(/QRBU\s*:\s*(\d+)\s*:\s*(\d+)/i);
   if (qrbu) {
     const index = Number.parseInt(qrbu[1], 10);
     const total = Number.parseInt(qrbu[2], 10);
     if (Number.isFinite(index) && Number.isFinite(total) && index >= 1 && total >= 1) {
       return { index, total };
+    }
+  }
+
+  const orqr = folded.match(/ORQR\s*:\s*0*(\d+)/i);
+  if (orqr) {
+    const index = Number.parseInt(orqr[1], 10);
+    if (Number.isFinite(index) && index >= 1) {
+      return index > 1 ? { index, total: Math.max(index, 2) } : { index: 1, total: 1 };
     }
   }
 
@@ -606,7 +640,19 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
   }
   const zona = donor.zona;
   const secao = donor.secao;
+  const hash = parts.find((p) => p.urnaHash)?.urnaHash ?? null;
+  const urnaId = parts.find((p) => p.urnaId)?.urnaId ?? null;
   for (const part of parts) {
+    if (hash && part.urnaHash && part.urnaHash !== hash) {
+      throw new BuParseError(
+        "Este QR é de outra urna (HASH diferente). Filme os QRs da mesma urna."
+      );
+    }
+    if (urnaId && part.urnaId && part.urnaId !== urnaId) {
+      throw new BuParseError(
+        "Este QR é de outra urna (identificador diferente). Filme os QRs da mesma urna."
+      );
+    }
     if (part.zona && part.secao && (part.zona !== zona || part.secao !== secao)) {
       throw new BuParseError(
         `Este QR é de outra urna (zona ${part.zona} / seção ${part.secao}; esperado zona ${zona} / seção ${secao}).`
@@ -644,6 +690,8 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
       .join("\n"),
     qrIndex: parts.length,
     qrTotal: qrTotal || parts.length,
+    urnaHash: hash,
+    urnaId,
     comparecimento,
   };
 }
@@ -686,7 +734,7 @@ export function parseBuQrText(
   const qrbuEarly = parseQrbuMeta(text);
   const continuation =
     options.allowMissingZonaSecao === true ||
-    Boolean(qrbuEarly && qrbuEarly.total > 1 && qrbuEarly.index > 1);
+    isContinuationSequence(qrbuEarly);
 
   const zonaRaw = firstMatch(text, ZONA_PATTERNS);
   const secaoRaw = firstMatch(text, SECAO_PATTERNS);
@@ -748,6 +796,7 @@ export function parseBuQrText(
     );
   }
 
+  const fingerprint = parseUrnaFingerprint(text);
   return {
     zona: zonaRaw ? normalizeZona(zonaRaw) : "",
     secao: secaoRaw ? normalizeSecao(secaoRaw) : "",
@@ -755,8 +804,54 @@ export function parseBuQrText(
     rawText: text,
     qrIndex: qrbu?.index,
     qrTotal: qrbu?.total,
+    urnaHash: fingerprint.hash,
+    urnaId: fingerprint.urnaId,
     comparecimento: parseComparecimento(text),
   };
+}
+
+/**
+ * Live fiscal path: QR 1 requires zona+seção; QR 2 (SEQL/ORQR) does not.
+ * HASH / IDUE must match the stored part 1. Never returns a partial set to ingest.
+ */
+export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): ParsedBu {
+  const awaitingMore =
+    previousParts.length > 0 && !isQrSetComplete(previousParts);
+  const meta = parseQrbuMeta(decodeBuPayloadStrategies(raw));
+  const parsed = parseBuQrText(raw, {
+    allowMissingZonaSecao: awaitingMore || isContinuationSequence(meta),
+  });
+
+  if (awaitingMore) {
+    const first = previousParts[0];
+    if (first.urnaHash && parsed.urnaHash && first.urnaHash !== parsed.urnaHash) {
+      throw new BuParseError(
+        "Este QR é de outra urna (HASH diferente). Filme os QRs da mesma urna."
+      );
+    }
+    if (first.urnaId && parsed.urnaId && first.urnaId !== parsed.urnaId) {
+      throw new BuParseError(
+        "Este QR é de outra urna (identificador diferente). Filme os QRs da mesma urna."
+      );
+    }
+    if (
+      parsed.zona &&
+      parsed.secao &&
+      (parsed.zona !== first.zona || parsed.secao !== first.secao)
+    ) {
+      throw new BuParseError(
+        `Este QR é de outra urna (zona ${parsed.zona} / seção ${parsed.secao}; a urna atual é zona ${first.zona} / seção ${first.secao}).`
+      );
+    }
+    return inheritQrZonaSecao(parsed, first);
+  }
+
+  if (!parsed.zona || !parsed.secao) {
+    throw new BuParseError(
+      "Zona ou seção ausente neste QR. Filme o QR que traz zona e seção."
+    );
+  }
+  return parsed;
 }
 
 /** Sample BU text for demos / paste fallback testing (cargos estaduais). */

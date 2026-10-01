@@ -297,7 +297,7 @@ export function ChefeRanking() {
           >
             {CARGOS_CHEFE_FILTRO.map((c) => (
               <option key={c} value={c}>
-                {c === "todos" ? "Todos (exceto indefinidos)" : c}
+                {c === "todos" ? "Todos" : c}
               </option>
             ))}
           </select>

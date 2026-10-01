@@ -29,12 +29,35 @@ import {
 import {
   assertQrSetReadyToIngest,
   describeQrProgress,
-  inheritQrZonaSecao,
   isQrSetComplete,
-  parseBuQrText,
+  parseFiscalQrChunk,
   peekZonaSecao,
 } from "@/lib/parser/bu-qr";
 import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao, ParsedBu } from "@/lib/types";
+
+const QR_SESSION_KEY = "apuracao-fiscal-qr-parts";
+
+function readQrSession(): ParsedBu[] {
+  if (typeof sessionStorage === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(QR_SESSION_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as ParsedBu[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeQrSession(parts: ParsedBu[]) {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    if (parts.length === 0) sessionStorage.removeItem(QR_SESSION_KEY);
+    else sessionStorage.setItem(QR_SESSION_KEY, JSON.stringify(parts));
+  } catch {
+    /* ignore quota */
+  }
+}
 
 export function FiscalApp() {
   const [processing, setProcessing] = useState(false);
@@ -52,6 +75,8 @@ export function FiscalApp() {
   const [scanNonce, setScanNonce] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const fragmentsRef = useRef<ParsedBu[]>([]);
+  fragmentsRef.current = fragments;
 
   useEffect(() => {
     void (async () => {
@@ -62,7 +87,17 @@ export function FiscalApp() {
         setWhatsapp("");
       }
     })();
+    const saved = readQrSession();
+    if (saved.length > 0) {
+      fragmentsRef.current = saved;
+      setFragments(saved);
+    }
   }, []);
+
+  useEffect(() => {
+    writeQrSession(fragments);
+    fragmentsRef.current = fragments;
+  }, [fragments]);
 
   useEffect(() => {
     if (!feedback && !success && !processing) return;
@@ -136,32 +171,10 @@ export function FiscalApp() {
       setSuccess(null);
       try {
         await new Promise((r) => setTimeout(r, 80));
-        let result = parseBuQrText(raw, {
-          allowMissingZonaSecao: fragments.length > 0,
-        });
+        const previous = fragmentsRef.current;
+        const result = parseFiscalQrChunk(raw, previous);
 
-        if (fragments.length > 0) {
-          const first = fragments[0];
-          if (!result.zona || !result.secao) {
-            result = inheritQrZonaSecao(result, first);
-          } else if (result.zona !== first.zona || result.secao !== first.secao) {
-            setFeedback(
-              parseFeedback(
-                `Este QR é de outra urna (zona ${result.zona} / seção ${result.secao}; a urna atual é zona ${first.zona} / seção ${first.secao}).`
-              )
-            );
-            setScanNonce((n) => n + 1);
-            return;
-          }
-        } else if (!result.zona || !result.secao) {
-          setFeedback(
-            parseFeedback(
-              "Zona ou seção ausente neste QR. Filme o QR que traz zona e seção."
-            )
-          );
-          setScanNonce((n) => n + 1);
-          return;
-        } else if (await urnaJaCadastrada(result.zona, result.secao)) {
+        if (previous.length === 0 && (await urnaJaCadastrada(result.zona, result.secao))) {
           setFeedback(duplicateFeedback(result.zona, result.secao));
           setScanNonce((n) => n + 1);
           return;
@@ -170,12 +183,14 @@ export function FiscalApp() {
         const nextFragments = (() => {
           if (result.qrIndex) {
             return [
-              ...fragments.filter((p) => p.qrIndex !== result.qrIndex),
+              ...previous.filter((p) => p.qrIndex !== result.qrIndex),
               result,
             ];
           }
-          return [...fragments, result];
+          return [...previous, result];
         })();
+        fragmentsRef.current = nextFragments;
+        writeQrSession(nextFragments);
 
         setFragments(nextFragments);
         setScanNonce((n) => n + 1);
@@ -199,10 +214,12 @@ export function FiscalApp() {
         setProcessing(false);
       }
     },
-    [fragments, openConfirmFromMerged, persistParseFailure]
+    [openConfirmFromMerged, persistParseFailure]
   );
 
   function handleCancelFragments() {
+    fragmentsRef.current = [];
+    writeQrSession([]);
     setFragments([]);
     setScanNonce((n) => n + 1);
     setFeedback(null);
@@ -255,6 +272,8 @@ export function FiscalApp() {
       setLocal(null);
       setRows([]);
       setDiscovered([]);
+      fragmentsRef.current = [];
+      writeQrSession([]);
       setFragments([]);
     } catch (err) {
       if (isNetworkError(err)) {

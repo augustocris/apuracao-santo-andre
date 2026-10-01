@@ -305,7 +305,30 @@ let mockConfig: ApuracaoConfig = {
   updated_at: new Date().toISOString(),
 };
 
-const mockPendentes: BuPendente[] = [];
+const PENDENTES_STORAGE_KEY = "apuracao-sa-bus-pendentes";
+
+function loadStoredPendentes(): BuPendente[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(PENDENTES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as BuPendente[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistPendentes() {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(PENDENTES_STORAGE_KEY, JSON.stringify(mockPendentes));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+const mockPendentes: BuPendente[] = loadStoredPendentes();
 
 const listeners = new Set<() => void>();
 
@@ -541,6 +564,7 @@ export function insertMockPendente(input: {
     updated_at: now,
   };
   mockPendentes.unshift(row);
+  persistPendentes();
   notify();
   return row;
 }
@@ -554,6 +578,7 @@ export function markMockPendenteReprocessado(
   row.status = "reprocessado";
   row.updated_at = new Date().toISOString();
   if (patch?.erro) row.erro = patch.erro;
+  persistPendentes();
   notify();
   return row;
 }
@@ -563,6 +588,7 @@ export function updateMockPendenteErro(id: string, erro: string): BuPendente | n
   if (!row) return null;
   row.erro = erro;
   row.updated_at = new Date().toISOString();
+  persistPendentes();
   notify();
   return row;
 }

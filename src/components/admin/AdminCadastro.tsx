@@ -525,114 +525,118 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
         })}
       </div>
 
+      <div className="grid gap-3 md:grid-cols-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              setMessage(null);
+              try {
+                await saveChefePin(chefePin);
+                setMessage("PIN do chefe atualizado.");
+                onConfigSaved?.();
+              } catch (err) {
+                setError(
+                  err instanceof Error ? err.message : "Falha ao salvar o PIN."
+                );
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+          className="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-4"
+        >
+          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-300">
+            PIN do acesso chefe
+          </h3>
+          <p className="text-xs text-slate-400">
+            Página{" "}
+            <a href="/chefe" className="text-[#00ADEF] underline">
+              /chefe
+            </a>
+            {" "}e Digitar BU. Padrão{" "}
+            <code className="text-[#FFDE00]">andre2026</code>. Cole a
+            migration 005 no Supabase para persistir no banco.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              type="text"
+              value={chefePin}
+              onChange={(e) => setChefePin(e.target.value)}
+              className="max-w-xs border-white/15 bg-slate-950 text-white"
+              autoComplete="off"
+              disabled={busy}
+            />
+            <Button
+              type="submit"
+              disabled={busy}
+              className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
+            >
+              Salvar PIN
+            </Button>
+          </div>
+        </form>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              setMessage(null);
+              try {
+                await saveWhatsappSuporte(whatsappSuporte);
+                setMessage(
+                  whatsappSuporte.trim()
+                    ? "WhatsApp da central atualizado."
+                    : "WhatsApp limpo. O fiscal verá: peça o WhatsApp à central."
+                );
+                onConfigSaved?.();
+              } catch (err) {
+                setError(
+                  err instanceof Error
+                    ? err.message
+                    : "Falha ao salvar o WhatsApp."
+                );
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+          className="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-4"
+        >
+          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-300">
+            WhatsApp da central
+          </h3>
+          <p className="text-xs text-slate-400">
+            Aparece nas telas de erro do fiscal. Vazio = “peça o WhatsApp à
+            central”. Não invente número. Cole a migration 009 no Supabase.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              type="tel"
+              value={whatsappSuporte}
+              onChange={(e) => setWhatsappSuporte(e.target.value)}
+              className="max-w-xs border-white/15 bg-slate-950 text-white"
+              autoComplete="off"
+              placeholder="DDD + número (só se já tiver)"
+              disabled={busy}
+            />
+            <Button
+              type="submit"
+              disabled={busy}
+              className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
+            >
+              Salvar WhatsApp
+            </Button>
+          </div>
+        </form>
+      </div>
+
       {tab === "ranking" && (
         <div className="space-y-5">
           <RankingGeral />
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void (async () => {
-                setBusy(true);
-                setError(null);
-                setMessage(null);
-                try {
-                  await saveChefePin(chefePin);
-                  setMessage("PIN do chefe atualizado.");
-                  onConfigSaved?.();
-                } catch (err) {
-                  setError(
-                    err instanceof Error ? err.message : "Falha ao salvar o PIN."
-                  );
-                } finally {
-                  setBusy(false);
-                }
-              })();
-            }}
-            className="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-4"
-          >
-            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-300">
-              PIN do acesso chefe
-            </h3>
-            <p className="text-xs text-slate-400">
-              Página{" "}
-              <a href="/chefe" className="text-[#00ADEF] underline">
-                /chefe
-              </a>
-              . Padrão <code className="text-[#FFDE00]">andre2026</code>. Cole a
-              migration 005 no Supabase para persistir no banco.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Input
-                type="text"
-                value={chefePin}
-                onChange={(e) => setChefePin(e.target.value)}
-                className="max-w-xs border-white/15 bg-slate-950 text-white"
-                autoComplete="off"
-                disabled={busy}
-              />
-              <Button
-                type="submit"
-                disabled={busy}
-                className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
-              >
-                Salvar PIN
-              </Button>
-            </div>
-          </form>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void (async () => {
-                setBusy(true);
-                setError(null);
-                setMessage(null);
-                try {
-                  await saveWhatsappSuporte(whatsappSuporte);
-                  setMessage(
-                    whatsappSuporte.trim()
-                      ? "WhatsApp da central atualizado."
-                      : "WhatsApp limpo. O fiscal verá: peça o WhatsApp à central."
-                  );
-                  onConfigSaved?.();
-                } catch (err) {
-                  setError(
-                    err instanceof Error
-                      ? err.message
-                      : "Falha ao salvar o WhatsApp."
-                  );
-                } finally {
-                  setBusy(false);
-                }
-              })();
-            }}
-            className="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-4"
-          >
-            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-300">
-              WhatsApp da central
-            </h3>
-            <p className="text-xs text-slate-400">
-              Aparece nas telas de erro do fiscal. Vazio = “peça o WhatsApp à
-              central”. Não invente número. Cole a migration 009 no Supabase.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Input
-                type="tel"
-                value={whatsappSuporte}
-                onChange={(e) => setWhatsappSuporte(e.target.value)}
-                className="max-w-xs border-white/15 bg-slate-950 text-white"
-                autoComplete="off"
-                placeholder="DDD + número (só se já tiver)"
-                disabled={busy}
-              />
-              <Button
-                type="submit"
-                disabled={busy}
-                className="bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
-              >
-                Salvar WhatsApp
-              </Button>
-            </div>
-          </form>
         </div>
       )}
 

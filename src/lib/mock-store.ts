@@ -1,6 +1,7 @@
 import type {
   ApuracaoConfig,
   BoletimUrna,
+  BuPendente,
   Candidato,
   LocalVotacao,
   ZonaConfigRow,
@@ -300,8 +301,34 @@ let mockConfig: ApuracaoConfig = {
       ]
     : [],
   chefe_pin: DEFAULT_CHEFE_PIN,
+  whatsapp_suporte: "",
   updated_at: new Date().toISOString(),
 };
+
+const PENDENTES_STORAGE_KEY = "apuracao-sa-bus-pendentes";
+
+function loadStoredPendentes(): BuPendente[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(PENDENTES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as BuPendente[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistPendentes() {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(PENDENTES_STORAGE_KEY, JSON.stringify(mockPendentes));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+const mockPendentes: BuPendente[] = loadStoredPendentes();
 
 const listeners = new Set<() => void>();
 
@@ -336,7 +363,11 @@ export function setMockConfig(
   patch: Partial<
     Pick<
       ApuracaoConfig,
-      "secoes_esperadas" | "relatorio_cargos" | "zonas_config" | "chefe_pin"
+      | "secoes_esperadas"
+      | "relatorio_cargos"
+      | "zonas_config"
+      | "chefe_pin"
+      | "whatsapp_suporte"
     >
   >
 ): ApuracaoConfig {
@@ -507,4 +538,57 @@ export function mockActiveRaceCandidatos(): Candidato[] {
   return mockCandidatos.filter((c) =>
     (CARGOS_OFICIAIS as readonly string[]).includes(c.cargo)
   );
+}
+
+export function getMockPendentes(): BuPendente[] {
+  return [...mockPendentes].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+export function insertMockPendente(input: {
+  raw_text: string;
+  erro: string;
+  zona?: string | null;
+  secao?: string | null;
+}): BuPendente {
+  const now = new Date().toISOString();
+  const row: BuPendente = {
+    id: crypto.randomUUID(),
+    raw_text: input.raw_text,
+    erro: input.erro,
+    status: "pendente",
+    zona: input.zona ?? null,
+    secao: input.secao ?? null,
+    created_at: now,
+    updated_at: now,
+  };
+  mockPendentes.unshift(row);
+  persistPendentes();
+  notify();
+  return row;
+}
+
+export function markMockPendenteReprocessado(
+  id: string,
+  patch?: { erro?: string }
+): BuPendente | null {
+  const row = mockPendentes.find((p) => p.id === id);
+  if (!row) return null;
+  row.status = "reprocessado";
+  row.updated_at = new Date().toISOString();
+  if (patch?.erro) row.erro = patch.erro;
+  persistPendentes();
+  notify();
+  return row;
+}
+
+export function updateMockPendenteErro(id: string, erro: string): BuPendente | null {
+  const row = mockPendentes.find((p) => p.id === id);
+  if (!row) return null;
+  row.erro = erro;
+  row.updated_at = new Date().toISOString();
+  persistPendentes();
+  notify();
+  return row;
 }

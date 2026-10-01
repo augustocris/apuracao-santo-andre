@@ -55,6 +55,8 @@ export interface ApuracaoConfig {
   updated_at: string;
   /** Light PIN for /chefe. Missing → default andre2026. */
   chefe_pin?: string | null;
+  /** WhatsApp da central. Empty → “peça o WhatsApp à central”. */
+  whatsapp_suporte?: string | null;
 }
 
 export interface ParsedCandidateVote {
@@ -72,6 +74,21 @@ export interface ParsedBu {
   /** TSE QRBU:index:total when present. */
   qrIndex?: number;
   qrTotal?: number;
+  /** TSE COMP:n when present. */
+  comparecimento?: number | null;
+}
+
+export type BuPendenteStatus = "pendente" | "reprocessado";
+
+export interface BuPendente {
+  id: string;
+  raw_text: string;
+  erro: string;
+  status: BuPendenteStatus;
+  zona: string | null;
+  secao: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ConfirmVoteRow {

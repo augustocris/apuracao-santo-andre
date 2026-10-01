@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { Camera, CameraOff, ImageUp } from "lucide-react";
+import { WhatsAppSupport } from "@/components/fiscal/FiscalFeedback";
 import { Button } from "@/components/ui/button";
+import { cameraFeedback, type FiscalFeedback } from "@/lib/fiscal-feedback";
 
 interface BuScannerProps {
   onScan: (text: string) => void;
@@ -11,6 +13,8 @@ interface BuScannerProps {
   /** Increment to allow another decode after the previous one. */
   resetKey?: number;
   nextQr?: boolean;
+  whatsapp?: string | null;
+  onCameraError?: (error: FiscalFeedback) => void;
 }
 
 function mapCameraError(err: unknown): string {
@@ -21,24 +25,24 @@ function mapCameraError(err: unknown): string {
       : "";
 
   if (typeof window !== "undefined" && !window.isSecureContext) {
-    return "A câmera só funciona em HTTPS (ou localhost). Abra o site seguro ou use Digitar / Enviar foto.";
+    return "A câmera só funciona em HTTPS (ou localhost). Abra o site seguro ou envie uma foto do QR.";
   }
   if (/NotAllowedError|Permission|denied/i.test(`${name} ${message}`)) {
-    return "Permissão de câmera negada. Libere o acesso nas configurações do navegador ou use Digitar / Enviar foto do QR.";
+    return "Permissão de câmera negada. Libere o acesso nas configurações do navegador ou envie uma foto do QR.";
   }
   if (/NotFoundError|DevicesNotFound|Requested device not found/i.test(`${name} ${message}`)) {
-    return "Nenhuma câmera encontrada neste dispositivo. Use Digitar ou Enviar foto do QR.";
+    return "Nenhuma câmera encontrada neste dispositivo. Envie uma foto do QR.";
   }
   if (/NotReadableError|TrackStartError|Could not start video/i.test(`${name} ${message}`)) {
-    return "A câmera está em uso por outro app. Feche-o e tente de novo, ou use Digitar / Enviar foto.";
+    return "A câmera está em uso por outro app. Feche-o e tente de novo, ou envie uma foto do QR.";
   }
   if (/OverconstrainedError|Constraint/i.test(`${name} ${message}`)) {
-    return "Este aparelho não aceitou a resolução pedida. Tente de novo ou use Enviar foto do QR.";
+    return "Este aparelho não aceitou a resolução pedida. Tente de novo ou envie uma foto do QR.";
   }
   if (/secure|https|Only secure origins/i.test(message)) {
-    return "A câmera exige conexão segura (HTTPS). Use Digitar ou Enviar foto do QR.";
+    return "A câmera exige conexão segura (HTTPS). Envie uma foto do QR.";
   }
-  return "Erro ao iniciar a câmera. Tente novamente, envie uma foto do QR ou use a aba Digitar.";
+  return "Erro ao iniciar a câmera. Tente novamente ou envie uma foto do QR.";
 }
 
 /** Prefer almost full-frame scan — dense TSE BUs need the whole code sharp in view. */
@@ -66,7 +70,14 @@ const FOCUS_CONSTRAINTS = {
   advanced: [{ focusMode: "continuous" }],
 } as unknown as MediaTrackConstraints;
 
-export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScannerProps) {
+export function BuScanner({
+  onScan,
+  busy,
+  resetKey = 0,
+  nextQr = false,
+  whatsapp,
+  onCameraError,
+}: BuScannerProps) {
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -109,6 +120,11 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
     onScan(text);
   }
 
+  function showCameraError(cause: string) {
+    setError(cause);
+    onCameraError?.(cameraFeedback(cause));
+  }
+
   async function startWithConstraints(
     scanner: Html5Qrcode,
     videoConstraints: MediaTrackConstraints
@@ -132,7 +148,7 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
     handledRef.current = false;
 
     if (typeof window !== "undefined" && !window.isSecureContext) {
-      setError(mapCameraError(new Error("Only secure origins are allowed")));
+      showCameraError(mapCameraError(new Error("Only secure origins are allowed")));
       return;
     }
 
@@ -152,7 +168,6 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
       try {
         await startWithConstraints(scanner, HIGH_RES_CONSTRAINTS);
       } catch (highResErr) {
-        // Some devices reject min:1280 — retry with facingMode only.
         if (scanner.isScanning) {
           try {
             await scanner.stop();
@@ -164,7 +179,6 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
         void highResErr;
       }
 
-      // Best-effort continuous focus after stream is live.
       try {
         await scanner.applyVideoConstraints(FOCUS_CONSTRAINTS);
       } catch {
@@ -172,7 +186,7 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
       }
     } catch (err) {
       setActive(false);
-      setError(mapCameraError(err));
+      showCameraError(mapCameraError(err));
     }
   }
 
@@ -206,8 +220,8 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
         }
       }
     } catch {
-      setError(
-        "Não foi possível ler o QR nesta foto. Tire outra com boa luz, QR preenchendo o quadro, ou use a aba Digitar."
+      showCameraError(
+        "Não foi possível ler o QR nesta foto. Tire outra com boa luz, QR preenchendo o quadro."
       );
     } finally {
       setUploading(false);
@@ -221,26 +235,16 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
         className="rounded-xl border border-teal-700/25 bg-teal-50/80 px-3 py-2.5 text-[11px] leading-snug text-teal-950 sm:text-xs"
         role="note"
       >
-        <p className="font-semibold">QR / foto grava o BU completo</p>
+        <p className="font-semibold">Só QR neste link</p>
         <ul className="mt-1 list-disc space-y-0.5 pl-4 text-teal-900/90">
+          <li>Filme o QR do BU. Sem digitação e sem colar texto.</li>
           <li>
-            Todos os candidatos com votos nesta urna entram no banco (não só os
-            5 oficiais do telão).
+            BUs longos têm 2+ QRs: leia o primeiro e depois{" "}
+            <strong className="font-semibold">Ler próximo QR desta urna</strong>.
           </li>
           <li>
-            A aba <strong className="font-semibold">Digitar</strong> continua
-            rápida: envia somente os cadastrados oficiais (não há os demais
-            números do BU).
-          </li>
-          <li>
-            BUs longos têm 2+ QRs: leia o primeiro, depois{" "}
-            <strong className="font-semibold">Ler próximo QR desta urna</strong>{" "}
-            e só então <strong className="font-semibold">Revisar e enviar</strong>.
-          </li>
-          <li>
-            Se o QR estiver no monitor, afaste um pouco (reduz reflexo) ou use{" "}
-            <strong className="font-semibold">Enviar foto</strong> /{" "}
-            <strong className="font-semibold">Digitar</strong>.
+            Verde só aparece depois que a central confirmar. Se falhar, leia de
+            novo ou mande foto no WhatsApp.
           </li>
         </ul>
       </div>
@@ -251,7 +255,6 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
           active ? "min-h-[320px] sm:min-h-[380px]" : "hidden"
         }`}
       />
-      {/* Hidden host for file-based decode (html5-qrcode needs a DOM id). */}
       <div id="bu-qr-reader-file" className="hidden" aria-hidden />
 
       <input
@@ -302,12 +305,13 @@ export function BuScanner({ onScan, busy, resetKey = 0, nextQr = false }: BuScan
       </Button>
 
       {error && (
-        <p
+        <div
           role="alert"
           className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950"
         >
-          {error}
-        </p>
+          <p>{error}</p>
+          <WhatsAppSupport number={whatsapp} className="mt-2 text-amber-950" />
+        </div>
       )}
     </div>
   );

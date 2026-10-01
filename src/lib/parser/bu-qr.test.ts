@@ -12,11 +12,13 @@ import {
   SAMPLE_TSE_QR_PART1,
   SAMPLE_TSE_QR_PART2,
   SAMPLE_TSE_QR_TEXT,
+  assertQrSetReadyToIngest,
   decodeBuPayloadStrategies,
   looksBinaryPayload,
   mergeParsedBus,
   normalizeCandidateNumero,
   parseBuQrText,
+  parseComparecimento,
   parseQrbuMeta,
 } from "./bu-qr";
 import { normalizePrintedBuText } from "./ocr-bu";
@@ -263,14 +265,15 @@ describe("parseBuQrText — error messages PT-BR", () => {
     );
   });
 
-  it("guides Digitar when payload is binary-like", () => {
-    const binary = "\u0000\u0001\u0002\u0003" + "xxxx".repeat(20);
+  it("rejects binary-like payload without mentioning Digitar", () => {
+    const binary = "\u0000".repeat(80);
     assert.equal(looksBinaryPayload(binary), true);
     assert.throws(
       () => parseBuQrText(binary),
       (err: unknown) => {
         assert.ok(err instanceof Error);
-        assert.match(err.message, /binário|Digitar/i);
+        assert.match(err.message, /vazio|binário/i);
+        assert.doesNotMatch(err.message, /Digitar/);
         return true;
       }
     );
@@ -336,6 +339,40 @@ describe("multi-QR merge", () => {
       merged.votes.find((v) => v.numero === "13")?.quantidade,
       99
     );
+  });
+
+  it("reads comparecimento from COMP", () => {
+    assert.equal(parseComparecimento(SAMPLE_TSE_QR_TEXT), 250);
+    assert.equal(parseBuQrText(SAMPLE_TSE_QR_TEXT).comparecimento, 250);
+  });
+
+  it("accepts incomplete QR 1 de 2 even without votes", () => {
+    const parsed = parseBuQrText("QRBU:1:2 ZONA:001 SECA:0477 ORIG:VOTA");
+    assert.equal(parsed.zona, "001");
+    assert.equal(parsed.secao, "0477");
+    assert.equal(parsed.qrIndex, 1);
+    assert.equal(parsed.qrTotal, 2);
+    assert.equal(parsed.votes.length, 0);
+  });
+
+  it("does not ingest an incomplete 1 de 2 set", () => {
+    const a = parseBuQrText(SAMPLE_TSE_QR_PART1);
+    assert.throws(
+      () => assertQrSetReadyToIngest([a]),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /1 de 2/);
+        assert.match(err.message, /N[aã]o envie ainda/);
+        return true;
+      }
+    );
+  });
+
+  it("ingests only after both complementary QRs are present", () => {
+    const a = parseBuQrText(SAMPLE_TSE_QR_PART1);
+    const b = parseBuQrText(SAMPLE_TSE_QR_PART2);
+    const merged = assertQrSetReadyToIngest([a, b]);
+    assert.ok(merged.votes.length >= 4);
   });
 
   it("rejects a QR from another urna", () => {

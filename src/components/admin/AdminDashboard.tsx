@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Radio, RefreshCw, Settings2, Tv } from "lucide-react";
+import { ClipboardList, Radio, RefreshCw, Settings2, TriangleAlert, Tv } from "lucide-react";
 import Link from "next/link";
 import { AdminCadastro } from "@/components/admin/AdminCadastro";
+import { AdminDigitarBu } from "@/components/admin/AdminDigitarBu";
+import { AdminPendentes } from "@/components/admin/AdminPendentes";
 import { useMilestoneCelebrations } from "@/components/admin/MilestoneCelebration";
 import { StatsCards } from "@/components/admin/StatsCards";
 import { TelaoSlots } from "@/components/admin/TelaoSlots";
@@ -27,7 +29,7 @@ const EMPTY: DashboardSnapshot = {
   mode: "mock",
 };
 
-type AdminView = "telao" | "cadastro";
+type AdminView = "telao" | "cadastro" | "pendentes" | "digitar";
 
 export function AdminDashboard() {
   const [view, setView] = useState<AdminView>("telao");
@@ -188,6 +190,40 @@ export function AdminDashboard() {
               <Settings2 className="size-4" />
               Cadastro
             </Button>
+            <Button
+              type="button"
+              role="tab"
+              aria-selected={view === "pendentes"}
+              variant="ghost"
+              className={cn(
+                "rounded-lg text-sm font-semibold",
+                view === "telao" ? "h-8 px-3" : "h-10",
+                view === "pendentes"
+                  ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
+                  : "text-white/70 hover:bg-white/5 hover:text-white"
+              )}
+              onClick={() => setView("pendentes")}
+            >
+              <TriangleAlert className="size-4" />
+              BUs pendentes
+            </Button>
+            <Button
+              type="button"
+              role="tab"
+              aria-selected={view === "digitar"}
+              variant="ghost"
+              className={cn(
+                "rounded-lg text-sm font-semibold",
+                view === "telao" ? "h-8 px-3" : "h-10",
+                view === "digitar"
+                  ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
+                  : "text-white/70 hover:bg-white/5 hover:text-white"
+              )}
+              onClick={() => setView("digitar")}
+            >
+              <ClipboardList className="size-4" />
+              Digitar BU
+            </Button>
           </div>
           <Button
             type="button"
@@ -225,6 +261,10 @@ export function AdminDashboard() {
 
       {view === "cadastro" ? (
         <AdminCadastro onConfigSaved={() => void reload()} />
+      ) : view === "pendentes" ? (
+        <AdminPendentes />
+      ) : view === "digitar" ? (
+        <AdminDigitarBu />
       ) : (
         <>
           <div className="shrink-0">

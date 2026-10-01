@@ -2,8 +2,8 @@
 
 import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CARGOS_CONFIRM_ORDEM, CARGOS_TAG_OPTIONS, CARGO_INDEFINIDO, labelCargoCurto } from "@/lib/cargos";
-import type { ConfirmVoteRow, DiscoveredVote, LocalVotacao } from "@/lib/types";
+import { CARGOS_CONFIRM_ORDEM, labelCargoCurto } from "@/lib/cargos";
+import type { ConfirmVoteRow, LocalVotacao } from "@/lib/types";
 import { formatVotes } from "@/lib/utils";
 
 interface ConfirmTransmitModalProps {
@@ -13,17 +13,18 @@ interface ConfirmTransmitModalProps {
   zona: string;
   secao: string;
   rows: ConfirmVoteRow[];
-  discovered?: DiscoveredVote[];
-  onTagCargo?: (numero: string, fromCargo: string, toCargo: string) => void;
+  comparecimento?: number | null;
   onConfirm: () => void;
+  onRescan?: () => void;
   transmitting: boolean;
-  /** Soft notice shown on the confirm surface (not a hard error). */
   notice?: string | null;
+  /** Full BU has votes even if none of the 5 appeared. */
+  hasMoreVotes?: boolean;
 }
 
 /**
- * Inline confirmation view (not a portal dialog) so mobile / PWA always
- * shows a clear next step after "Revisar e enviar".
+ * Confirmação curta no celular: zona, seção, comparecimento e os 5 oficiais.
+ * Sem edição de votos.
  */
 export function ConfirmTransmitModal({
   open,
@@ -32,11 +33,12 @@ export function ConfirmTransmitModal({
   zona,
   secao,
   rows,
-  discovered = [],
-  onTagCargo,
+  comparecimento,
   onConfirm,
+  onRescan,
   transmitting,
   notice,
+  hasMoreVotes = false,
 }: ConfirmTransmitModalProps) {
   if (!open) return null;
 
@@ -44,66 +46,16 @@ export function ConfirmTransmitModal({
   const byCargo = confirmCargos
     .map((cargo) => ({
       cargo,
-      items: [
-        ...rows.filter((r) => r.candidato.cargo === cargo),
-        ...discovered
-          .filter((d) => d.cargo === cargo)
-          .map((d) => ({
-            candidato: {
-              id: `disc-${d.cargo}-${d.numero}`,
-              nome: d.nome,
-              numero: d.numero,
-              cargo: d.cargo,
-              foto_url: null,
-            },
-            quantidade: d.quantidade,
-          })),
-      ],
+      items: rows.filter((r) => r.candidato.cargo === cargo),
     }))
     .filter((g) => g.items.length > 0);
 
-  const others = rows.filter(
-    (r) => !confirmCargos.includes(r.candidato.cargo)
-  );
-  const demais = discovered.filter((d) => !confirmCargos.includes(d.cargo));
+  const others = rows.filter((r) => !confirmCargos.includes(r.candidato.cargo));
+  const canSend = rows.length > 0 || hasMoreVotes;
 
-  const canSend = rows.length > 0 || discovered.length > 0;
-
-  function Section({
-    title,
-    items,
-  }: {
-    title: string;
-    items: ConfirmVoteRow[];
-  }) {
-    if (items.length === 0) return null;
-    return (
-      <div className="space-y-1">
-        <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-          {title}
-        </h3>
-        <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-          {items.map((row) => (
-            <li
-              key={row.candidato.id}
-              className="flex items-center justify-between gap-3 px-3 py-1.5"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">
-                  {row.candidato.nome}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Nº {row.candidato.numero}
-                </p>
-              </div>
-              <p className="text-base font-bold tabular-nums text-teal-800">
-                {formatVotes(row.quantidade)}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
+  function handleRescan() {
+    if (onRescan) onRescan();
+    else onOpenChange(false);
   }
 
   return (
@@ -120,7 +72,7 @@ export function ConfirmTransmitModal({
           Confirmar envio
         </h2>
         <p className="text-xs text-slate-600">
-          Revise zona, seção e votos antes de confirmar.
+          Confira zona, seção e os 5 da campanha. Números não se editam aqui.
         </p>
       </div>
 
@@ -128,6 +80,11 @@ export function ConfirmTransmitModal({
         <p className="text-sm font-semibold text-teal-900">
           Zona {zona} · Seção {secao}
         </p>
+        {comparecimento != null ? (
+          <p className="text-xs font-medium text-teal-900">
+            Comparecimento: {formatVotes(comparecimento)}
+          </p>
+        ) : null}
         <p className="text-xs text-teal-800/80">
           {local?.nome_escola ?? "Local não cadastrado (envio permitido)"}
           {local?.bairro ? ` · ${local.bairro}` : ""}
@@ -142,79 +99,61 @@ export function ConfirmTransmitModal({
 
       <div className="flex flex-col gap-1.5">
         {byCargo.map((g) => (
-          <Section
-            key={g.cargo}
-            title={labelCargoCurto(g.cargo)}
-            items={g.items}
-          />
+          <div key={g.cargo} className="space-y-1">
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              {labelCargoCurto(g.cargo)}
+            </h3>
+            <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+              {g.items.map((row) => (
+                <li
+                  key={row.candidato.id}
+                  className="flex items-center justify-between gap-3 px-3 py-1.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {row.candidato.nome}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Nº {row.candidato.numero}
+                    </p>
+                  </div>
+                  <p className="text-base font-bold tabular-nums text-teal-800">
+                    {formatVotes(row.quantidade)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
-        <Section title="Outros" items={others} />
+        {others.length > 0 ? (
+          <div className="space-y-1">
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              Outros oficiais
+            </h3>
+            <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+              {others.map((row) => (
+                <li
+                  key={row.candidato.id}
+                  className="flex items-center justify-between gap-3 px-3 py-1.5"
+                >
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {row.candidato.nome}
+                  </p>
+                  <p className="text-base font-bold tabular-nums text-teal-800">
+                    {formatVotes(row.quantidade)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
-      {demais.length > 0 ? (
-        <details className="rounded-lg border border-slate-200 bg-slate-50 open:bg-white">
-          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-slate-700 marker:content-none [&::-webkit-details-marker]:hidden">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block text-slate-400">▸</span>
-              Demais candidatos neste BU ({demais.length})
-            </span>
-            <p className="mt-0.5 font-normal text-slate-500">
-              Também serão gravados. Toque para revisar.
-            </p>
-          </summary>
-          <ul className="max-h-48 divide-y divide-slate-200 overflow-y-auto border-t border-slate-200">
-            {demais.map((row) => (
-              <li
-                key={`${row.cargo}-${row.numero}`}
-                className="flex items-center justify-between gap-3 px-3 py-1.5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-800">
-                    {row.nome}
-                  </p>
-                  {row.cargo === CARGO_INDEFINIDO && onTagCargo ? (
-                    <label className="mt-0.5 flex items-center gap-1 text-[11px] text-amber-800">
-                      Cargo
-                      <select
-                        value={row.cargo}
-                        onChange={(e) =>
-                          onTagCargo(row.numero, row.cargo, e.target.value)
-                        }
-                        className="rounded border border-amber-300 bg-white px-1 py-0.5 text-[11px]"
-                      >
-                        <option value={CARGO_INDEFINIDO}>Indefinido</option>
-                        {CARGOS_TAG_OPTIONS.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <p className="text-[11px] text-slate-500">
-                      {labelCargoCurto(row.cargo)} · Nº {row.numero}
-                    </p>
-                  )}
-                </div>
-                <p className="text-sm font-bold tabular-nums text-slate-700">
-                  {formatVotes(row.quantidade)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-
-      {rows.length === 0 && discovered.length === 0 && (
+      {rows.length === 0 && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          Nenhum voto corresponde a candidatos cadastrados.
-        </p>
-      )}
-
-      {rows.length === 0 && discovered.length > 0 && (
-        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          Nenhum cadastrado oficial neste BU — os demais candidatos abaixo
-          serão gravados no ranking geral.
+          {hasMoreVotes
+            ? "Nenhum dos 5 da campanha neste QR. O BU completo ainda pode ser gravado."
+            : "Nenhum dos 5 da campanha apareceu neste BU. Leia de novo ou mande foto no WhatsApp da central."}
         </p>
       )}
 
@@ -223,10 +162,10 @@ export function ConfirmTransmitModal({
           type="button"
           variant="outline"
           className="h-11 border-slate-300"
-          onClick={() => onOpenChange(false)}
+          onClick={handleRescan}
           disabled={transmitting}
         >
-          Voltar
+          Ler de novo
         </Button>
         <Button
           type="button"
@@ -239,7 +178,7 @@ export function ConfirmTransmitModal({
           ) : (
             <Send className="size-4" />
           )}
-          Confirmar envio
+          Confirmar
         </Button>
       </div>
     </section>

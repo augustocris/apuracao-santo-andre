@@ -264,13 +264,13 @@ export function FiscalApp() {
           <Sun className="size-3" />
           Modo fiscal · tela clara
         </div>
-        <h1 className="text-lg font-bold leading-tight tracking-tight text-slate-900 sm:text-xl">
+        <h1 className="text-xl font-bold leading-tight tracking-tight text-slate-900 sm:text-2xl">
           Apuração Paralela
         </h1>
-        <p className="text-[11px] leading-snug text-slate-600 sm:text-xs">
-          Santo André — só QR. Verde só depois da confirmação da central.
+        <p className="text-sm font-medium leading-snug text-slate-700">
+          Santo André. Filme o QR. Verde = enviada.
         </p>
-        <p className="text-[10px] text-slate-500">
+        <p className="text-xs text-slate-500">
           Fonte:{" "}
           <span className="font-semibold uppercase">{dataModeLabel()}</span>
         </p>
@@ -319,12 +319,12 @@ export function FiscalApp() {
               role="status"
               className="rounded-xl border border-teal-600 bg-teal-50 px-3 py-2.5 text-sm text-teal-950"
             >
-              <p className="font-bold">
+              <p className="text-base font-bold">
                 QR {progress.index} de {progress.total} — filme o próximo
               </p>
-              <p className="mt-0.5 text-[11px] text-teal-800">
-                Zona {fragments[0].zona} · Seção {fragments[0].secao}. Os votos
-                só entram quando todos os QRs desta urna forem lidos.
+              <p className="mt-1 text-sm font-medium text-teal-800">
+                Zona {fragments[0].zona} · Seção {fragments[0].secao}. Os dois
+                códigos desta urna.
               </p>
               <Button
                 type="button"

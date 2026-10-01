@@ -6,6 +6,13 @@ import { Camera, CameraOff, ImageUp } from "lucide-react";
 import { WhatsAppSupport } from "@/components/fiscal/FiscalFeedback";
 import { Button } from "@/components/ui/button";
 import { cameraFeedback, type FiscalFeedback } from "@/lib/fiscal-feedback";
+import {
+  cameraConstraintLadder,
+  currentAppleTouchDevice,
+  hardenLiveVideo,
+  useBarcodeDetector,
+  watchAndHardenLiveVideo,
+} from "@/lib/ios-camera";
 
 interface BuScannerProps {
   onScan: (text: string) => void;
@@ -17,7 +24,7 @@ interface BuScannerProps {
   onCameraError?: (error: FiscalFeedback) => void;
 }
 
-function mapCameraError(err: unknown): string {
+function mapCameraError(err: unknown, appleTouch: boolean): string {
   const message = err instanceof Error ? err.message : String(err ?? "");
   const name =
     err && typeof err === "object" && "name" in err
@@ -25,47 +32,42 @@ function mapCameraError(err: unknown): string {
       : "";
 
   if (typeof window !== "undefined" && !window.isSecureContext) {
-    return "A câmera só funciona em HTTPS (ou localhost). Abra o site seguro ou envie uma foto do QR.";
+    return appleTouch
+      ? "No iPhone a câmera só abre em HTTPS. Use o site seguro ou mande uma foto do QR."
+      : "A câmera só funciona em HTTPS (ou localhost). Abra o site seguro ou envie uma foto do QR.";
   }
   if (/NotAllowedError|Permission|denied/i.test(`${name} ${message}`)) {
-    return "Permissão de câmera negada. Libere o acesso nas configurações do navegador ou envie uma foto do QR.";
+    return appleTouch
+      ? "O Safari bloqueou a câmera. Ajustes → Safari → Câmera → Permitir, ou mande uma foto do QR."
+      : "Permissão de câmera negada. Libere o acesso nas configurações do navegador ou envie uma foto do QR.";
   }
   if (/NotFoundError|DevicesNotFound|Requested device not found/i.test(`${name} ${message}`)) {
-    return "Nenhuma câmera encontrada neste dispositivo. Envie uma foto do QR.";
+    return "Nenhuma câmera encontrada. Mande uma foto do QR.";
   }
   if (/NotReadableError|TrackStartError|Could not start video/i.test(`${name} ${message}`)) {
-    return "A câmera está em uso por outro app. Feche-o e tente de novo, ou envie uma foto do QR.";
+    return "A câmera está em uso por outro app. Feche-o e tente de novo, ou mande uma foto do QR.";
   }
   if (/OverconstrainedError|Constraint/i.test(`${name} ${message}`)) {
-    return "Este aparelho não aceitou a resolução pedida. Tente de novo ou envie uma foto do QR.";
+    return "Este aparelho não aceitou o modo da câmera. Tente de novo ou mande uma foto do QR.";
   }
   if (/secure|https|Only secure origins/i.test(message)) {
-    return "A câmera exige conexão segura (HTTPS). Envie uma foto do QR.";
+    return appleTouch
+      ? "No iPhone a câmera exige HTTPS. Use o site seguro ou mande uma foto do QR."
+      : "A câmera exige conexão segura (HTTPS). Envie uma foto do QR.";
   }
-  return "Erro ao iniciar a câmera. Tente novamente ou envie uma foto do QR.";
+  return "Não deu para abrir a câmera. Tente de novo ou mande uma foto do QR.";
 }
 
-/** Prefer almost full-frame scan — dense TSE BUs need the whole code sharp in view. */
+/** Almost full-frame — dense TSE BUs need the whole code sharp. */
 function qrboxForViewfinder(viewfinderWidth: number, viewfinderHeight: number) {
   const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-  const size = Math.max(280, Math.floor(minEdge * 0.92));
+  const size = Math.max(240, Math.floor(minEdge * 0.9));
   return {
     width: Math.min(size, viewfinderWidth),
     height: Math.min(size, viewfinderHeight),
   };
 }
 
-const HIGH_RES_CONSTRAINTS: MediaTrackConstraints = {
-  facingMode: { ideal: "environment" },
-  width: { min: 1280, ideal: 1920 },
-  height: { min: 720, ideal: 1080 },
-};
-
-const FALLBACK_CONSTRAINTS: MediaTrackConstraints = {
-  facingMode: { ideal: "environment" },
-};
-
-/** Continuous autofocus when the browser exposes the constraint. */
 const FOCUS_CONSTRAINTS = {
   advanced: [{ focusMode: "continuous" }],
 } as unknown as MediaTrackConstraints;
@@ -84,6 +86,9 @@ export function BuScanner({
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handledRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const unwatchVideoRef = useRef<(() => void) | null>(null);
+  const appleTouch = currentAppleTouchDevice();
+  const barcodeDetector = useBarcodeDetector(appleTouch);
 
   useEffect(() => {
     return () => {
@@ -96,6 +101,8 @@ export function BuScanner({
   }, [resetKey]);
 
   async function stopScanner() {
+    unwatchVideoRef.current?.();
+    unwatchVideoRef.current = null;
     const scanner = scannerRef.current;
     scannerRef.current = null;
     if (scanner?.isScanning) {
@@ -125,6 +132,17 @@ export function BuScanner({
     onCameraError?.(cameraFeedback(cause));
   }
 
+  function scannerFactory(elementId: string) {
+    return new Html5Qrcode(elementId, {
+      formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+      verbose: false,
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: barcodeDetector,
+      },
+      useBarCodeDetectorIfSupported: barcodeDetector,
+    });
+  }
+
   async function startWithConstraints(
     scanner: Html5Qrcode,
     videoConstraints: MediaTrackConstraints
@@ -132,15 +150,15 @@ export function BuScanner({
     await scanner.start(
       videoConstraints,
       {
-        fps: 12,
+        fps: appleTouch ? 8 : 12,
         qrbox: qrboxForViewfinder,
-        aspectRatio: 1.777778,
         disableFlip: true,
-        videoConstraints,
+        ...(appleTouch ? {} : { aspectRatio: 1.777778 }),
       },
       (decoded) => deliverScan(decoded),
       () => undefined
     );
+    hardenLiveVideo(document.getElementById("bu-qr-reader"));
   }
 
   async function startScanner() {
@@ -148,45 +166,49 @@ export function BuScanner({
     handledRef.current = false;
 
     if (typeof window !== "undefined" && !window.isSecureContext) {
-      showCameraError(mapCameraError(new Error("Only secure origins are allowed")));
+      showCameraError(mapCameraError(new Error("Only secure origins are allowed"), appleTouch));
       return;
     }
 
     try {
       await stopScanner();
-      const scanner = new Html5Qrcode("bu-qr-reader", {
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-        verbose: false,
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true,
-        },
-        useBarCodeDetectorIfSupported: true,
-      });
+      const scanner = scannerFactory("bu-qr-reader");
       scannerRef.current = scanner;
       setActive(true);
+      unwatchVideoRef.current?.();
+      unwatchVideoRef.current = watchAndHardenLiveVideo(
+        document.getElementById("bu-qr-reader")
+      );
 
-      try {
-        await startWithConstraints(scanner, HIGH_RES_CONSTRAINTS);
-      } catch (highResErr) {
-        if (scanner.isScanning) {
-          try {
-            await scanner.stop();
-          } catch {
-            /* ignore */
+      const ladder = cameraConstraintLadder(appleTouch);
+      let lastErr: unknown;
+      for (let i = 0; i < ladder.length; i += 1) {
+        try {
+          if (scanner.isScanning) {
+            try {
+              await scanner.stop();
+            } catch {
+              /* ignore */
+            }
           }
+          await startWithConstraints(scanner, ladder[i]);
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
         }
-        await startWithConstraints(scanner, FALLBACK_CONSTRAINTS);
-        void highResErr;
       }
+      if (lastErr) throw lastErr;
 
       try {
         await scanner.applyVideoConstraints(FOCUS_CONSTRAINTS);
       } catch {
-        /* focus not supported — ok */
+        /* focus not supported — ok, especially on iOS */
       }
+      hardenLiveVideo(document.getElementById("bu-qr-reader"));
     } catch (err) {
       setActive(false);
-      showCameraError(mapCameraError(err));
+      showCameraError(mapCameraError(err, appleTouch));
     }
   }
 
@@ -197,14 +219,7 @@ export function BuScanner({
     handledRef.current = false;
     try {
       await stopScanner();
-      const scanner = new Html5Qrcode("bu-qr-reader-file", {
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-        verbose: false,
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true,
-        },
-        useBarCodeDetectorIfSupported: true,
-      });
+      const scanner = scannerFactory("bu-qr-reader-file");
       try {
         const result = await scanner.scanFileV2(file, false);
         const text = result.decodedText?.trim();
@@ -221,7 +236,7 @@ export function BuScanner({
       }
     } catch {
       showCameraError(
-        "Não foi possível ler o QR nesta foto. Tire outra com boa luz, QR preenchendo o quadro."
+        "Não leu o QR nesta foto. Outra com boa luz, QR preenchendo o quadro."
       );
     } finally {
       setUploading(false);
@@ -232,21 +247,19 @@ export function BuScanner({
   return (
     <div className="space-y-3">
       <div
-        className="rounded-xl border border-teal-700/25 bg-teal-50/80 px-3 py-2.5 text-[11px] leading-snug text-teal-950 sm:text-xs"
+        className="rounded-2xl border-2 border-teal-700/30 bg-teal-50 px-4 py-3 text-teal-950"
         role="note"
       >
-        <p className="font-semibold">Só QR neste link</p>
-        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-teal-900/90">
-          <li>Filme o QR do BU. Sem digitação e sem colar texto.</li>
-          <li>
-            BUs longos têm 2+ QRs: leia o primeiro e depois{" "}
-            <strong className="font-semibold">Ler próximo QR desta urna</strong>.
-          </li>
-          <li>
-            Verde só aparece depois que a central confirmar. Se falhar, leia de
-            novo ou mande foto no WhatsApp.
-          </li>
-        </ul>
+        <p className="text-base font-bold leading-snug">Filme o QR do BU.</p>
+        <p className="mt-1.5 text-sm font-medium leading-snug">
+          Se tiver 2 códigos, filme os dois.
+        </p>
+        <p className="mt-1.5 text-sm font-medium leading-snug">
+          Verde = enviada. Próxima urna.
+        </p>
+        <p className="mt-1.5 text-sm font-medium leading-snug">
+          Se falhar: leia de novo ou foto no WhatsApp da central.
+        </p>
       </div>
 
       <div
@@ -257,25 +270,16 @@ export function BuScanner({
       />
       <div id="bu-qr-reader-file" className="hidden" aria-hidden />
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={(e) => void handleFilePick(e.target.files?.[0])}
-      />
-
       {!active && (
         <Button
           type="button"
           size="lg"
-          className="h-14 w-full text-base font-semibold bg-teal-700 hover:bg-teal-800 text-white shadow-md sm:h-16 sm:text-lg"
+          className="h-16 w-full text-lg font-bold bg-teal-700 hover:bg-teal-800 text-white shadow-md"
           onClick={() => void startScanner()}
           disabled={busy || uploading}
         >
-          <Camera className="size-5 sm:size-6" />
-          {nextQr ? "Ler próximo QR desta urna" : "Escanear Boletim de Urna (BU)"}
+          <Camera className="size-6" />
+          {nextQr ? "Filmar o próximo QR" : "Filmar o QR"}
         </Button>
       )}
 
@@ -284,7 +288,7 @@ export function BuScanner({
           type="button"
           variant="outline"
           size="lg"
-          className="h-12 w-full border-2 border-slate-400 text-sm sm:h-14 sm:text-base"
+          className="h-14 w-full border-2 border-slate-400 text-base font-semibold"
           onClick={() => void stopScanner()}
         >
           <CameraOff className="size-5" />
@@ -292,25 +296,32 @@ export function BuScanner({
         </Button>
       )}
 
-      <Button
-        type="button"
-        variant="outline"
-        size="lg"
-        className="h-12 w-full border-2 border-teal-700/40 text-sm font-semibold text-teal-900 hover:bg-teal-50 sm:h-14 sm:text-base"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={busy || uploading}
-      >
-        <ImageUp className="size-5" />
-        {uploading ? "Lendo foto…" : "Enviar foto do QR"}
-      </Button>
+      <label className="block">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="sr-only"
+          onChange={(e) => void handleFilePick(e.target.files?.[0])}
+        />
+        <span
+          className={`inline-flex h-14 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border-2 border-teal-700/40 bg-white text-base font-bold text-teal-900 hover:bg-teal-50 ${
+            busy || uploading ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
+          <ImageUp className="size-5" />
+          {uploading ? "Lendo foto…" : "Foto do QR"}
+        </span>
+      </label>
 
       {error && (
         <div
           role="alert"
-          className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950"
+          className="rounded-xl border-2 border-amber-500/40 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950"
         >
           <p>{error}</p>
-          <WhatsAppSupport number={whatsapp} className="mt-2 text-amber-950" />
+          <WhatsAppSupport number={whatsapp} className="mt-2 text-sm text-amber-950" />
         </div>
       )}
     </div>

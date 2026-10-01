@@ -39,9 +39,11 @@ In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows 
    - [`supabase/migrations/004_bu_completo.sql`](supabase/migrations/004_bu_completo.sql) — `candidatos.origem` (`cadastro`/`bu`) + função `ingest_bu_completo`
    - [`supabase/migrations/005_chefe_pin.sql`](supabase/migrations/005_chefe_pin.sql) — PIN `/chefe` + ingest sem default Governador
    - [`supabase/migrations/006_catalogo_origem.sql`](supabase/migrations/006_catalogo_origem.sql) — `origem=catalogo` na tabela `candidatos` (chapada; **sem tabela nova**)
-   - [`supabase/migrations/007_favorito.sql`](supabase/migrations/007_favorito.sql) — `candidatos.favorito` (checkbox no `/chefe`; não altera o telão)
+   - [`supabase/migrations/007_favorito.sql`](supabase/migrations/007_favorito.sql) — `candidatos.favorito` (legado; o `/chefe` não usa mais)
    - [`supabase/migrations/008_sq_candidato.sql`](supabase/migrations/008_sq_candidato.sql) — `candidatos.sq_candidato` opcional (fotos de urna TSE)
    - [`supabase/migrations/009_fiscal_domingo.sql`](supabase/migrations/009_fiscal_domingo.sql) — `whatsapp_suporte`, fila `bus_pendentes`, realtime idempotente (sem 42710), `secoes_esperadas=1744` só se ainda for 0
+   - [`supabase/migrations/010_zona_allowlist.sql`](supabase/migrations/010_zona_allowlist.sql) — allowlist das 6 zonas de Santo André no ingest
+   - [`supabase/migrations/011_chefes_favoritos.sql`](supabase/migrations/011_chefes_favoritos.sql) — tabelas `chefes` + `chefe_favoritos`; seed Cristiano / `andre2026`
 3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
@@ -80,10 +82,17 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
    - **Foto** — upload para Storage `candidatos` ou URL pública → `candidatos.foto_url` (coluna direita no telão)
 3. **Zonas / Seções** — total esperado e/ou “Zona X tem N seções” (gera `locais_votacao`). Progresso do telão = enviadas / esperadas.
 4. **Relatório telão** — quais cargos aparecem no ranking/gráfico (`apuracao_config.relatorio_cargos` + localStorage).
+5. **Acessos chefe** — lista, adiciona (nome + PIN) e exclui. Seed: Cristiano / `andre2026`. Não invente PINs extras no SQL.
+
+### Migration 011 (favoritos por PIN)
+
+Cole [`supabase/migrations/011_chefes_favoritos.sql`](supabase/migrations/011_chefes_favoritos.sql) no SQL Editor. Cria `chefes` + `chefe_favoritos`, seeds Cristiano/`andre2026` e sincroniza `apuracao_config.chefe_pin` se estiver vazio. Sem ela, o PIN legado ainda entra; as estrelas não gravam.
+
+Para um segundo PIN: `/admin` → Cadastro → **Acessos chefe** → nome + PIN exclusivo → Adicionar.
 
 ## Chefe (`/chefe`)
 
-PIN leve (`andre2026` por padrão, ou Cadastro → PIN do chefe). Ranking completo (incluindo Presidente), filtros de cargo, ordenação, busca e **favoritos** (checkbox entre # e nome; filtro Todos | Somente favoritos). Exige migration `007`. Não substitui o telão de 5 cards.
+PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe** lista / adiciona / exclui (nome + PIN). Ranking, votos e telão são globais; as **estrelas** e **Somente favoritos** vêm só de `chefe_favoritos` daquele PIN. Exige migration `011`. Não substitui o telão de 5 cards.
 
 ## Fiscal flow (domingo)
 

@@ -116,7 +116,9 @@ export const CARGOS_TAG_OPTIONS = [
 ] as const;
 
 export const DEFAULT_CHEFE_PIN = "andre2026";
+export const DEFAULT_CHEFE_NOME = "Cristiano";
 export const CHEFE_UNLOCK_KEY = "apuracao-sa-chefe-unlock";
+export const CHEFE_SESSION_ID_KEY = "apuracao-sa-chefe-id";
 
 export function resolveChefePin(configPin?: string | null): string {
   const env = process.env.NEXT_PUBLIC_CHEFE_PIN?.trim();

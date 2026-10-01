@@ -27,8 +27,20 @@ export interface Candidato {
   sq_candidato?: string | null;
   /** cadastro = telão; catalogo = chapada da cidade; bu = descoberto no scan. */
   origem?: CandidatoOrigem | null;
-  /** Marcado no ranking do /chefe. Não altera o telão. */
+  /** Legado (007). O /chefe usa chefe_favoritos por PIN — não esta coluna. */
   favorito?: boolean | null;
+}
+
+export interface Chefe {
+  id: string;
+  nome: string;
+  pin: string;
+  created_at: string;
+}
+
+export interface ChefeFavorito {
+  chefe_id: string;
+  candidato_id: string;
 }
 
 export interface BoletimUrna {

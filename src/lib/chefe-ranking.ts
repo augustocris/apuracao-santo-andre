@@ -10,6 +10,29 @@ export function isCandidatoFavorito(favorito?: boolean | null): boolean {
   return favorito === true;
 }
 
+export function isChefeFavoritoId(
+  candidatoId: string,
+  favoritoIds?: ReadonlySet<string> | null
+): boolean {
+  return favoritoIds?.has(candidatoId) === true;
+}
+
+export function overlayChefeFavoritos(
+  groups: CargoRanking[],
+  favoritoIds: ReadonlySet<string>
+): CargoRanking[] {
+  return groups.map((g) => ({
+    ...g,
+    rankings: g.rankings.map((row) => ({
+      ...row,
+      candidato: {
+        ...row.candidato,
+        favorito: favoritoIds.has(row.candidato.id),
+      },
+    })),
+  }));
+}
+
 export function filterChefeRankingRows(
   groups: CargoRanking[],
   opts: {
@@ -17,6 +40,8 @@ export function filterChefeRankingRows(
     sort: ChefeSortKey;
     query: string;
     favoritoFilter: ChefeFavoritoFilter;
+    /** Se informado, ignora candidatos.favorito e usa só os IDs deste PIN. */
+    favoritoIds?: ReadonlySet<string> | null;
   }
 ): ChefeRankingFlatRow[] {
   const selected =
@@ -46,7 +71,11 @@ export function filterChefeRankingRows(
     : flat;
 
   if (opts.favoritoFilter === "favoritos") {
-    filtered = filtered.filter((r) => isCandidatoFavorito(r.candidato.favorito));
+    filtered = filtered.filter((r) =>
+      opts.favoritoIds
+        ? isChefeFavoritoId(r.candidato.id, opts.favoritoIds)
+        : isCandidatoFavorito(r.candidato.favorito)
+    );
   }
 
   filtered.sort((a, b) => {

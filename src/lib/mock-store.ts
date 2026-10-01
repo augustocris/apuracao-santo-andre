@@ -3,10 +3,16 @@ import type {
   BoletimUrna,
   BuPendente,
   Candidato,
+  Chefe,
   LocalVotacao,
   ZonaConfigRow,
 } from "@/lib/types";
-import { CARGOS_OFICIAIS, DEFAULT_CHEFE_PIN, DEFAULT_RELATORIO_CARGOS } from "@/lib/cargos";
+import {
+  CARGOS_OFICIAIS,
+  DEFAULT_CHEFE_NOME,
+  DEFAULT_CHEFE_PIN,
+  DEFAULT_RELATORIO_CARGOS,
+} from "@/lib/cargos";
 import { SANTO_ANDRE_ZONAS_FALLBACK } from "@/lib/zona-allowlist";
 
 /**
@@ -323,6 +329,17 @@ function persistPendentes() {
 
 const mockPendentes: BuPendente[] = loadStoredPendentes();
 
+const mockChefes: Chefe[] = [
+  {
+    id: "chefe-cristiano",
+    nome: DEFAULT_CHEFE_NOME,
+    pin: DEFAULT_CHEFE_PIN,
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+];
+
+const mockChefeFavoritos: Array<{ chefe_id: string; candidato_id: string }> = [];
+
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -491,8 +508,95 @@ export function deleteMockCandidato(id: string): boolean {
   const idx = mockCandidatos.findIndex((c) => c.id === id);
   if (idx < 0) return false;
   mockCandidatos.splice(idx, 1);
+  for (let i = mockChefeFavoritos.length - 1; i >= 0; i -= 1) {
+    if (mockChefeFavoritos[i].candidato_id === id) {
+      mockChefeFavoritos.splice(i, 1);
+    }
+  }
   notify();
   return true;
+}
+
+export function getMockChefes(): Chefe[] {
+  return [...mockChefes].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+}
+
+export function insertMockChefe(input: { nome: string; pin: string }): Chefe {
+  const nome = input.nome.trim();
+  const pin = input.pin.trim();
+  if (!nome) throw new Error("Informe o nome do chefe.");
+  if (pin.length < 4) {
+    throw new Error("O PIN precisa ter ao menos 4 caracteres.");
+  }
+  if (mockChefes.some((c) => c.pin === pin)) {
+    throw new Error("Já existe um acesso com este PIN.");
+  }
+  const row: Chefe = {
+    id: crypto.randomUUID(),
+    nome,
+    pin,
+    created_at: new Date().toISOString(),
+  };
+  mockChefes.push(row);
+  notify();
+  return row;
+}
+
+export function deleteMockChefe(id: string): boolean {
+  const idx = mockChefes.findIndex((c) => c.id === id);
+  if (idx < 0) return false;
+  mockChefes.splice(idx, 1);
+  for (let i = mockChefeFavoritos.length - 1; i >= 0; i -= 1) {
+    if (mockChefeFavoritos[i].chefe_id === id) {
+      mockChefeFavoritos.splice(i, 1);
+    }
+  }
+  notify();
+  return true;
+}
+
+export function findMockChefeByPin(pin: string): Chefe | undefined {
+  const cleaned = pin.trim();
+  return mockChefes.find((c) => c.pin === cleaned);
+}
+
+export function getMockChefeFavoritoIds(chefeId: string): string[] {
+  return mockChefeFavoritos
+    .filter((row) => row.chefe_id === chefeId)
+    .map((row) => row.candidato_id);
+}
+
+export function setMockChefeFavorito(
+  chefeId: string,
+  candidatoId: string,
+  favorito: boolean
+): void {
+  if (!mockChefes.some((c) => c.id === chefeId)) {
+    throw new Error("Acesso chefe não encontrado.");
+  }
+  if (!mockCandidatos.some((c) => c.id === candidatoId)) {
+    throw new Error("Candidato não encontrado.");
+  }
+  const idx = mockChefeFavoritos.findIndex(
+    (row) => row.chefe_id === chefeId && row.candidato_id === candidatoId
+  );
+  if (favorito) {
+    if (idx < 0) {
+      mockChefeFavoritos.push({
+        chefe_id: chefeId,
+        candidato_id: candidatoId,
+      });
+      notify();
+    }
+    return;
+  }
+  if (idx >= 0) {
+    mockChefeFavoritos.splice(idx, 1);
+    notify();
+  }
 }
 
 export function insertMockBoletins(

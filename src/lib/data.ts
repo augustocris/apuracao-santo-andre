@@ -1,15 +1,20 @@
 import {
   deleteMockCandidato,
+  deleteMockChefe,
   findMockLocal,
   getMockBoletins,
   getMockCandidatos,
+  getMockChefeFavoritoIds,
+  getMockChefes,
   getMockConfig,
   getMockLocais,
   getMockPendentes,
   insertMockBoletins,
+  insertMockChefe,
   insertMockPendente,
   markMockPendenteReprocessado,
   replaceMockLocaisForZonas,
+  setMockChefeFavorito,
   setMockConfig,
   subscribeMock,
   updateMockCandidato,
@@ -23,8 +28,10 @@ import {
   CARGO_INDEFINIDO,
   CARGOS_OFICIAIS,
   CARGOS_RANKING_ORDEM,
+  DEFAULT_CHEFE_NOME,
   DEFAULT_CHEFE_PIN,
   DEFAULT_RELATORIO_CARGOS,
+  resolveChefePin,
   canonicalCargoLabel,
   isFeaturedCandidato,
   placeholderCandidateName,
@@ -45,6 +52,7 @@ import type {
   BuPendente,
   Candidato,
   CargoRanking,
+  Chefe,
   ConfirmVoteRow,
   DashboardSnapshot,
   DiscoveredVote,
@@ -505,6 +513,240 @@ export async function saveChefePin(pin: string): Promise<ApuracaoConfig> {
     throw new Error("O PIN do chefe precisa ter ao menos 4 caracteres.");
   }
   return saveConfig({ chefe_pin: cleaned });
+}
+
+function isMissingChefesTable(message: string, code?: string): boolean {
+  if (code === "42P01") return true;
+  if (code === "23505") return false;
+  return /42P01|relation .*(chefes|chefe_favoritos)|could not find the table.*(chefes|chefe_favoritos)/i.test(
+    message
+  );
+}
+
+function normalizeChefe(raw: Partial<Chefe> | null): Chefe | null {
+  if (!raw?.id || !raw.pin) return null;
+  return {
+    id: String(raw.id),
+    nome: String(raw.nome ?? "").trim() || "Chefe",
+    pin: String(raw.pin).trim(),
+    created_at: raw.created_at ?? new Date().toISOString(),
+  };
+}
+
+export async function listChefes(): Promise<Chefe[]> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return getMockChefes();
+  }
+
+  const { data, error } = await supabase
+    .from("chefes")
+    .select("id, nome, pin, created_at")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    if (isMissingChefesTable(error.message, error.code)) {
+      return [];
+    }
+    throw new Error(error.message);
+  }
+
+  return (data ?? [])
+    .map((row) => normalizeChefe(row as Chefe))
+    .filter((row): row is Chefe => row != null);
+}
+
+export async function createChefe(input: {
+  nome: string;
+  pin: string;
+}): Promise<Chefe> {
+  const nome = input.nome.trim();
+  const pin = input.pin.trim();
+  if (!nome) throw new Error("Informe o nome do chefe.");
+  if (pin.length < 4) {
+    throw new Error("O PIN precisa ter ao menos 4 caracteres.");
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    return insertMockChefe({ nome, pin });
+  }
+
+  const { data, error } = await supabase
+    .from("chefes")
+    .insert({ nome, pin })
+    .select("id, nome, pin, created_at")
+    .single();
+
+  if (error) {
+    if (
+      error.code === "23505" ||
+      /duplicate|unique|chefes_pin/i.test(error.message)
+    ) {
+      throw new Error("Já existe um acesso com este PIN.");
+    }
+    if (isMissingChefesTable(error.message, error.code)) {
+      throw new Error(
+        "Tabela chefes ausente. Cole a migration 011_chefes_favoritos.sql no SQL Editor do Supabase."
+      );
+    }
+    throw new Error(error.message);
+  }
+
+  const row = normalizeChefe(data as Chefe);
+  if (!row) throw new Error("Não foi possível criar o acesso chefe.");
+
+  if (pin === DEFAULT_CHEFE_PIN) {
+    try {
+      await saveConfig({ chefe_pin: pin });
+    } catch {
+      /* config legado é opcional */
+    }
+  }
+
+  return row;
+}
+
+export async function deleteChefe(id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    if (!deleteMockChefe(id)) {
+      throw new Error("Acesso chefe não encontrado.");
+    }
+    return;
+  }
+
+  const { error } = await supabase.from("chefes").delete().eq("id", id);
+  if (error) {
+    if (isMissingChefesTable(error.message, error.code)) {
+      throw new Error(
+        "Tabela chefes ausente. Cole a migration 011_chefes_favoritos.sql no SQL Editor do Supabase."
+      );
+    }
+    throw new Error(error.message);
+  }
+}
+
+export async function unlockChefeByPin(pin: string): Promise<Chefe | null> {
+  const cleaned = pin.trim();
+  if (!cleaned) return null;
+
+  const chefes = await listChefes();
+  const match = chefes.find((c) => c.pin === cleaned);
+  if (match) return match;
+
+  if (chefes.length > 0) return null;
+
+  const cfg = await getConfig();
+  const fallback = resolveChefePin(cfg.chefe_pin);
+  if (cleaned !== fallback) return null;
+
+  if (cleaned === DEFAULT_CHEFE_PIN) {
+    try {
+      return await createChefe({
+        nome: DEFAULT_CHEFE_NOME,
+        pin: DEFAULT_CHEFE_PIN,
+      });
+    } catch {
+      /* tabela ausente → sessão só com o PIN legado */
+    }
+  }
+
+  return {
+    id: "config-fallback",
+    nome: DEFAULT_CHEFE_NOME,
+    pin: fallback,
+    created_at: new Date().toISOString(),
+  };
+}
+
+export async function listValidChefePins(): Promise<string[]> {
+  const chefes = await listChefes();
+  if (chefes.length > 0) {
+    return chefes.map((c) => c.pin);
+  }
+  const cfg = await getConfig();
+  return [resolveChefePin(cfg.chefe_pin)];
+}
+
+export async function listChefeFavoritoIds(chefeId: string): Promise<string[]> {
+  if (!chefeId || chefeId === "config-fallback") return [];
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    return getMockChefeFavoritoIds(chefeId);
+  }
+
+  const { data, error } = await supabase
+    .from("chefe_favoritos")
+    .select("candidato_id")
+    .eq("chefe_id", chefeId);
+
+  if (error) {
+    if (isMissingChefesTable(error.message, error.code)) {
+      return [];
+    }
+    throw new Error(error.message);
+  }
+
+  return (data ?? [])
+    .map((row) => String((row as { candidato_id?: string }).candidato_id ?? ""))
+    .filter(Boolean);
+}
+
+export async function setChefeFavorito(
+  chefeId: string,
+  candidatoId: string,
+  favorito: boolean
+): Promise<void> {
+  if (!chefeId || chefeId === "config-fallback") {
+    throw new Error(
+      "Tabela chefes ausente. Cole a migration 011_chefes_favoritos.sql no SQL Editor do Supabase."
+    );
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) {
+    setMockChefeFavorito(chefeId, candidatoId, favorito);
+    return;
+  }
+
+  if (favorito) {
+    const { error } = await supabase.from("chefe_favoritos").insert({
+      chefe_id: chefeId,
+      candidato_id: candidatoId,
+    });
+    if (error) {
+      if (isMissingChefesTable(error.message, error.code)) {
+        throw new Error(
+          "Tabela chefe_favoritos ausente. Cole a migration 011_chefes_favoritos.sql no SQL Editor do Supabase."
+        );
+      }
+      if (
+        error.code === "23505" ||
+        /duplicate|unique|chefe_favoritos_pkey/i.test(error.message)
+      ) {
+        return;
+      }
+      throw new Error(error.message);
+    }
+    return;
+  }
+
+  const { error } = await supabase
+    .from("chefe_favoritos")
+    .delete()
+    .eq("chefe_id", chefeId)
+    .eq("candidato_id", candidatoId);
+
+  if (error) {
+    if (isMissingChefesTable(error.message, error.code)) {
+      throw new Error(
+        "Tabela chefe_favoritos ausente. Cole a migration 011_chefes_favoritos.sql no SQL Editor do Supabase."
+      );
+    }
+    throw new Error(error.message);
+  }
 }
 
 export async function saveWhatsappSuporte(

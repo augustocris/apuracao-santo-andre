@@ -4,8 +4,8 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CHEFE_UNLOCK_KEY, resolveChefePin } from "@/lib/cargos";
-import { getConfig } from "@/lib/data";
+import { CHEFE_SESSION_ID_KEY, CHEFE_UNLOCK_KEY } from "@/lib/cargos";
+import { unlockChefeByPin } from "@/lib/data";
 
 function isUnlocked(): boolean {
   if (typeof window === "undefined") return false;
@@ -28,40 +28,43 @@ export function PinGate({
   const [unlocked, setUnlocked] = useState(false);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
-  const [expectedPin, setExpectedPin] = useState(resolveChefePin(null));
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setUnlocked(isUnlocked());
-    void (async () => {
-      try {
-        const cfg = await getConfig();
-        setExpectedPin(resolveChefePin(cfg.chefe_pin));
-      } catch {
-        setExpectedPin(resolveChefePin(null));
-      }
-    })();
   }, []);
 
-  function handleUnlock(e: FormEvent) {
+  async function handleUnlock(e: FormEvent) {
     e.preventDefault();
-    if (pin.trim() === expectedPin) {
+    setBusy(true);
+    setPinError(null);
+    try {
+      const session = await unlockChefeByPin(pin);
+      if (!session) {
+        setPinError("PIN incorreto.");
+        return;
+      }
       try {
         sessionStorage.setItem(CHEFE_UNLOCK_KEY, "1");
+        sessionStorage.setItem(CHEFE_SESSION_ID_KEY, session.id);
       } catch {
         /* ignore */
       }
       setUnlocked(true);
-      setPinError(null);
       setPin("");
-    } else {
-      setPinError("PIN incorreto.");
+    } catch (err) {
+      setPinError(
+        err instanceof Error ? err.message : "Não foi possível entrar."
+      );
+    } finally {
+      setBusy(false);
     }
   }
 
   if (!unlocked) {
     return (
       <form
-        onSubmit={handleUnlock}
+        onSubmit={(e) => void handleUnlock(e)}
         className="mx-auto max-w-md space-y-3 rounded-2xl border border-white/10 bg-slate-900/60 p-5"
       >
         <h2 className="text-lg font-bold text-white">{title}</h2>
@@ -75,6 +78,7 @@ export function PinGate({
             onChange={(e) => setPin(e.target.value)}
             className="mt-1 border-white/15 bg-slate-950 text-white"
             placeholder="PIN"
+            disabled={busy}
           />
         </label>
         {pinError ? (
@@ -84,6 +88,7 @@ export function PinGate({
         ) : null}
         <Button
           type="submit"
+          disabled={busy}
           className="h-11 w-full bg-[#00ADEF] text-[#001a3a] hover:bg-[#33c0f3]"
         >
           <Lock className="size-4" />

@@ -3,12 +3,17 @@ import { describe, it } from "node:test";
 import {
   chefeMiniaturaFallback,
   filterChefeRankingRows,
+  overlayChefeFavoritos,
 } from "./chefe-ranking";
 import { percentualNoCargo } from "./utils";
 import {
   buildDashboardSnapshot,
-  setCandidatoFavorito,
+  createChefe,
+  listChefeFavoritoIds,
+  listChefes,
+  setChefeFavorito,
   transmitBuCompleto,
+  unlockChefeByPin,
 } from "./data";
 import {
   getMockBoletins,
@@ -23,8 +28,8 @@ import {
 } from "./parser/bu-qr";
 import type { CargoRanking } from "./types";
 
-describe("setCandidatoFavorito", () => {
-  it("toggles cadastro, catalogo and bu rows", async () => {
+describe("chefes por PIN", () => {
+  it("unlocks andre2026 as Cristiano and isolates favoritos between PINs", async () => {
     upsertMockCandidatos([
       {
         numero: "88888",
@@ -32,7 +37,7 @@ describe("setCandidatoFavorito", () => {
         cargo: "Deputado Estadual",
         foto_url: null,
         origem: "catalogo",
-        favorito: false,
+        favorito: true,
       },
     ]);
     const cadastro = getMockCandidatos().find(
@@ -42,24 +47,38 @@ describe("setCandidatoFavorito", () => {
     const catalogo = getMockCandidatos().find((c) => c.numero === "88888");
     assert.ok(cadastro && bu && catalogo);
 
-    const a = await setCandidatoFavorito(cadastro.id, true);
-    const b = await setCandidatoFavorito(bu.id, true);
-    const c = await setCandidatoFavorito(catalogo.id, true);
-    assert.equal(a.favorito, true);
-    assert.equal(b.favorito, true);
-    assert.equal(c.favorito, true);
-    assert.equal(
-      getMockCandidatos().find((x) => x.id === cadastro.id)?.favorito,
-      true
+    const cristiano = await unlockChefeByPin("andre2026");
+    assert.ok(cristiano);
+    assert.equal(cristiano.nome, "Cristiano");
+    assert.equal(cristiano.pin, "andre2026");
+    assert.equal(await unlockChefeByPin("pin-errado"), null);
+
+    await setChefeFavorito(cristiano.id, cadastro.id, true);
+    await setChefeFavorito(cristiano.id, bu.id, true);
+    await setChefeFavorito(cristiano.id, catalogo.id, true);
+
+    const segundo = await createChefe({
+      nome: "Maria",
+      pin: "maria-teste-2026",
+    });
+    await setChefeFavorito(segundo.id, cadastro.id, true);
+
+    const idsCristiano = await listChefeFavoritoIds(cristiano.id);
+    const idsMaria = await listChefeFavoritoIds(segundo.id);
+    assert.equal(idsCristiano.length, 3);
+    assert.ok(idsCristiano.includes(cadastro.id));
+    assert.ok(idsCristiano.includes(bu.id));
+    assert.ok(idsCristiano.includes(catalogo.id));
+    assert.deepEqual(idsMaria.sort(), [cadastro.id].sort());
+
+    const globalStillUnused = getMockCandidatos().find(
+      (x) => x.id === catalogo.id
     );
-    assert.equal(
-      getMockCandidatos().find((x) => x.id === bu.id)?.favorito,
-      true
-    );
-    assert.equal(
-      getMockCandidatos().find((x) => x.id === catalogo.id)?.favorito,
-      true
-    );
+    assert.equal(globalStillUnused?.favorito, true);
+
+    const nomes = (await listChefes()).map((c) => c.nome);
+    assert.ok(nomes.includes("Cristiano"));
+    assert.ok(nomes.includes("Maria"));
   });
 });
 
@@ -136,6 +155,50 @@ describe("filterChefeRankingRows", () => {
     });
     assert.equal(searchFav.length, 1);
     assert.equal(searchFav[0].candidato.cargo, "Presidente");
+  });
+
+  it("Somente favoritos uses PIN ids, never candidatos.favorito", () => {
+    const pinFav = filterChefeRankingRows(groups, {
+      cargoFilter: "todos",
+      sort: "votos",
+      query: "",
+      favoritoFilter: "favoritos",
+      favoritoIds: new Set(["de-2"]),
+    });
+    assert.equal(pinFav.length, 1);
+    assert.equal(pinFav[0].candidato.id, "de-2");
+    assert.equal(pinFav[0].candidato.favorito, false);
+
+    const overlaid = overlayChefeFavoritos(groups, new Set(["de-2"]));
+    assert.equal(
+      overlaid[0].rankings.find((r) => r.candidato.id === "de-2")?.candidato
+        .favorito,
+      true
+    );
+    assert.equal(
+      overlaid[0].rankings.find((r) => r.candidato.id === "de-1")?.candidato
+        .favorito,
+      false
+    );
+
+    const todosA = filterChefeRankingRows(groups, {
+      cargoFilter: "todos",
+      sort: "votos",
+      query: "",
+      favoritoFilter: "todos",
+      favoritoIds: new Set(["de-1"]),
+    });
+    const todosB = filterChefeRankingRows(groups, {
+      cargoFilter: "todos",
+      sort: "votos",
+      query: "",
+      favoritoFilter: "todos",
+      favoritoIds: new Set(["de-2", "pr-1"]),
+    });
+    assert.deepEqual(
+      todosA.map((r) => r.candidato.id),
+      todosB.map((r) => r.candidato.id)
+    );
   });
 
   it("shows origem=bu Indefinido with votes in Todos (simulação TSE)", () => {

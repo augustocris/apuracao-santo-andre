@@ -2,28 +2,35 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Loader2, Lock, LogOut, Search, Trophy } from "lucide-react";
+import { Loader2, Lock, LogOut, Search, Star, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   CARGO_INDEFINIDO,
   CARGOS_CHEFE_FILTRO,
+  CHEFE_SESSION_ID_KEY,
   CHEFE_UNLOCK_KEY,
   isFeaturedCandidato,
   labelCargoCurto,
   origemLabel,
-  resolveChefePin,
 } from "@/lib/cargos";
 import { CHAPADA_HINT } from "@/lib/chapada";
 import {
   chefeMiniaturaFallback,
   filterChefeRankingRows,
-  isCandidatoFavorito,
+  isChefeFavoritoId,
   type ChefeFavoritoFilter,
   type ChefeSortKey,
 } from "@/lib/chefe-ranking";
-import { fetchDashboard, getConfig, setCandidatoFavorito, subscribeDashboard } from "@/lib/data";
-import type { Candidato, DashboardSnapshot } from "@/lib/types";
+import {
+  fetchDashboard,
+  listChefeFavoritoIds,
+  listChefes,
+  setChefeFavorito,
+  subscribeDashboard,
+  unlockChefeByPin,
+} from "@/lib/data";
+import type { Candidato, Chefe, DashboardSnapshot } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
 
 const EMPTY: DashboardSnapshot = {
@@ -71,46 +78,88 @@ function ChefeFoto({ candidato }: { candidato: Candidato }) {
   );
 }
 
-function isUnlocked(): boolean {
-  if (typeof window === "undefined") return false;
+function readChefeId(): string | null {
+  if (typeof window === "undefined") return null;
   try {
-    return sessionStorage.getItem(CHEFE_UNLOCK_KEY) === "1";
+    return sessionStorage.getItem(CHEFE_SESSION_ID_KEY);
   } catch {
-    return false;
+    return null;
+  }
+}
+
+function persistChefeSession(chefe: Chefe) {
+  try {
+    sessionStorage.setItem(CHEFE_UNLOCK_KEY, "1");
+    sessionStorage.setItem(CHEFE_SESSION_ID_KEY, chefe.id);
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearChefeSession() {
+  try {
+    sessionStorage.removeItem(CHEFE_UNLOCK_KEY);
+    sessionStorage.removeItem(CHEFE_SESSION_ID_KEY);
+  } catch {
+    /* ignore */
   }
 }
 
 export function ChefeRanking() {
-  const [unlocked, setUnlocked] = useState(false);
+  const [chefe, setChefe] = useState<Chefe | null>(null);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
-  const [expectedPin, setExpectedPin] = useState(resolveChefePin(null));
+  const [pinBusy, setPinBusy] = useState(false);
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
   const [cargoFilter, setCargoFilter] = useState<string>("todos");
   const [sort, setSort] = useState<SortKey>("votos");
   const [query, setQuery] = useState("");
   const [favoritoFilter, setFavoritoFilter] =
     useState<ChefeFavoritoFilter>("todos");
+  const [favoritoIds, setFavoritoIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
 
+  const unlocked = chefe != null;
+
   useEffect(() => {
-    setUnlocked(isUnlocked());
+    const storedId = readChefeId();
+    if (!storedId) return;
     void (async () => {
       try {
-        const cfg = await getConfig();
-        setExpectedPin(resolveChefePin(cfg.chefe_pin));
+        const list = await listChefes();
+        const found =
+          list.find((row) => row.id === storedId) ??
+          (storedId === "config-fallback"
+            ? {
+                id: "config-fallback",
+                nome: "Cristiano",
+                pin: "",
+                created_at: new Date().toISOString(),
+              }
+            : null);
+        if (!found) {
+          clearChefeSession();
+          setChefe(null);
+          return;
+        }
+        setChefe(found);
       } catch {
-        setExpectedPin(resolveChefePin(null));
+        setChefe(null);
       }
     })();
   }, []);
 
   const reload = useCallback(async () => {
+    if (!chefe) return;
     try {
-      const data = await fetchDashboard("todos");
+      const [data, ids] = await Promise.all([
+        fetchDashboard("todos"),
+        listChefeFavoritoIds(chefe.id),
+      ]);
       setSnapshot(data);
+      setFavoritoIds(new Set(ids));
       setError(null);
     } catch (err) {
       setError(
@@ -119,7 +168,7 @@ export function ChefeRanking() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [chefe]);
 
   useEffect(() => {
     if (!unlocked) return;
@@ -136,8 +185,16 @@ export function ChefeRanking() {
         sort,
         query,
         favoritoFilter,
+        favoritoIds,
       }),
-    [snapshot.rankingGeralByCargo, cargoFilter, sort, query, favoritoFilter]
+    [
+      snapshot.rankingGeralByCargo,
+      cargoFilter,
+      sort,
+      query,
+      favoritoFilter,
+      favoritoIds,
+    ]
   );
 
   const indefinidos =
@@ -145,56 +202,52 @@ export function ChefeRanking() {
       .find((g) => g.cargo === CARGO_INDEFINIDO)
       ?.rankings.filter((r) => r.votos > 0).length ?? 0;
 
-  function handleUnlock(e: FormEvent) {
+  async function handleUnlock(e: FormEvent) {
     e.preventDefault();
-    if (pin.trim() === expectedPin) {
-      try {
-        sessionStorage.setItem(CHEFE_UNLOCK_KEY, "1");
-      } catch {
-        /* ignore */
+    setPinBusy(true);
+    setPinError(null);
+    try {
+      const session = await unlockChefeByPin(pin);
+      if (!session) {
+        setPinError("PIN incorreto.");
+        return;
       }
-      setUnlocked(true);
-      setPinError(null);
+      persistChefeSession(session);
+      setChefe(session);
       setPin("");
-    } else {
-      setPinError("PIN incorreto.");
+      setLoading(true);
+    } catch (err) {
+      setPinError(
+        err instanceof Error ? err.message : "Não foi possível entrar."
+      );
+    } finally {
+      setPinBusy(false);
     }
   }
 
   function handleLock() {
-    try {
-      sessionStorage.removeItem(CHEFE_UNLOCK_KEY);
-    } catch {
-      /* ignore */
-    }
-    setUnlocked(false);
-  }
-
-  function patchFavoritoInSnapshot(id: string, favorito: boolean) {
-    setSnapshot((prev) => ({
-      ...prev,
-      rankingGeralByCargo: prev.rankingGeralByCargo.map((g) => ({
-        ...g,
-        rankings: g.rankings.map((row) =>
-          row.candidato.id === id
-            ? { ...row, candidato: { ...row.candidato, favorito } }
-            : row
-        ),
-      })),
-    }));
+    clearChefeSession();
+    setChefe(null);
+    setFavoritoIds(new Set());
+    setSnapshot(EMPTY);
   }
 
   async function toggleFavorito(candidato: Candidato) {
-    if (savingIds.has(candidato.id)) return;
-    const next = !isCandidatoFavorito(candidato.favorito);
-    const previous = isCandidatoFavorito(candidato.favorito);
-    patchFavoritoInSnapshot(candidato.id, next);
+    if (!chefe || savingIds.has(candidato.id)) return;
+    const next = !isChefeFavoritoId(candidato.id, favoritoIds);
+    const previous = new Set(favoritoIds);
+    setFavoritoIds((prev) => {
+      const copy = new Set(prev);
+      if (next) copy.add(candidato.id);
+      else copy.delete(candidato.id);
+      return copy;
+    });
     setSavingIds((prev) => new Set(prev).add(candidato.id));
     try {
-      await setCandidatoFavorito(candidato.id, next);
+      await setChefeFavorito(chefe.id, candidato.id, next);
       setError(null);
     } catch (err) {
-      patchFavoritoInSnapshot(candidato.id, previous);
+      setFavoritoIds(previous);
       setError(
         err instanceof Error
           ? err.message
@@ -235,6 +288,7 @@ export function ChefeRanking() {
               onChange={(e) => setPin(e.target.value)}
               className="mt-1"
               placeholder="PIN"
+              disabled={pinBusy}
             />
           </label>
           {pinError && (
@@ -242,8 +296,16 @@ export function ChefeRanking() {
               {pinError}
             </p>
           )}
-          <Button type="submit" className="h-11 w-full bg-teal-700 text-white hover:bg-teal-800">
-            <Lock className="size-4" />
+          <Button
+            type="submit"
+            disabled={pinBusy}
+            className="h-11 w-full bg-teal-700 text-white hover:bg-teal-800"
+          >
+            {pinBusy ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Lock className="size-4" />
+            )}
             Entrar
           </Button>
         </form>
@@ -264,8 +326,9 @@ export function ChefeRanking() {
           </p>
           <h1 className="text-2xl font-bold text-slate-900">Ranking geral</h1>
           <p className="text-sm text-slate-600">
+            {chefe?.nome ? `${chefe.nome} · ` : ""}
             {snapshot.urnasApuradas} urnas · modo {snapshot.mode}. Presidente
-            entra aqui, não no telão de 5 cards.
+            entra aqui, não no telão de 5 cards. Estrelas são só desta sessão.
           </p>
           <p className="mt-1 max-w-2xl text-xs text-slate-500">{CHAPADA_HINT}</p>
         </div>
@@ -416,15 +479,31 @@ export function ChefeRanking() {
                     {index + 1}
                   </td>
                   <td className="px-2 py-2">
-                    <input
-                      type="checkbox"
-                      className="size-4 cursor-pointer accent-amber-500"
-                      checked={isCandidatoFavorito(row.candidato.favorito)}
+                    <button
+                      type="button"
+                      className="inline-flex size-8 items-center justify-center rounded-md text-amber-500 hover:bg-amber-50 disabled:opacity-50"
                       disabled={savingIds.has(row.candidato.id)}
-                      onChange={() => void toggleFavorito(row.candidato)}
-                      title="Marcar como favorito"
-                      aria-label={`Marcar como favorito: ${row.candidato.nome}`}
-                    />
+                      onClick={() => void toggleFavorito(row.candidato)}
+                      aria-pressed={isChefeFavoritoId(
+                        row.candidato.id,
+                        favoritoIds
+                      )}
+                      aria-label={
+                        isChefeFavoritoId(row.candidato.id, favoritoIds)
+                          ? `Remover favorito: ${row.candidato.nome}`
+                          : `Marcar como favorito: ${row.candidato.nome}`
+                      }
+                      title="Favorito deste PIN"
+                    >
+                      <Star
+                        className={cn(
+                          "size-4",
+                          isChefeFavoritoId(row.candidato.id, favoritoIds)
+                            ? "fill-amber-400 text-amber-500"
+                            : "text-slate-300"
+                        )}
+                      />
+                    </button>
                   </td>
                   <td className="px-2 py-2">
                     <ChefeFoto candidato={row.candidato} />

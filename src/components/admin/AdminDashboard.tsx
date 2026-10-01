@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ClipboardList, Radio, RefreshCw, Settings2, TriangleAlert, Tv } from "lucide-react";
+import {
+  ClipboardList,
+  ExternalLink,
+  Settings2,
+  TriangleAlert,
+} from "lucide-react";
 import Link from "next/link";
 import { AdminCadastro } from "@/components/admin/AdminCadastro";
 import { AdminDigitarBu } from "@/components/admin/AdminDigitarBu";
 import { AdminPendentes } from "@/components/admin/AdminPendentes";
-import { useMilestoneCelebrations } from "@/components/admin/MilestoneCelebration";
-import { StatsCards } from "@/components/admin/StatsCards";
-import { TelaoSlots } from "@/components/admin/TelaoSlots";
 import { Button } from "@/components/ui/button";
-import { labelCargoCurto } from "@/lib/cargos";
 import { fetchDashboard, subscribeDashboard } from "@/lib/data";
 import type { DashboardSnapshot } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -29,36 +30,22 @@ const EMPTY: DashboardSnapshot = {
   mode: "mock",
 };
 
-type AdminView = "telao" | "cadastro" | "pendentes" | "digitar";
+type AdminView = "cadastro" | "pendentes" | "digitar";
 
 export function AdminDashboard() {
-  const [view, setView] = useState<AdminView>("telao");
+  const [view, setView] = useState<AdminView>("cadastro");
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
   const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<string>("—");
-  const [pending, setPending] = useState(false);
-  const [dataReady, setDataReady] = useState(false);
 
   const reload = useCallback(async () => {
-    setPending(true);
     try {
       const data = await fetchDashboard();
       setSnapshot(data);
-      setUpdatedAt(
-        new Intl.DateTimeFormat("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }).format(new Date())
-      );
-      setDataReady(true);
       setError(null);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Falha ao carregar o painel."
       );
-    } finally {
-      setPending(false);
     }
   }, []);
 
@@ -69,68 +56,23 @@ export function AdminDashboard() {
     }, 4000);
   }, [reload]);
 
-  const cargoLabel =
-    snapshot.relatorioCargos.length === 0
-      ? "—"
-      : snapshot.relatorioCargos.length >= 4
-        ? "todos os cargos"
-        : snapshot.relatorioCargos.map(labelCargoCurto).join(" · ");
-
-  const celebration = useMilestoneCelebrations({
-    rankingsByCargo: snapshot.rankingsByCargo,
-    enabled: view === "telao",
-    ready: dataReady,
-  });
-
   return (
-    <div
-      className={cn(
-        "mx-auto flex w-full max-w-[1600px] flex-col px-3 py-2 md:px-5 md:py-4",
-        view === "telao"
-          ? "h-[100dvh] min-h-0 gap-1.5 overflow-hidden md:gap-3"
-          : "min-h-full gap-5 px-4 py-5 md:px-6 lg:px-8"
-      )}
-    >
-      <header
-        className={cn(
-          "flex flex-wrap items-center justify-between gap-1.5 border-b border-white/10 md:gap-2",
-          view === "telao" ? "shrink-0 pb-1.5 md:pb-2" : "items-end gap-3 pb-4"
-        )}
-      >
+    <div className="mx-auto flex min-h-full w-full max-w-[1600px] flex-col gap-5 px-4 py-5 md:px-6 lg:px-8">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-4">
         <div className="min-w-0">
-          <p
-            className={cn(
-              "inline-flex items-center gap-1.5 font-semibold uppercase tracking-[0.2em] text-[#00ADEF] md:gap-2",
-              view === "telao" ? "mb-0 text-[9px] md:mb-0.5 md:text-[10px]" : "mb-1 text-xs"
-            )}
-          >
-            <Radio
-              className={cn(
-                "animate-pulse",
-                view === "telao" ? "size-2.5 md:size-3" : "size-3.5"
-              )}
-            />
-            Ao vivo
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#00ADEF]">
+            Central
           </p>
-          <h1
-            className={cn(
-              "font-bold tracking-tight text-white",
-              view === "telao"
-                ? "text-base leading-tight md:text-2xl lg:text-3xl"
-                : "text-2xl md:text-4xl"
-            )}
-          >
-            Apuração Antecipada - Santo André
+          <h1 className="text-2xl font-bold tracking-tight text-white md:text-4xl">
+            Painel admin
           </h1>
-          <p
-            className={cn(
-              "text-slate-400",
-              view === "telao"
-                ? "mt-0 truncate text-[10px] md:mt-0.5 md:text-xs"
-                : "mt-1 text-sm"
-            )}
-          >
-            Relatório: {cargoLabel} · atualizado às {updatedAt} · modo{" "}
+          <p className="mt-1 text-sm text-slate-400">
+            Cadastro, BUs pendentes e Digitar BU. O telão da TV é{" "}
+            <Link href="/telao" className="text-[#00ADEF] underline">
+              /telao
+            </Link>
+            {" · "}
+            modo{" "}
             <span
               className={cn(
                 "font-semibold uppercase",
@@ -152,6 +94,13 @@ export function AdminDashboard() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/telao"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-[#FFDE00]/40 bg-[#FFDE00]/10 px-3 text-sm font-semibold text-[#FFDE00] hover:bg-[#FFDE00]/20"
+          >
+            <ExternalLink className="size-4" />
+            Abrir telão
+          </Link>
           <div
             role="tablist"
             className="flex gap-1 rounded-xl bg-[#001a3a]/80 p-1"
@@ -159,28 +108,10 @@ export function AdminDashboard() {
             <Button
               type="button"
               role="tab"
-              aria-selected={view === "telao"}
-              variant="ghost"
-              className={cn(
-                "rounded-lg text-sm font-semibold",
-                view === "telao" ? "h-8 px-3" : "h-10",
-                view === "telao"
-                  ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
-                  : "text-white/70 hover:bg-white/5 hover:text-white"
-              )}
-              onClick={() => setView("telao")}
-            >
-              <Tv className="size-4" />
-              Telão
-            </Button>
-            <Button
-              type="button"
-              role="tab"
               aria-selected={view === "cadastro"}
               variant="ghost"
               className={cn(
-                "rounded-lg text-sm font-semibold",
-                view === "telao" ? "h-8 px-3" : "h-10",
+                "h-10 rounded-lg text-sm font-semibold",
                 view === "cadastro"
                   ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
                   : "text-white/70 hover:bg-white/5 hover:text-white"
@@ -196,8 +127,7 @@ export function AdminDashboard() {
               aria-selected={view === "pendentes"}
               variant="ghost"
               className={cn(
-                "rounded-lg text-sm font-semibold",
-                view === "telao" ? "h-8 px-3" : "h-10",
+                "h-10 rounded-lg text-sm font-semibold",
                 view === "pendentes"
                   ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
                   : "text-white/70 hover:bg-white/5 hover:text-white"
@@ -213,8 +143,7 @@ export function AdminDashboard() {
               aria-selected={view === "digitar"}
               variant="ghost"
               className={cn(
-                "rounded-lg text-sm font-semibold",
-                view === "telao" ? "h-8 px-3" : "h-10",
+                "h-10 rounded-lg text-sm font-semibold",
                 view === "digitar"
                   ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
                   : "text-white/70 hover:bg-white/5 hover:text-white"
@@ -225,25 +154,9 @@ export function AdminDashboard() {
               Digitar BU
             </Button>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className={cn(
-              "border-white/25 bg-white/5 text-white hover:bg-white/10",
-              view === "telao" && "h-8 px-3"
-            )}
-            onClick={() => void reload()}
-            disabled={pending}
-          >
-            <RefreshCw className={`size-4 ${pending ? "animate-spin" : ""}`} />
-            Atualizar
-          </Button>
           <Link
             href="/chefe"
-            className={cn(
-              "text-[11px] text-white/40 underline-offset-2 hover:text-white/70 hover:underline",
-              view === "telao" && "self-center"
-            )}
+            className="text-[11px] text-white/40 underline-offset-2 hover:text-white/70 hover:underline"
           >
             Acesso chefe
           </Link>
@@ -253,7 +166,7 @@ export function AdminDashboard() {
       {error && (
         <p
           role="alert"
-          className="shrink-0 rounded-xl border border-red-400/40 bg-red-950/50 px-4 py-2 text-sm text-red-100"
+          className="rounded-xl border border-red-400/40 bg-red-950/50 px-4 py-2 text-sm text-red-100"
         >
           {error}
         </p>
@@ -263,25 +176,8 @@ export function AdminDashboard() {
         <AdminCadastro onConfigSaved={() => void reload()} />
       ) : view === "pendentes" ? (
         <AdminPendentes />
-      ) : view === "digitar" ? (
-        <AdminDigitarBu />
       ) : (
-        <>
-          <div className="shrink-0">
-            <StatsCards
-              urnasApuradas={snapshot.urnasApuradas}
-              totalSecoes={snapshot.secoesEsperadas || snapshot.totalSecoes}
-              secoesFaltam={snapshot.secoesFaltam}
-            />
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col">
-            <TelaoSlots
-              groups={snapshot.rankingsByCargo}
-              celebration={celebration}
-            />
-          </div>
-        </>
+        <AdminDigitarBu />
       )}
     </div>
   );

@@ -2,7 +2,9 @@
 
 PWA for parallel ballot-box counting (fiscais scan BU QR codes; admin TV dashboard shows live results). Built with Next.js App Router, TypeScript, Tailwind CSS, Supabase, and a mock fallback for local demos without credentials.
 
-The `/admin` **Telão** view is built for a single TV viewport: compact header (**Apuração Antecipada - Santo André**), slim Enviadas/Faltam + % Progresso bars, and five cargo cards (Dep. Estadual, Dep. Federal, Senador 1, Senador 2, Governador). Dep. Estadual/Federal celebrate vote milestones (50 mil / 100.000 / 150.000 / +10 mil) with confetti.
+The **`/telao`** view is the public TV screen: compact header (**Apuração Antecipada - Santo André**), slim Enviadas/Faltam + % Progresso bars, and five cargo cards (Dep. Estadual, Dep. Federal, Senador 1, Senador 2, Governador). Photos sit on the right at card height with a 3:4 proportion (`object-contain`). Dep. Estadual/Federal celebrate vote milestones (50 mil / 100.000 / 150.000 / +10 mil) with confetti. No PIN.
+
+**`/admin`** is the operator panel only (Cadastro, BUs pendentes, Digitar BU). Link **Abrir telão** → `/telao`.
 
 ## Quick start
 
@@ -15,8 +17,9 @@ npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigi
 > Dev note: `next.config.ts` sets `allowedDevOrigins` for `127.0.0.1` / `localhost` so the client bundle hydrates when you open those hosts.
 
 - Fiscal (mobile, só QR): [http://127.0.0.1:43127/fiscal](http://127.0.0.1:43127/fiscal)
-- Admin telão + cadastro + BUs pendentes + Digitar BU: [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
-- `/dashboard` redirects to `/admin`
+- Telão (TV, público): [http://127.0.0.1:43127/telao](http://127.0.0.1:43127/telao)
+- Admin (cadastro, pendentes, Digitar BU): [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
+- `/dashboard` redirects to `/telao`
 
 ## Environment
 
@@ -107,12 +110,12 @@ PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe**
 
 WhatsApp da central: campo `whatsapp_suporte` em `apuracao_config`, editável no Cadastro. Vazio = “peça o WhatsApp à central”. O badge **Fonte: Supabase** vs **Fonte: MOCK** continua só no Cadastro admin.
 
-## Admin telão
+## Telão (`/telao`)
 
-Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
+Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. **Público, sem PIN.**
 
 - Progress: **enviadas / faltam** (vs `secoes_esperadas` do cadastro)
-- Cards com conteúdo à esquerda e **coluna de foto à direita** (altura do card; sem foto → número)
+- Cards compactos: texto à esquerda, **foto proporcional à direita** (altura do card, 3:4, `object-contain`; sem foto → número). Nome em até 2 linhas (não corta no meio).
 - Marcos Dep. Estadual/Federal: confete só quando o voto **cruza** o limiar ao vivo; marcos já celebrados ficam em `sessionStorage` (não repetem ao reabrir o telão)
 - Supabase Realtime when configured; otherwise polling every ~4s
 
@@ -121,8 +124,8 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 1. Push to `main` — Vercel auto-deploys if the project is connected.
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
-4. Run SQL migrations `001` … `010` on Supabase. **010 é a allowlist das 6 zonas** (`ingest_bu_completo` recusa zona fora; seed só se `zonas_config` estiver vazio). **009** é WhatsApp + fila de erro. A Vercel não executa SQL.
-5. Point fiscales to `/fiscal`, telão to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`). Favoritos no ranking do chefe exigem a 007.
+4. Run SQL migrations `001` … `011` on Supabase. **010 é a allowlist das 6 zonas** (`ingest_bu_completo` recusa zona fora; seed só se `zonas_config` estiver vazio). **011** é acessos chefe + favoritos por PIN. **009** é WhatsApp + fila de erro. A Vercel não executa SQL.
+5. Point fiscales to `/fiscal`, telão to `/telao`, admin to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`). Favoritos no ranking do chefe exigem a 011.
 
 ## Stack
 
@@ -134,7 +137,8 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 
 ```
 src/app/fiscal                 Mobile fiscal UI
-src/app/admin                  TV dashboard + Cadastro
+src/app/telao                  TV pública (5 cards)
+src/app/admin                  Painel: cadastro, pendentes, Digitar BU
 src/components/admin/          Telão (5 slots + milestones), cadastro
 src/lib/milestones.ts          Thresholds / PT-BR labels for confetti
 src/lib/cargos.ts              Digit rules per cargo

@@ -334,7 +334,7 @@ export function ChefeRanking() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/admin"
+            href="/telao"
             className="inline-flex h-10 items-center rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             Telão

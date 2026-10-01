@@ -7,9 +7,11 @@ import { WhatsAppSupport } from "@/components/fiscal/FiscalFeedback";
 import { Button } from "@/components/ui/button";
 import { cameraFeedback, type FiscalFeedback } from "@/lib/fiscal-feedback";
 import {
-  cameraConstraintLadder,
+  cameraErrorKind,
+  cameraStartAttempts,
   currentAppleTouchDevice,
   hardenLiveVideo,
+  liveScanConfig,
   useBarcodeDetector,
   watchAndHardenLiveVideo,
 } from "@/lib/ios-camera";
@@ -25,35 +27,27 @@ interface BuScannerProps {
 }
 
 function mapCameraError(err: unknown, appleTouch: boolean): string {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  const name =
-    err && typeof err === "object" && "name" in err
-      ? String((err as { name?: string }).name)
-      : "";
+  const secureContext = typeof window === "undefined" ? true : window.isSecureContext;
+  const kind = cameraErrorKind(err, { secureContext });
 
-  if (typeof window !== "undefined" && !window.isSecureContext) {
+  if (kind === "https") {
     return appleTouch
       ? "No iPhone a câmera só abre em HTTPS. Use o site seguro ou mande uma foto do QR."
       : "A câmera só funciona em HTTPS (ou localhost). Abra o site seguro ou envie uma foto do QR.";
   }
-  if (/NotAllowedError|Permission|denied/i.test(`${name} ${message}`)) {
+  if (kind === "permission") {
     return appleTouch
       ? "O Safari bloqueou a câmera. Ajustes → Safari → Câmera → Permitir, ou mande uma foto do QR."
       : "Permissão de câmera negada. Libere o acesso nas configurações do navegador ou envie uma foto do QR.";
   }
-  if (/NotFoundError|DevicesNotFound|Requested device not found/i.test(`${name} ${message}`)) {
+  if (kind === "notfound") {
     return "Nenhuma câmera encontrada. Mande uma foto do QR.";
   }
-  if (/NotReadableError|TrackStartError|Could not start video/i.test(`${name} ${message}`)) {
+  if (kind === "inuse") {
     return "A câmera está em uso por outro app. Feche-o e tente de novo, ou mande uma foto do QR.";
   }
-  if (/OverconstrainedError|Constraint/i.test(`${name} ${message}`)) {
+  if (kind === "overconstrained") {
     return "Este aparelho não aceitou o modo da câmera. Tente de novo ou mande uma foto do QR.";
-  }
-  if (/secure|https|Only secure origins/i.test(message)) {
-    return appleTouch
-      ? "No iPhone a câmera exige HTTPS. Use o site seguro ou mande uma foto do QR."
-      : "A câmera exige conexão segura (HTTPS). Envie uma foto do QR.";
   }
   return "Não deu para abrir a câmera. Tente de novo ou mande uma foto do QR.";
 }
@@ -61,11 +55,23 @@ function mapCameraError(err: unknown, appleTouch: boolean): string {
 /** Almost full-frame — dense TSE BUs need the whole code sharp. */
 function qrboxForViewfinder(viewfinderWidth: number, viewfinderHeight: number) {
   const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+  if (!Number.isFinite(minEdge) || minEdge < 50) {
+    return { width: 240, height: 240 };
+  }
   const size = Math.max(240, Math.floor(minEdge * 0.9));
   return {
     width: Math.min(size, viewfinderWidth),
     height: Math.min(size, viewfinderHeight),
   };
+}
+
+function waitForReaderLayout(): Promise<void> {
+  if (typeof requestAnimationFrame === "undefined") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 }
 
 const FOCUS_CONSTRAINTS = {
@@ -143,17 +149,18 @@ export function BuScanner({
     });
   }
 
-  async function startWithConstraints(
+  async function startWithAttempt(
     scanner: Html5Qrcode,
-    videoConstraints: MediaTrackConstraints
+    attempt: ReturnType<typeof cameraStartAttempts>[number]
   ) {
     await scanner.start(
-      videoConstraints,
+      attempt.cameraIdOrConfig,
       {
-        fps: appleTouch ? 8 : 12,
+        ...liveScanConfig(appleTouch),
         qrbox: qrboxForViewfinder,
-        disableFlip: true,
-        ...(appleTouch ? {} : { aspectRatio: 1.777778 }),
+        ...(attempt.videoConstraints
+          ? { videoConstraints: attempt.videoConstraints }
+          : {}),
       },
       (decoded) => deliverScan(decoded),
       () => undefined
@@ -172,17 +179,19 @@ export function BuScanner({
 
     try {
       await stopScanner();
+      setActive(true);
+      await waitForReaderLayout();
+
       const scanner = scannerFactory("bu-qr-reader");
       scannerRef.current = scanner;
-      setActive(true);
       unwatchVideoRef.current?.();
       unwatchVideoRef.current = watchAndHardenLiveVideo(
         document.getElementById("bu-qr-reader")
       );
 
-      const ladder = cameraConstraintLadder(appleTouch);
+      const attempts = cameraStartAttempts(appleTouch);
       let lastErr: unknown;
-      for (let i = 0; i < ladder.length; i += 1) {
+      for (const attempt of attempts) {
         try {
           if (scanner.isScanning) {
             try {
@@ -191,7 +200,7 @@ export function BuScanner({
               /* ignore */
             }
           }
-          await startWithConstraints(scanner, ladder[i]);
+          await startWithAttempt(scanner, attempt);
           lastErr = null;
           break;
         } catch (err) {

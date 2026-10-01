@@ -64,7 +64,7 @@ function ChefeFoto({
       className={cn(
         "inline-flex shrink-0 items-center justify-center overflow-hidden bg-teal-100 font-bold leading-none text-teal-900",
         size === "lg"
-          ? "size-16 rounded-xl text-sm md:size-20 md:text-base"
+          ? "size-11 rounded-xl text-[11px] md:size-20 md:text-base"
           : "size-10 rounded-full text-[10px]"
       )}
       title={candidato.nome}
@@ -133,34 +133,36 @@ function HighlightCard({
   onToggle: (candidato: Candidato) => void;
 }) {
   return (
-    <article className="flex min-w-0 items-stretch gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:gap-4 md:p-4">
-      <ChefeFoto candidato={row.candidato} size="lg" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-800">
-          {row.cargo} · {place}º
-        </p>
-        <p className="mt-0.5 line-clamp-2 font-bold leading-tight text-slate-900 md:text-lg">
-          {row.candidato.nome}
-        </p>
-        <p className="text-xs tabular-nums text-slate-500">
-          Nº {row.candidato.numero}
-        </p>
-        <p className="mt-1 font-bold tabular-nums text-teal-800 md:text-xl">
-          {formatVotes(row.votos)}
-          <span className="ml-1 text-xs font-medium text-slate-500 md:text-sm">
-            votos
-          </span>
-          <span className="ml-2 text-xs font-semibold text-slate-400 md:text-sm">
-            {formatPercent(row.percentual)}
-          </span>
-        </p>
+    <article className="relative flex min-w-0 flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm md:flex-row md:items-stretch md:gap-4 md:p-4">
+      <div className="flex min-w-0 items-start gap-2 md:contents">
+        <ChefeFoto candidato={row.candidato} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-teal-800">
+            {row.cargo} · {place}º
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[13px] font-bold leading-snug text-slate-900 md:text-lg">
+            {row.candidato.nome}
+          </p>
+          <p className="text-[11px] tabular-nums text-slate-500">
+            Nº {row.candidato.numero}
+          </p>
+        </div>
+        <StarButton
+          candidato={row.candidato}
+          favorito={favorito}
+          busy={busy}
+          onToggle={onToggle}
+        />
       </div>
-      <StarButton
-        candidato={row.candidato}
-        favorito={favorito}
-        busy={busy}
-        onToggle={onToggle}
-      />
+      <p className="font-bold tabular-nums text-teal-800 md:mt-auto md:text-xl">
+        {formatVotes(row.votos)}
+        <span className="ml-1 text-[11px] font-medium text-slate-500 md:text-sm">
+          votos
+        </span>
+        <span className="ml-2 text-[11px] font-semibold text-slate-400 md:text-sm">
+          {formatPercent(row.percentual)}
+        </span>
+      </p>
     </article>
   );
 }

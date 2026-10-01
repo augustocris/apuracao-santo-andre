@@ -7,6 +7,7 @@ import type {
   ZonaConfigRow,
 } from "@/lib/types";
 import { CARGOS_OFICIAIS, DEFAULT_CHEFE_PIN, DEFAULT_RELATORIO_CARGOS } from "@/lib/cargos";
+import { SANTO_ANDRE_ZONAS_FALLBACK } from "@/lib/zona-allowlist";
 
 /**
  * Seed demo data only for local demos.
@@ -291,15 +292,7 @@ let mockConfig: ApuracaoConfig = {
   id: 1,
   secoes_esperadas: useSeed ? MOCK_LOCAIS.length : 0,
   relatorio_cargos: [...DEFAULT_RELATORIO_CARGOS],
-  zonas_config: useSeed
-    ? [
-        { zona: "001", secoes: 3 },
-        { zona: "002", secoes: 2 },
-        { zona: "003", secoes: 2 },
-        { zona: "004", secoes: 2 },
-        { zona: "005", secoes: 1 },
-      ]
-    : [],
+  zonas_config: useSeed ? SANTO_ANDRE_ZONAS_FALLBACK.map((z) => ({ ...z })) : [],
   chefe_pin: DEFAULT_CHEFE_PIN,
   whatsapp_suporte: "",
   updated_at: new Date().toISOString(),

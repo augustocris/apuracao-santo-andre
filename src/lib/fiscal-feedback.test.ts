@@ -10,6 +10,7 @@ import {
   waitingSecondQrLabel,
   whatsappHref,
   whatsappLabel,
+  zonaForaFeedback,
 } from "./fiscal-feedback";
 
 describe("fiscal feedback copy", () => {
@@ -37,6 +38,13 @@ describe("fiscal feedback copy", () => {
       waitingSecondQrLabel("001", "0477"),
       "Falta o 2º QR · zona 001 seção 0477"
     );
+  });
+
+  it("zona fora da lista is not a camera error", () => {
+    const fb = zonaForaFeedback("247");
+    assert.equal(fb.kind, "zona");
+    assert.equal(fb.title, "Zona não é de Santo André");
+    assert.doesNotMatch(fb.title, /c[aâ]mera/i);
   });
 });
 

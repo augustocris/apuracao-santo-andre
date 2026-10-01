@@ -70,7 +70,7 @@ export function FiscalErrorCard({
   whatsapp?: string | null;
 }) {
   const tone =
-    error.kind === "duplicate"
+    error.kind === "duplicate" || error.kind === "zona"
       ? "border-amber-400 bg-amber-50 text-amber-950"
       : error.kind === "incomplete_qr"
         ? "border-teal-500 bg-teal-50 text-teal-950"
@@ -88,7 +88,9 @@ export function FiscalErrorCard({
           {error.debug}
         </p>
       ) : null}
-      {error.kind !== "duplicate" && error.kind !== "incomplete_qr" ? (
+      {error.kind !== "duplicate" &&
+      error.kind !== "incomplete_qr" &&
+      error.kind !== "zona" ? (
         <WhatsAppSupport number={whatsapp} className="mt-2" />
       ) : null}
     </div>

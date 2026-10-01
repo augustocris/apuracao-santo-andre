@@ -24,6 +24,7 @@ import {
   qrMismatchFeedback,
   SUCCESS_CLEAR_MS,
   waitingSecondQrLabel,
+  zonaForaFeedback,
   type FiscalFeedback,
 } from "@/lib/fiscal-feedback";
 import {
@@ -38,7 +39,8 @@ import {
   SAMPLE_TSE_QR_TEXT,
   sameQrPayload,
 } from "@/lib/parser/bu-qr";
-import type { ConfirmVoteRow, DiscoveredVote, ParsedBu } from "@/lib/types";
+import type { ConfirmVoteRow, DiscoveredVote, ParsedBu, ZonaConfigRow } from "@/lib/types";
+import { isZonaForaDaCidade } from "@/lib/zona-allowlist";
 
 const QR_SESSION_KEY = "apuracao-fiscal-qr-parts";
 
@@ -72,6 +74,7 @@ export function FiscalApp() {
     null
   );
   const [whatsapp, setWhatsapp] = useState<string>("");
+  const [zonasConfig, setZonasConfig] = useState<ZonaConfigRow[]>([]);
   const [parsed, setParsed] = useState<ParsedBu | null>(null);
   const [rows, setRows] = useState<ConfirmVoteRow[]>([]);
   const [discovered, setDiscovered] = useState<DiscoveredVote[]>([]);
@@ -81,21 +84,37 @@ export function FiscalApp() {
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const fragmentsRef = useRef<ParsedBu[]>([]);
   fragmentsRef.current = fragments;
+  const zonasConfigRef = useRef<ZonaConfigRow[]>([]);
+  zonasConfigRef.current = zonasConfig;
 
   useEffect(() => {
     void (async () => {
       try {
         const cfg = await getConfig();
         setWhatsapp(cfg.whatsapp_suporte ?? "");
+        setZonasConfig(cfg.zonas_config ?? []);
+        zonasConfigRef.current = cfg.zonas_config ?? [];
+        const saved = readQrSession();
+        if (saved.length > 0) {
+          const zona = saved.find((p) => p.zona)?.zona;
+          if (zona && isZonaForaDaCidade(zona, cfg.zonas_config)) {
+            fragmentsRef.current = [];
+            writeQrSession([]);
+            setFragments([]);
+          } else {
+            fragmentsRef.current = saved;
+            setFragments(saved);
+          }
+        }
       } catch {
         setWhatsapp("");
+        const saved = readQrSession();
+        if (saved.length > 0) {
+          fragmentsRef.current = saved;
+          setFragments(saved);
+        }
       }
     })();
-    const saved = readQrSession();
-    if (saved.length > 0) {
-      fragmentsRef.current = saved;
-      setFragments(saved);
-    }
   }, []);
 
   useEffect(() => {
@@ -146,6 +165,12 @@ export function FiscalApp() {
     try {
       const zona = padZona(merged.zona);
       const secao = padSecao(merged.secao);
+
+      if (isZonaForaDaCidade(zona, zonasConfigRef.current)) {
+        setFeedback(zonaForaFeedback(zona));
+        setConfirmOpen(false);
+        return;
+      }
 
       if (await urnaJaCadastrada(zona, secao)) {
         setFeedback(duplicateFeedback(zona, secao));
@@ -214,6 +239,15 @@ export function FiscalApp() {
           return;
         }
         const result = parseFiscalQrChunk(raw, previous);
+
+        if (isZonaForaDaCidade(result.zona, zonasConfigRef.current)) {
+          setFeedback(zonaForaFeedback(padZona(result.zona)));
+          fragmentsRef.current = [];
+          writeQrSession([]);
+          setFragments([]);
+          setScanNonce((n) => n + 1);
+          return;
+        }
 
         if (previous.length === 0 && (await urnaJaCadastrada(result.zona, result.secao))) {
           setFeedback(duplicateFeedback(result.zona, result.secao));

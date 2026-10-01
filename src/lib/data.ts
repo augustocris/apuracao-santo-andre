@@ -18,6 +18,7 @@ import {
   upsertMockLocais,
 } from "@/lib/mock-store";
 import { duplicateUrnaMessage } from "@/lib/fiscal-feedback";
+import { ZONA_FORA_DA_CIDADE, isZonaAllowed } from "@/lib/zona-allowlist";
 import {
   CARGO_INDEFINIDO,
   CARGOS_OFICIAIS,
@@ -806,6 +807,13 @@ export async function urnaJaCadastrada(
   return (data?.length ?? 0) > 0;
 }
 
+export async function assertZonaPermitida(zona: string): Promise<void> {
+  const cfg = await getConfig();
+  if (!isZonaAllowed(zona, cfg.zonas_config)) {
+    throw new Error(ZONA_FORA_DA_CIDADE);
+  }
+}
+
 export async function resolveConfirmRows(
   votes: Array<{ numero: string; quantidade: number; cargo?: string }>
 ): Promise<{ rows: ConfirmVoteRow[]; unknown: string[] }> {
@@ -939,6 +947,8 @@ async function ingestBuCompletoClient(
     throw new Error("Supabase indisponível.");
   }
 
+  await assertZonaPermitida(zona);
+
   if (await urnaJaCadastrada(zona, secao)) {
     return {
       ok: false,
@@ -1030,6 +1040,7 @@ export async function transmitBuCompleto(
   if (votes.length === 0) {
     throw new Error("Nenhum voto para gravar.");
   }
+  await assertZonaPermitida(zona);
 
   const supabase = getSupabase();
   if (!supabase) {
@@ -1143,6 +1154,7 @@ export async function transmitVotes(
 ): Promise<{ ok: true } | { ok: false; duplicate: true; message: string }> {
   const zona = padZona(payload.zona);
   const secao = padSecao(payload.secao);
+  await assertZonaPermitida(zona);
   const supabase = getSupabase();
 
   if (!supabase) {

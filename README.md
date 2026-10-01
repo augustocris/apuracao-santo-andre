@@ -92,7 +92,7 @@ PIN leve (`andre2026` por padrão, ou Cadastro → PIN do chefe). Ranking comple
 3. BUs `1 de 2` não gravam votos até o último QR. Enquanto falta o QR 2, só uma linha: **Falta o 2º QR · zona … seção …**.
 4. Confirmação: **Confirme a zona = …, seção = …**, votos de **um** candidato oficial da campanha que apareceu neste BU (se nenhum dos 5, um candidato parseado). Botão **Enviar**. Opcional: **Filmar de novo**. Sem edição de votos.
 5. Depois da confirmação do servidor: **Zona … seção … enviada com sucesso. Vá para a próxima.** A tela volta sozinha ao idle em ~4 s.
-6. Duplicata `(zona, seção)` = **já enviada**. Parser recusou → texto bruto vai para `/admin` → **BUs pendentes**.
+6. Duplicata `(zona, seção)` = **já enviada**. Zona fora de `zonas_config` = **Zona não é de Santo André** (não é erro de câmera; não grava). Parser recusou → texto bruto vai para `/admin` → **BUs pendentes**.
 7. **Deu erro? Foto no WhatsApp** tira foto do BU (`capture=environment`) e abre o compartilhar do sistema com o arquivo (`navigator.share({ files, text })`) para mandar à central. Não tenta ler QR nessa foto. Sem Web Share: Compartilhar / Baixar + `wa.me`.
 8. Digitação fica em `/admin` → **Digitar BU**, atrás do PIN do chefe.
 
@@ -112,7 +112,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV:
 1. Push to `main` — Vercel auto-deploys if the project is connected.
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
-4. Run SQL migrations `001` … `009` on Supabase. **009 é obrigatória para a fila de erro e o WhatsApp do fiscal.** A Vercel não executa SQL.
+4. Run SQL migrations `001` … `010` on Supabase. **010 é a allowlist das 6 zonas** (`ingest_bu_completo` recusa zona fora; seed só se `zonas_config` estiver vazio). **009** é WhatsApp + fila de erro. A Vercel não executa SQL.
 5. Point fiscales to `/fiscal`, telão to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`). Favoritos no ranking do chefe exigem a 007.
 
 ## Stack
@@ -132,7 +132,7 @@ src/lib/cargos.ts              Digit rules per cargo
 src/lib/parser/bu-qr.ts        BU QR + BU impresso (OCR colado)
 src/lib/parser/fixtures/       Dump TSE SIMULADO (ground-truth)
 src/lib/data.ts                Supabase + mock data layer
-supabase/migrations/           001–009 (009 = WhatsApp + bus_pendentes)
+supabase/migrations/           001–010 (010 = allowlist zonas Santo André)
 supabase/seed-chapada-exemplo.csv
 supabase/seed-consulta-cand-exemplo.csv
 ```

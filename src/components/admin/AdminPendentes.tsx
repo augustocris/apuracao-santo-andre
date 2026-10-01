@@ -12,6 +12,7 @@ import {
   transmitBuCompleto,
   updateBuPendenteErro,
   urnaJaCadastrada,
+  assertZonaPermitida,
 } from "@/lib/data";
 import { duplicateUrnaMessage } from "@/lib/fiscal-feedback";
 import { pickConfirmPreview } from "@/lib/fiscal-confirm";
@@ -64,6 +65,7 @@ export function AdminPendentes() {
     try {
       const parsed = parseBuQrText(item.raw_text);
       const merged = assertQrSetReadyToIngest([parsed]);
+      await assertZonaPermitida(merged.zona);
 
       if (await urnaJaCadastrada(merged.zona, merged.secao)) {
         await updateBuPendenteErro(

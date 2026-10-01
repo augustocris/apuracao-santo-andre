@@ -5,7 +5,11 @@ import {
   filterChefeRankingRows,
 } from "./chefe-ranking";
 import { percentualNoCargo } from "./utils";
-import { setCandidatoFavorito, transmitBuCompleto } from "./data";
+import {
+  buildDashboardSnapshot,
+  setCandidatoFavorito,
+  transmitBuCompleto,
+} from "./data";
 import {
   getMockBoletins,
   getMockCandidatos,
@@ -272,6 +276,90 @@ describe("chefeMiniaturaFallback", () => {
     assert.equal(chefeMiniaturaFallback("Keila Giselle", "1001"), "KG");
     assert.equal(chefeMiniaturaFallback("Candidato 17", "17"), "17");
     assert.equal(chefeMiniaturaFallback("Candidato 99999", "99999"), "9999");
+  });
+});
+
+describe("chefe ranking from boletins ⋈ candidatos", () => {
+  it("Todos lists anyone with votes even when cargo is a TSE label", () => {
+    const candidatos = [
+      {
+        id: "cat-1",
+        numero: "1001",
+        nome: "Keila",
+        cargo: "DEPUTADO FEDERAL",
+        foto_url: null,
+        origem: "catalogo" as const,
+        favorito: false,
+      },
+      {
+        id: "bu-13",
+        numero: "13",
+        nome: "Maria Silva",
+        cargo: "Governador",
+        foto_url: null,
+        origem: "cadastro" as const,
+        favorito: false,
+      },
+      {
+        id: "zero",
+        numero: "9999",
+        nome: "Sem voto",
+        cargo: "Deputado Federal",
+        foto_url: null,
+        origem: "catalogo" as const,
+        favorito: false,
+      },
+    ];
+    const snap = buildDashboardSnapshot(
+      [],
+      candidatos,
+      [
+        {
+          id: "b1",
+          zona: "001",
+          secao: "0001",
+          candidato_id: "cat-1",
+          quantidade_votos: 22,
+          fiscal_nome: null,
+          created_at: "2026-10-01T00:00:00Z",
+        },
+        {
+          id: "b2",
+          zona: "001",
+          secao: "0001",
+          candidato_id: "bu-13",
+          quantidade_votos: 40,
+          fiscal_nome: null,
+          created_at: "2026-10-01T00:00:00Z",
+        },
+      ],
+      {
+        id: 1,
+        secoes_esperadas: 1744,
+        relatorio_cargos: ["todos"],
+        zonas_config: [],
+        updated_at: "2026-10-01T00:00:00Z",
+      },
+      "mock",
+      "todos"
+    );
+
+    const rows = filterChefeRankingRows(snap.rankingGeralByCargo, {
+      cargoFilter: "todos",
+      sort: "votos",
+      query: "",
+      favoritoFilter: "todos",
+    });
+    assert.ok(rows.some((r) => r.candidato.id === "cat-1" && r.votos === 22));
+    assert.ok(rows.some((r) => r.candidato.id === "bu-13" && r.votos === 40));
+    assert.equal(
+      rows.find((r) => r.candidato.id === "cat-1")?.cargo,
+      "Deputado Federal"
+    );
+    assert.equal(
+      rows.some((r) => r.candidato.id === "zero"),
+      false
+    );
   });
 });
 

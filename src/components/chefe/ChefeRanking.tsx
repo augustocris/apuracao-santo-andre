@@ -140,9 +140,10 @@ export function ChefeRanking() {
     [snapshot.rankingGeralByCargo, cargoFilter, sort, query, favoritoFilter]
   );
 
-  const indefinidos = snapshot.rankingGeralByCargo.find(
-    (g) => g.cargo === CARGO_INDEFINIDO
-  )?.rankings.length ?? 0;
+  const indefinidos =
+    snapshot.rankingGeralByCargo
+      .find((g) => g.cargo === CARGO_INDEFINIDO)
+      ?.rankings.filter((r) => r.votos > 0).length ?? 0;
 
   function handleUnlock(e: FormEvent) {
     e.preventDefault();

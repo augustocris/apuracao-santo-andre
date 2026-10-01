@@ -121,6 +121,11 @@ export interface ParseBuOptions {
    * Caller must inherit from part 1. Single-QR still requires both.
    */
   allowMissingZonaSecao?: boolean;
+  /**
+   * TSE part 2 (SEQL:02/02 / ORQR:2) may have no isolatable vote pairs.
+   * Votes are recovered from the concatenated set — never require them here.
+   */
+  allowEmptyVotes?: boolean;
 }
 
 export function normalizeCandidateNumero(value: string): string {
@@ -242,7 +247,7 @@ function collectCandQtvo(text: string, map: Map<string, VoteAcc>) {
 
 /** Parse TSE `chave:valor` tokens; numeric keys are candidate votes. */
 function collectTseNumericPairs(text: string, map: Map<string, VoteAcc>) {
-  const tokens = text.split(/\s+/);
+  const tokens = text.split(/[\s;|]+/);
   let currentCargo: string | undefined;
 
   for (const token of tokens) {
@@ -267,6 +272,21 @@ function collectTseNumericPairs(text: string, map: Map<string, VoteAcc>) {
     const m = cleaned.match(TSE_TOKEN_RE);
     if (!m) continue;
     setVote(map, m[1], m[2], { cargo: currentCargo });
+  }
+}
+
+/**
+ * Denser TSE part 2: pairs glued to the next field (`45455:11HASH:…`)
+ * or packed without spaces. Never treat `QRBU:1:2` as a vote.
+ */
+function collectGluedNumericPairs(text: string, map: Map<string, VoteAcc>) {
+  const re = /(?:^|[\s;|])(\d{1,5}):(\d+)(?=[\s;|]|$|[A-Za-z])/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const numero = normalizeCandidateNumero(match[1]);
+    if (!numero) continue;
+    if (Array.from(map.values()).some((acc) => acc.numero === numero)) continue;
+    setVote(map, match[1], match[2]);
   }
 }
 
@@ -399,6 +419,7 @@ function collectVotes(
 
   collectCandQtvo(text, map);
   collectTseNumericPairs(text, map);
+  collectGluedNumericPairs(text, map);
   collectLineBasedPairs(text, map);
 
   if (registeredNumeros && registeredNumeros.length > 0) {
@@ -412,6 +433,27 @@ function collectVotes(
   }
 
   return finalizeVotes(map);
+}
+
+/** Votes from raw QR text (after decode/normalize). Used on concatenated parts. */
+export function extractBuVotes(
+  raw: string,
+  registeredNumeros?: string[]
+): ParsedCandidateVote[] {
+  if (!raw) return [];
+  const text = normalizePrintedBuText(decodeBuPayloadStrategies(String(raw)));
+  return collectVotes(text, registeredNumeros);
+}
+
+/** Same urna QR filmed twice — ignore leftover html5-qrcode success. */
+export function sameQrPayload(a: string, b: string): boolean {
+  const fold = (value: string) =>
+    normalizePrintedBuText(decodeBuPayloadStrategies(String(value)))
+      .replace(/\s+/g, " ")
+      .trim();
+  const left = fold(a);
+  const right = fold(b);
+  return left.length > 0 && left === right;
 }
 
 /** True when decoded payload looks binary / non-text. */
@@ -489,6 +531,16 @@ export class BuParseError extends Error {
   }
 }
 
+/** Leftover camera frame / same QR 1 filmed again while waiting for QR 2. */
+export class SameQrRepeatError extends BuParseError {
+  constructor() {
+    super(
+      "Este é o mesmo QR de antes. Aponte a câmera para o outro código desta urna."
+    );
+    this.name = "SameQrRepeatError";
+  }
+}
+
 export function parseComparecimento(text: string): number | null {
   const m = String(text).match(/\bCOMP\s*:\s*(\d+)/i);
   if (!m) return null;
@@ -548,7 +600,13 @@ export function assertQrSetReadyToIngest(parts: ParsedBu[]): ParsedBu {
       `QR ${index} de ${total} — filme o próximo QR desta urna. Não envie ainda.`
     );
   }
-  return mergeParsedBus(parts);
+  const merged = mergeParsedBus(parts);
+  if (merged.votes.length === 0) {
+    throw new BuParseError(
+      "Nenhum voto de candidato encontrado no QR. Formatos aceitos: 4545:11 (TSE), CAND:4545 QTVO:11, CANDIDATO:4545 VOTOS:11, ou linhas Nome 4545 0011."
+    );
+  }
+  return merged;
 }
 
 export function parseUrnaFingerprint(text: string): {
@@ -660,17 +718,26 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
     }
   }
 
+  const concatPlain = parts.map((p) => p.rawText).join("");
+  const concatNl = parts.map((p) => p.rawText).join("\n");
+  const fromPlain = extractBuVotes(concatPlain);
+  const fromNl = extractBuVotes(concatNl);
+  const combinedVotes =
+    fromPlain.length >= fromNl.length ? fromPlain : fromNl;
+
   const map = new Map<string, ParsedCandidateVote>();
-  for (const part of parts) {
-    for (const vote of part.votes) {
-      const cargo = resolveVoteCargo(vote.numero, vote.cargo);
-      const numero = normalizeCandidateNumero(vote.numero);
-      map.set(`${cargo}::${numero}`, {
-        ...vote,
-        numero,
-        cargo,
-      });
-    }
+  const voteSource =
+    combinedVotes.length > 0
+      ? combinedVotes
+      : parts.flatMap((part) => part.votes);
+  for (const vote of voteSource) {
+    const cargo = resolveVoteCargo(vote.numero, vote.cargo);
+    const numero = normalizeCandidateNumero(vote.numero);
+    map.set(`${cargo}::${numero}`, {
+      ...vote,
+      numero,
+      cargo,
+    });
   }
 
   const qrTotal = parts.reduce(
@@ -789,8 +856,12 @@ export function parseBuQrText(
 
   const qrbu = qrbuEarly;
   const incomplete = qrbu != null && qrbu.index < qrbu.total;
+  const allowEmpty =
+    incomplete ||
+    options.allowEmptyVotes === true ||
+    isContinuationSequence(qrbu);
 
-  if (votes.length === 0 && !incomplete) {
+  if (votes.length === 0 && !allowEmpty) {
     throw new BuParseError(
       "Nenhum voto de candidato encontrado no QR. Formatos aceitos: 4545:11 (TSE), CAND:4545 QTVO:11, CANDIDATO:4545 VOTOS:11, ou linhas Nome 4545 0011."
     );
@@ -817,9 +888,19 @@ export function parseBuQrText(
 export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): ParsedBu {
   const awaitingMore =
     previousParts.length > 0 && !isQrSetComplete(previousParts);
+
+  if (awaitingMore) {
+    const repeat = previousParts.find((part) => sameQrPayload(part.rawText, raw));
+    if (repeat) {
+      throw new SameQrRepeatError();
+    }
+  }
+
   const meta = parseQrbuMeta(decodeBuPayloadStrategies(raw));
+  const continuation = awaitingMore || isContinuationSequence(meta);
   const parsed = parseBuQrText(raw, {
-    allowMissingZonaSecao: awaitingMore || isContinuationSequence(meta),
+    allowMissingZonaSecao: continuation,
+    allowEmptyVotes: continuation,
   });
 
   if (awaitingMore) {

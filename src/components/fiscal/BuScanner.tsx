@@ -15,6 +15,7 @@ import {
   useBarcodeDetector,
   watchAndHardenLiveVideo,
 } from "@/lib/ios-camera";
+import { sameQrPayload } from "@/lib/parser/bu-qr";
 
 interface BuScannerProps {
   onScan: (text: string) => void;
@@ -22,6 +23,8 @@ interface BuScannerProps {
   /** Increment to allow another decode after the previous one. */
   resetKey?: number;
   nextQr?: boolean;
+  /** Exact payloads already accepted (QR 1). Leftover frames must not fire again. */
+  ignoreExactPayloads?: string[];
   whatsapp?: string | null;
   onCameraError?: (error: FiscalFeedback) => void;
 }
@@ -74,6 +77,68 @@ function waitForReaderLayout(): Promise<void> {
   });
 }
 
+function stopVideoTracks(root: HTMLElement | null) {
+  if (!root) return;
+  root.querySelectorAll("video").forEach((video) => {
+    const stream = video.srcObject;
+    if (stream instanceof MediaStream) {
+      stream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          /* ignore */
+        }
+      });
+    }
+    video.srcObject = null;
+    try {
+      video.pause();
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+function waitForLiveVideo(root: HTMLElement | null, timeoutMs = 2500): Promise<void> {
+  if (!root) return Promise.resolve();
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      const video = root.querySelector("video");
+      const stream = video?.srcObject;
+      const tracksLive =
+        stream instanceof MediaStream &&
+        stream.getVideoTracks().some((t) => t.readyState === "live");
+      const playing =
+        !!video &&
+        video.readyState >= 2 &&
+        video.videoWidth > 0 &&
+        !video.paused &&
+        tracksLive;
+      if (playing || Date.now() - started > timeoutMs) {
+        resolve();
+        return;
+      }
+      if (typeof requestAnimationFrame === "undefined") {
+        setTimeout(tick, 50);
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+function clearScannerDecodedCache(scanner: Html5Qrcode | null) {
+  if (!scanner) return;
+  const loose = scanner as unknown as {
+    lastMatchFound?: string;
+    lastDecodedText?: string;
+  };
+  loose.lastMatchFound = undefined;
+  loose.lastDecodedText = undefined;
+}
+
 const FOCUS_CONSTRAINTS = {
   advanced: [{ focusMode: "continuous" }],
 } as unknown as MediaTrackConstraints;
@@ -83,6 +148,7 @@ export function BuScanner({
   busy,
   resetKey = 0,
   nextQr = false,
+  ignoreExactPayloads = [],
   whatsapp,
   onCameraError,
 }: BuScannerProps) {
@@ -91,6 +157,10 @@ export function BuScanner({
   const [uploading, setUploading] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handledRef = useRef(false);
+  const sessionLiveRef = useRef(false);
+  const ignoreUntilRef = useRef(0);
+  const ignorePayloadsRef = useRef<string[]>([]);
+  ignorePayloadsRef.current = ignoreExactPayloads;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const unwatchVideoRef = useRef<(() => void) | null>(null);
   const appleTouch = currentAppleTouchDevice();
@@ -107,10 +177,15 @@ export function BuScanner({
   }, [resetKey]);
 
   async function stopScanner() {
+    sessionLiveRef.current = false;
+    ignoreUntilRef.current = 0;
     unwatchVideoRef.current?.();
     unwatchVideoRef.current = null;
+    const root = document.getElementById("bu-qr-reader");
+    stopVideoTracks(root);
     const scanner = scannerRef.current;
     scannerRef.current = null;
+    clearScannerDecodedCache(scanner);
     if (scanner?.isScanning) {
       try {
         await scanner.stop();
@@ -123,12 +198,21 @@ export function BuScanner({
     } catch {
       /* ignore */
     }
+    clearScannerDecodedCache(scanner);
+    stopVideoTracks(root);
+    if (root) root.innerHTML = "";
     setActive(false);
   }
 
   function deliverScan(text: string) {
     if (handledRef.current || busy) return;
+    if (!sessionLiveRef.current) return;
+    if (Date.now() < ignoreUntilRef.current) return;
+    if (ignorePayloadsRef.current.some((prev) => sameQrPayload(prev, text))) {
+      return;
+    }
     handledRef.current = true;
+    sessionLiveRef.current = false;
     void stopScanner();
     onScan(text);
   }
@@ -171,6 +255,7 @@ export function BuScanner({
   async function startScanner() {
     setError(null);
     handledRef.current = false;
+    sessionLiveRef.current = false;
 
     if (typeof window !== "undefined" && !window.isSecureContext) {
       showCameraError(mapCameraError(new Error("Only secure origins are allowed"), appleTouch));
@@ -184,6 +269,7 @@ export function BuScanner({
 
       const scanner = scannerFactory("bu-qr-reader");
       scannerRef.current = scanner;
+      clearScannerDecodedCache(scanner);
       unwatchVideoRef.current?.();
       unwatchVideoRef.current = watchAndHardenLiveVideo(
         document.getElementById("bu-qr-reader")
@@ -214,8 +300,15 @@ export function BuScanner({
       } catch {
         /* focus not supported — ok, especially on iOS */
       }
-      hardenLiveVideo(document.getElementById("bu-qr-reader"));
+      const root = document.getElementById("bu-qr-reader");
+      hardenLiveVideo(root);
+      await waitForLiveVideo(root);
+      hardenLiveVideo(root);
+      clearScannerDecodedCache(scanner);
+      ignoreUntilRef.current = Date.now() + (nextQr ? 700 : 350);
+      sessionLiveRef.current = true;
     } catch (err) {
+      sessionLiveRef.current = false;
       setActive(false);
       showCameraError(mapCameraError(err, appleTouch));
     }

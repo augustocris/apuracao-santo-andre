@@ -111,7 +111,7 @@ function matchesChefeQuery(row: ChefeRankingFlatRow, query: string): boolean {
 
 function origemFillRank(row: ChefeRankingFlatRow): number {
   const origem = row.candidato.origem;
-  if (origem == null || origem === "" || origem === "cadastro") return 0;
+  if (origem == null || origem === "cadastro") return 0;
   if (origem === "catalogo") return 1;
   return 2;
 }

@@ -262,7 +262,7 @@ describe("ingest keeps catalog nome", () => {
       },
     ]);
     const result = await transmitBuCompleto({
-      zona: "077",
+      zona: "383",
       secao: "0088",
       rawText: "TEST-CATALOGO",
       votes: [

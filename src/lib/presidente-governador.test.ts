@@ -103,7 +103,7 @@ describe("Presidente 10 ≠ Governador 10 (Tarcísio)", () => {
     const parsed = parseBuQrText(PRES_ONLY_PRINTED);
     const resolved = await resolveBuVotes(parsed.votes);
     const result = await transmitBuCompleto({
-      zona: parsed.zona,
+      zona: "383",
       secao: "0806",
       rawText: parsed.rawText,
       votes: [

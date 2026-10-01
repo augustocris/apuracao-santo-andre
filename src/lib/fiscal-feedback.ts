@@ -1,5 +1,8 @@
+import { ZONA_FORA_DA_CIDADE } from "@/lib/zona-allowlist";
+
 export type FiscalErrorKind =
   | "duplicate"
+  | "zona"
   | "incomplete_qr"
   | "parse"
   | "network"
@@ -85,6 +88,18 @@ export function duplicateFeedback(zona: string, secao: string): FiscalFeedback {
   };
 }
 
+export function zonaForaFeedback(zona?: string): FiscalFeedback {
+  const z = zona?.trim();
+  return {
+    kind: "zona",
+    title: ZONA_FORA_DA_CIDADE,
+    cause: "",
+    nextStep: z
+      ? `Zona ${z} não entra. Filme uma urna de Santo André.`
+      : "Filme uma urna de Santo André.",
+  };
+}
+
 export function parseFeedback(cause: string, debug?: string): FiscalFeedback {
   return {
     kind: "parse",
@@ -137,6 +152,9 @@ export function feedbackFromError(
   opts?: { zona?: string; secao?: string }
 ): FiscalFeedback {
   const message = err instanceof Error ? err.message : String(err ?? "Falha desconhecida.");
+  if (/não é de Santo André/i.test(message)) {
+    return zonaForaFeedback(opts?.zona);
+  }
   if (/já enviada/i.test(message) && opts?.zona && opts?.secao) {
     return duplicateFeedback(opts.zona, opts.secao);
   }

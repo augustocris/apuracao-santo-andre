@@ -368,7 +368,7 @@ describe("multi-QR merge then single ingest", () => {
     const a = parseBuQrText(SAMPLE_TSE_QR_PART1);
     const b = parseBuQrText(SAMPLE_TSE_QR_PART2);
     const merged = mergeParsedBus([a, b]);
-    const zona = merged.zona;
+    const zona = "383";
     const secao = "0777";
     const result = await transmitBuCompleto({
       zona,

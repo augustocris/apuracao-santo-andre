@@ -10,6 +10,7 @@ import {
   resolveConfirmRows,
   transmitVotes,
   urnaJaCadastrada,
+  assertZonaPermitida,
 } from "@/lib/data";
 import { pickConfirmPreview } from "@/lib/fiscal-confirm";
 import { duplicateFeedback, fiscalSuccessMessage } from "@/lib/fiscal-feedback";
@@ -34,6 +35,7 @@ export function AdminDigitarBu() {
     try {
       const z = padZona(payload.zona);
       const s = padSecao(payload.secao);
+      await assertZonaPermitida(z);
       if (await urnaJaCadastrada(z, s)) {
         setError(duplicateFeedback(z, s).nextStep);
         return;

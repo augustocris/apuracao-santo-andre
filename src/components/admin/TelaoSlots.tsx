@@ -161,7 +161,7 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
               "rounded-lg border border-[#FFDE00]/55 bg-[#001530]/92 px-2 py-1.5 text-center shadow-[0_0_28px_rgba(255,222,0,0.35)] backdrop-blur-md md:rounded-xl md:px-3 md:py-2.5"
             )}
           >
-            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-[#FFDE00] md:text-xs">
+            <p className="line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#FFDE00] md:text-xs">
               {celebration!.candidateName}
             </p>
             <p className="mt-0.5 text-xs font-bold leading-snug text-white md:mt-1 md:text-base">
@@ -171,176 +171,169 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
         </>
       ) : null}
 
-      {/* Content column (left) + photo column (right) */}
       <div
         className={cn(
-          "relative z-10 flex min-h-0 min-w-0 flex-1 items-stretch",
+          "relative z-10 flex min-h-0 min-w-0 flex-1 flex-col justify-center",
           size === "tall"
-            ? "gap-2 p-2 md:gap-4 md:p-5"
-            : "gap-2 p-1.5 md:gap-2.5 md:p-4"
+            ? "gap-1 p-2 md:gap-2 md:p-4"
+            : "gap-0.5 p-1.5 md:gap-1.5 md:p-3"
         )}
       >
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center">
-          <p
+        <p
+          className={cn(
+            "font-semibold uppercase tracking-[0.14em] text-[#00ADEF]",
+            size === "tall"
+              ? "text-[10px] md:text-sm"
+              : "text-[9px] md:text-xs",
+            celebrating && "opacity-40"
+          )}
+        >
+          {slot.label}
+        </p>
+
+        {empty ? (
+          <div className="mt-1 flex flex-1 flex-col items-center justify-center gap-1 text-white/40 md:mt-3 md:gap-2">
+            <UserRound
+              className={
+                size === "tall" ? "size-6 md:size-10" : "size-5 md:size-7"
+              }
+            />
+            <p className="text-[11px] md:text-sm">Sem candidato cadastrado</p>
+          </div>
+        ) : (
+          <div
             className={cn(
-              "font-semibold uppercase tracking-[0.14em] text-[#00ADEF]",
-              size === "tall"
-                ? "text-[10px] md:text-sm"
-                : "text-[9px] md:text-xs",
-              celebrating && "opacity-40"
+              "mt-0.5 flex min-h-0 flex-1 flex-col justify-between gap-1 md:mt-1 md:gap-2",
+              celebrating && "pt-10 md:pt-14"
             )}
           >
-            {slot.label}
-          </p>
-
-          {empty ? (
-            <div className="mt-1 flex flex-1 flex-col items-center justify-center gap-1 text-white/40 md:mt-3 md:gap-2">
-              <UserRound
-                className={
-                  size === "tall" ? "size-6 md:size-10" : "size-5 md:size-7"
-                }
-              />
-              <p className="text-[11px] md:text-sm">Sem candidato cadastrado</p>
+            <div className="min-w-0">
+              <p
+                className={cn(
+                  "line-clamp-2 break-words font-bold leading-tight text-white",
+                  size === "tall"
+                    ? "text-sm md:text-2xl lg:text-3xl"
+                    : "text-sm md:text-lg lg:text-xl"
+                )}
+              >
+                {slot.row!.candidato.nome}
+              </p>
+              <p
+                className={cn(
+                  "mt-0 tabular-nums text-white/55 md:mt-0.5",
+                  size === "tall"
+                    ? "text-[11px] md:text-base"
+                    : "text-[10px] md:text-sm"
+                )}
+              >
+                Nº {slot.row!.candidato.numero}
+              </p>
             </div>
-          ) : (
-            <div
-              className={cn(
-                "mt-0.5 flex min-h-0 flex-1 flex-col justify-between gap-1 md:mt-2 md:gap-2",
-                celebrating && "pt-10 md:pt-14"
-              )}
-            >
-              <div className="min-w-0">
-                <p
-                  className={cn(
-                    "truncate font-bold leading-tight text-white",
-                    size === "tall"
-                      ? "text-base md:text-3xl lg:text-4xl"
-                      : "text-sm md:text-xl lg:text-2xl"
-                  )}
-                >
-                  {slot.row!.candidato.nome}
-                </p>
-                <p
-                  className={cn(
-                    "mt-0 tabular-nums text-white/55 md:mt-0.5",
-                    size === "tall"
-                      ? "text-[11px] md:text-base"
-                      : "text-[10px] md:text-sm"
-                  )}
-                >
-                  Nº {slot.row!.candidato.numero}
-                </p>
-              </div>
 
-              <div className="mt-auto">
-                <div className="flex items-end justify-between gap-1.5">
-                  <p
+            <div className="mt-auto">
+              <div className="flex items-end justify-between gap-1.5">
+                <p
+                  className={cn(
+                    "font-bold tabular-nums leading-none text-[#FFDE00]",
+                    size === "tall"
+                      ? "text-xl md:text-4xl lg:text-5xl"
+                      : "text-lg md:text-3xl"
+                  )}
+                >
+                  {formatVotes(votos)}
+                  <span
                     className={cn(
-                      "font-bold tabular-nums leading-none text-[#FFDE00]",
+                      "ml-1 font-medium text-white/55",
                       size === "tall"
-                        ? "text-xl md:text-4xl lg:text-5xl"
-                        : "text-lg md:text-3xl"
+                        ? "text-[11px] md:text-lg"
+                        : "text-[10px] md:text-sm"
                     )}
                   >
-                    {formatVotes(votos)}
-                    <span
-                      className={cn(
-                        "ml-1 font-medium text-white/55",
-                        size === "tall"
-                          ? "text-[11px] md:text-lg"
-                          : "text-[10px] md:text-sm"
-                      )}
-                    >
-                      votos
-                    </span>
+                    votos
+                  </span>
+                </p>
+                {showPctStrong && (
+                  <p
+                    className={cn(
+                      "shrink-0 font-bold tabular-nums leading-none text-[#00ADEF]",
+                      size === "tall"
+                        ? "text-base md:text-3xl"
+                        : "text-sm md:text-2xl"
+                    )}
+                  >
+                    {formatPercent(pct)}
                   </p>
-                  {showPctStrong && (
-                    <p
-                      className={cn(
-                        "shrink-0 font-bold tabular-nums leading-none text-[#00ADEF]",
-                        size === "tall"
-                          ? "text-base md:text-3xl"
-                          : "text-sm md:text-2xl"
-                      )}
-                    >
-                      {formatPercent(pct)}
-                    </p>
-                  )}
-                  {singleInCargo && !empty && (
-                    <p
-                      className={cn(
-                        "shrink-0 tabular-nums text-white/40",
-                        size === "tall"
-                          ? "text-[11px] md:text-base"
-                          : "text-[10px] md:text-xs"
-                      )}
-                    >
-                      {formatPercent(pct)}
-                    </p>
-                  )}
-                </div>
+                )}
+                {singleInCargo && !empty && (
+                  <p
+                    className={cn(
+                      "shrink-0 tabular-nums text-white/40",
+                      size === "tall"
+                        ? "text-[11px] md:text-base"
+                        : "text-[10px] md:text-xs"
+                    )}
+                  >
+                    {formatPercent(pct)}
+                  </p>
+                )}
+              </div>
+              <div
+                className={cn(
+                  "mt-1 overflow-hidden rounded-full bg-[#001a3a] md:mt-2",
+                  size === "tall" ? "h-1.5 md:h-2.5" : "h-1 md:h-1.5"
+                )}
+              >
                 <div
-                  className={cn(
-                    "mt-1 overflow-hidden rounded-full bg-[#001a3a] md:mt-2",
-                    size === "tall" ? "h-1.5 md:h-2.5" : "h-1 md:h-1.5"
-                  )}
-                >
-                  <div
-                    className="h-full rounded-full bg-[#00ADEF] transition-all duration-700"
-                    style={{
-                      width: `${Math.max(votos > 0 ? pct : 0, votos > 0 ? 2 : 0)}%`,
-                    }}
-                  />
-                </div>
+                  className="h-full rounded-full bg-[#00ADEF] transition-all duration-700"
+                  style={{
+                    width: `${Math.max(votos > 0 ? pct : 0, votos > 0 ? 2 : 0)}%`,
+                  }}
+                />
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
 
-        {/*
-          Photo column: height = card content (self-stretch).
-          Width from aspect-ratio so thin cards get a smaller portrait/square
-          instead of a wide strip that only shows the top of the head.
-          Desktop/TV tall cards keep a wider % column for impact.
-        */}
-        <div
-          className={cn(
-            "relative shrink-0 self-stretch overflow-hidden rounded-lg md:rounded-xl",
-            size === "tall"
-              ? "aspect-[3/4] h-auto w-auto max-w-[36%] md:aspect-auto md:w-[32%] md:min-w-[7rem] md:max-w-[11rem]"
-              : "aspect-[4/5] h-auto w-auto max-w-[32%] sm:max-w-[5.5rem] md:max-w-[7.5rem]",
-            empty && "bg-[#001a3a]/50"
-          )}
-          aria-hidden={empty}
-        >
-          {empty ? (
-            <div className="flex h-full items-center justify-center text-white/25">
-              <UserRound
-                className={
-                  size === "tall" ? "size-7 md:size-12" : "size-5 md:size-8"
-                }
-              />
-            </div>
-          ) : fotoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={fotoUrl}
-              alt=""
-              className="h-full w-full object-cover object-[center_15%]"
+      {/*
+        Foto à direita: altura = card, largura proporcional (3:4).
+        object-contain evita esticar/cortar o rosto.
+      */}
+      <div
+        className={cn(
+          "relative h-full shrink-0 self-stretch overflow-hidden bg-[#001530]",
+          size === "tall"
+            ? "aspect-[3/4] w-auto max-w-[40%]"
+            : "aspect-[3/4] w-auto max-w-[36%]",
+          empty && "bg-[#001a3a]/50"
+        )}
+        aria-hidden={empty}
+      >
+        {empty ? (
+          <div className="flex h-full items-center justify-center text-white/25">
+            <UserRound
+              className={
+                size === "tall" ? "size-7 md:size-12" : "size-5 md:size-8"
+              }
             />
-          ) : (
-            <div
-              className={cn(
-                "flex h-full w-full items-center justify-center bg-gradient-to-b from-[#004a9e] to-[#002a5c] font-bold text-white",
-                size === "tall"
-                  ? "text-lg md:text-4xl"
-                  : "text-sm md:text-2xl"
-              )}
-            >
-              {slot.row!.candidato.numero}
-            </div>
-          )}
-        </div>
+          </div>
+        ) : fotoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={fotoUrl}
+            alt=""
+            className="h-full w-full object-contain object-top"
+          />
+        ) : (
+          <div
+            className={cn(
+              "flex h-full w-full items-center justify-center bg-gradient-to-b from-[#004a9e] to-[#002a5c] font-bold text-white",
+              size === "tall" ? "text-lg md:text-4xl" : "text-sm md:text-2xl"
+            )}
+          >
+            {slot.row!.candidato.numero}
+          </div>
+        )}
       </div>
     </article>
   );

@@ -133,6 +133,44 @@ describe("filterChefeRankingRows", () => {
     assert.equal(searchFav.length, 1);
     assert.equal(searchFav[0].candidato.cargo, "Presidente");
   });
+
+  it("shows origem=bu Indefinido with votes in Todos (simulação TSE)", () => {
+    const withIndef: CargoRanking[] = [
+      ...groups,
+      {
+        cargo: "Indefinido",
+        totalVotos: 40,
+        rankings: [
+          {
+            votos: 40,
+            percentual: 100,
+            candidato: {
+              id: "indef-bu",
+              numero: "13",
+              nome: "Candidato 13",
+              cargo: "Indefinido",
+              foto_url: null,
+              origem: "bu",
+              favorito: false,
+            },
+          },
+        ],
+      },
+    ];
+    const todos = filterChefeRankingRows(withIndef, {
+      cargoFilter: "todos",
+      sort: "votos",
+      query: "",
+      favoritoFilter: "todos",
+    });
+    const bu = todos.find((r) => r.candidato.id === "indef-bu");
+    assert.ok(bu);
+    assert.equal(bu.votos, 40);
+    assert.equal(bu.candidato.origem, "bu");
+    const presidente = todos.find((r) => r.candidato.cargo === "Presidente");
+    assert.ok(presidente);
+    assert.notEqual(presidente.candidato.cargo, "Indefinido");
+  });
 });
 
 describe("percentual no cargo", () => {

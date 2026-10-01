@@ -29,6 +29,7 @@ import {
 import {
   assertQrSetReadyToIngest,
   describeQrProgress,
+  inheritQrZonaSecao,
   isQrSetComplete,
   parseBuQrText,
   peekZonaSecao,
@@ -135,11 +136,15 @@ export function FiscalApp() {
       setSuccess(null);
       try {
         await new Promise((r) => setTimeout(r, 80));
-        const result = parseBuQrText(raw);
+        let result = parseBuQrText(raw, {
+          allowMissingZonaSecao: fragments.length > 0,
+        });
 
         if (fragments.length > 0) {
           const first = fragments[0];
-          if (result.zona !== first.zona || result.secao !== first.secao) {
+          if (!result.zona || !result.secao) {
+            result = inheritQrZonaSecao(result, first);
+          } else if (result.zona !== first.zona || result.secao !== first.secao) {
             setFeedback(
               parseFeedback(
                 `Este QR é de outra urna (zona ${result.zona} / seção ${result.secao}; a urna atual é zona ${first.zona} / seção ${first.secao}).`
@@ -148,6 +153,14 @@ export function FiscalApp() {
             setScanNonce((n) => n + 1);
             return;
           }
+        } else if (!result.zona || !result.secao) {
+          setFeedback(
+            parseFeedback(
+              "Zona ou seção ausente neste QR. Filme o QR que traz zona e seção."
+            )
+          );
+          setScanNonce((n) => n + 1);
+          return;
         } else if (await urnaJaCadastrada(result.zona, result.secao)) {
           setFeedback(duplicateFeedback(result.zona, result.secao));
           setScanNonce((n) => n + 1);

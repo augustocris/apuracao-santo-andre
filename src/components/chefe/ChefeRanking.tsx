@@ -356,11 +356,11 @@ export function ChefeRanking() {
         </label>
       </div>
 
-      {indefinidos > 0 && cargoFilter !== CARGO_INDEFINIDO && (
+      {indefinidos > 0 && cargoFilter === "todos" && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
           {indefinidos} candidato(s) com cargo indefinido (2 dígitos sem
-          PRESIDENTE/GOVERNADOR no BU). Não entram em “Todos” — filtre
-          Indefinido.
+          PRESIDENTE/GOVERNADOR no BU). Aparecem em “Todos” se tiverem voto —
+          não misturam Presidente e Governador.
         </p>
       )}
 

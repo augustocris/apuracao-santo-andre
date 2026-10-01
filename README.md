@@ -95,7 +95,7 @@ Para um segundo PIN: `/admin` → Cadastro → **Acessos chefe** → nome + PIN 
 
 ## Chefe (`/chefe`)
 
-PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe** lista / adiciona / exclui (nome + PIN). Saudação **Bom dia/boa tarde/boa noite, {nome}**. Desktop: 2 cards de Governador + 2 de Presidente (os dois com mais votos) e 3 colunas (Dep. Estadual, Dep. Federal, Senador). Mobile: o mesmo 2×2, listas empilhadas. Favoritos do PIN no topo de cada lista. Exige migration `011`. Não substitui o telão (`/telao`).
+PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe** lista / adiciona / exclui (nome + PIN). Header numa linha: **Chefe · Ranking geral · Bom dia/tarde/noite, {nome} · Sair** (Telão miúdo se couber). Barra compacta com **exatamente quatro** pins — Governador **Tarcísio (nº 10)** e **Fernando Haddad (nº 13)** (casa cargo+número, senão nome); Presidente **Lula** e **Flávio** (casa nome de urna LULA / FLAVIO/FLÁVIO; usa número+cargo se achar). Sem o resto desses cargos. Abaixo, 3 colunas já visíveis no desktop (Dep. Estadual, Dep. Federal, Senador) com busca fina em cada lista. Mobile: 2×2 apertado e listas empilhadas. Favoritos do PIN no topo de cada coluna. Exige migration `011`. Não substitui o telão (`/telao`).
 
 ## Fiscal flow (domingo)
 

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function ChefePage() {
   return (
-    <main className="theme-fiscal min-h-full flex-1 bg-[#f4f7f5]">
+    <main className="theme-fiscal flex min-h-dvh flex-1 flex-col bg-[#f4f7f5] md:h-dvh md:max-h-dvh md:overflow-hidden">
       <ChefeRanking />
     </main>
   );

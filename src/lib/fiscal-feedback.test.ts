@@ -6,6 +6,7 @@ import {
   fiscalSuccessMessage,
   hasWhatsappSuporte,
   isNetworkError,
+  SUCCESS_CLEAR_MS,
   waitingSecondQrLabel,
   whatsappHref,
   whatsappLabel,
@@ -13,7 +14,14 @@ import {
 
 describe("fiscal feedback copy", () => {
   it("success names zona and seção after confirm", () => {
-    assert.equal(fiscalSuccessMessage("001", "0477"), "BU zona 001 seção 0477 enviada.");
+    assert.equal(
+      fiscalSuccessMessage("001", "0477"),
+      "Zona 001 seção 0477 enviada com sucesso. Vá para a próxima."
+    );
+  });
+
+  it("clears the success card back to idle after 4s", () => {
+    assert.equal(SUCCESS_CLEAR_MS, 4000);
   });
 
   it("duplicate says já enviada, not a camera error", () => {

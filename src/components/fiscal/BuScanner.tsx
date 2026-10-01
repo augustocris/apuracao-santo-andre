@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
-import { Camera, CameraOff, ImageUp } from "lucide-react";
+import { Camera, CameraOff, Download, MessageCircle, Share2 } from "lucide-react";
 import { WhatsAppSupport } from "@/components/fiscal/FiscalFeedback";
 import { Button } from "@/components/ui/button";
 import { cameraFeedback, type FiscalFeedback } from "@/lib/fiscal-feedback";
@@ -16,6 +16,10 @@ import {
   watchAndHardenLiveVideo,
 } from "@/lib/ios-camera";
 import { sameQrPayload } from "@/lib/parser/bu-qr";
+import {
+  shareBuPhoto,
+  whatsappFallbackHref,
+} from "@/lib/whatsapp-share";
 
 interface BuScannerProps {
   onScan: (text: string) => void;
@@ -25,7 +29,6 @@ interface BuScannerProps {
   nextQr?: boolean;
   /** Exact payloads already accepted (QR 1). Leftover frames must not fire again. */
   ignoreExactPayloads?: string[];
-  showHelp?: boolean;
   whatsapp?: string | null;
   onCameraError?: (error: FiscalFeedback) => void;
 }
@@ -36,24 +39,24 @@ function mapCameraError(err: unknown, appleTouch: boolean): string {
 
   if (kind === "https") {
     return appleTouch
-      ? "No iPhone a câmera só abre em HTTPS. Use o site seguro ou mande uma foto do QR."
-      : "A câmera só funciona em HTTPS (ou localhost). Abra o site seguro ou envie uma foto do QR.";
+      ? "No iPhone a câmera só abre em HTTPS. Use o site seguro ou mande foto no WhatsApp."
+      : "A câmera só funciona em HTTPS (ou localhost). Abra o site seguro ou mande foto no WhatsApp.";
   }
   if (kind === "permission") {
     return appleTouch
-      ? "O Safari bloqueou a câmera. Ajustes → Safari → Câmera → Permitir, ou mande uma foto do QR."
-      : "Permissão de câmera negada. Libere o acesso nas configurações do navegador ou envie uma foto do QR.";
+      ? "O Safari bloqueou a câmera. Ajustes → Safari → Câmera → Permitir, ou mande foto no WhatsApp."
+      : "Permissão de câmera negada. Libere o acesso nas configurações do navegador ou mande foto no WhatsApp.";
   }
   if (kind === "notfound") {
-    return "Nenhuma câmera encontrada. Mande uma foto do QR.";
+    return "Nenhuma câmera encontrada. Mande foto no WhatsApp.";
   }
   if (kind === "inuse") {
-    return "A câmera está em uso por outro app. Feche-o e tente de novo, ou mande uma foto do QR.";
+    return "A câmera está em uso por outro app. Feche-o e tente de novo, ou mande foto no WhatsApp.";
   }
   if (kind === "overconstrained") {
-    return "Este aparelho não aceitou o modo da câmera. Tente de novo ou mande uma foto do QR.";
+    return "Este aparelho não aceitou o modo da câmera. Tente de novo ou mande foto no WhatsApp.";
   }
-  return "Não deu para abrir a câmera. Tente de novo ou mande uma foto do QR.";
+  return "Não deu para abrir a câmera. Tente de novo ou mande foto no WhatsApp.";
 }
 
 /** Almost full-frame — dense TSE BUs need the whole code sharp. */
@@ -150,13 +153,16 @@ export function BuScanner({
   resetKey = 0,
   nextQr = false,
   ignoreExactPayloads = [],
-  showHelp = true,
   whatsapp,
   onCameraError,
 }: BuScannerProps) {
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState<{
+    url: string;
+    file: File;
+  } | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handledRef = useRef(false);
   const sessionLiveRef = useRef(false);
@@ -171,7 +177,9 @@ export function BuScanner({
   useEffect(() => {
     return () => {
       void stopScanner();
+      if (pendingPhoto?.url) URL.revokeObjectURL(pendingPhoto.url);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- teardown on unmount only
   }, []);
 
   useEffect(() => {
@@ -316,65 +324,57 @@ export function BuScanner({
     }
   }
 
-  async function handleFilePick(file: File | undefined) {
+  async function handlePhotoForWhatsApp(file: File | undefined) {
     if (!file || busy) return;
     setError(null);
     setUploading(true);
-    handledRef.current = false;
     try {
       await stopScanner();
-      const scanner = scannerFactory("bu-qr-reader-file");
-      try {
-        const result = await scanner.scanFileV2(file, false);
-        const text = result.decodedText?.trim();
-        if (!text) {
-          throw new Error("QR vazio");
-        }
-        onScan(text);
-      } finally {
-        try {
-          scanner.clear();
-        } catch {
-          /* ignore */
-        }
+      const result = await shareBuPhoto(file, whatsapp);
+      if (result === "fallback") {
+        setPendingPhoto((prev) => {
+          if (prev?.url) URL.revokeObjectURL(prev.url);
+          return { url: URL.createObjectURL(file), file };
+        });
+      } else {
+        setPendingPhoto((prev) => {
+          if (prev?.url) URL.revokeObjectURL(prev.url);
+          return null;
+        });
       }
     } catch {
-      showCameraError(
-        "Não leu o QR nesta foto. Outra com boa luz, QR preenchendo o quadro."
-      );
+      setPendingPhoto((prev) => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        return { url: URL.createObjectURL(file), file };
+      });
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
+  async function retryShare() {
+    if (!pendingPhoto || busy) return;
+    setUploading(true);
+    try {
+      const result = await shareBuPhoto(pendingPhoto.file, whatsapp);
+      if (result !== "fallback") {
+        URL.revokeObjectURL(pendingPhoto.url);
+        setPendingPhoto(null);
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
-      {showHelp ? (
-      <div
-        className="rounded-2xl border-2 border-teal-700/30 bg-teal-50 px-4 py-3 text-teal-950"
-        role="note"
-      >
-        <p className="text-base font-bold leading-snug">Filme o QR do BU.</p>
-        <p className="mt-1.5 text-sm font-medium leading-snug">
-          Se tiver 2 códigos, filme os dois.
-        </p>
-        <p className="mt-1.5 text-sm font-medium leading-snug">
-          Verde = enviada. Próxima urna.
-        </p>
-        <p className="mt-1.5 text-sm font-medium leading-snug">
-          Se falhar: leia de novo ou foto no WhatsApp da central.
-        </p>
-      </div>
-      ) : null}
-
       <div
         id="bu-qr-reader"
         className={`overflow-hidden rounded-2xl border-2 border-teal-700/30 bg-slate-900/5 ${
           active ? "min-h-[320px] sm:min-h-[380px]" : "hidden"
         }`}
       />
-      <div id="bu-qr-reader-file" className="hidden" aria-hidden />
 
       {!active && (
         <Button
@@ -409,17 +409,60 @@ export function BuScanner({
           accept="image/*"
           capture="environment"
           className="sr-only"
-          onChange={(e) => void handleFilePick(e.target.files?.[0])}
+          onChange={(e) => void handlePhotoForWhatsApp(e.target.files?.[0])}
         />
         <span
           className={`inline-flex h-14 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border-2 border-teal-700/40 bg-white text-base font-bold text-teal-900 hover:bg-teal-50 ${
             busy || uploading ? "pointer-events-none opacity-50" : ""
           }`}
         >
-          <ImageUp className="size-5" />
-          {uploading ? "Lendo foto…" : "Foto do QR"}
+          <MessageCircle className="size-5" />
+          {uploading ? "Abrindo WhatsApp…" : "Deu erro? Foto no WhatsApp"}
         </span>
       </label>
+
+      {pendingPhoto ? (
+        <div
+          role="status"
+          className="space-y-2 rounded-xl border-2 border-teal-700/30 bg-teal-50 px-3 py-3 text-teal-950"
+        >
+          <p className="text-sm font-semibold">
+            Foto pronta. Compartilhe no WhatsApp da central — não é leitura de QR.
+          </p>
+          <div className="flex flex-col gap-2">
+            <Button
+              type="button"
+              className="h-11 w-full bg-teal-700 text-white hover:bg-teal-800"
+              onClick={() => void retryShare()}
+              disabled={uploading}
+            >
+              <Share2 className="size-4" />
+              Compartilhar
+            </Button>
+            <a
+              href={pendingPhoto.url}
+              download={pendingPhoto.file.name || "bu-santo-andre.jpg"}
+              className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border-2 border-slate-300 bg-white text-sm font-semibold text-slate-800"
+            >
+              <Download className="size-4" />
+              Baixar foto
+            </a>
+            {whatsappFallbackHref(whatsapp) ? (
+              <a
+                href={whatsappFallbackHref(whatsapp)!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border-2 border-teal-700/40 bg-white text-sm font-bold text-teal-900"
+              >
+                <MessageCircle className="size-4" />
+                Abrir WhatsApp da central
+              </a>
+            ) : (
+              <WhatsAppSupport number={whatsapp} className="text-sm text-teal-950" />
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {error && (
         <div

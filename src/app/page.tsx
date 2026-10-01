@@ -26,7 +26,7 @@ export default function HomePage() {
             <Smartphone className="mb-3 size-8 text-teal-700" />
             <h2 className="text-xl font-bold text-slate-900">Área do Fiscal</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Só QR. Confirme zona, seção e os 5 da campanha.
+              Filme o QRCODE da BU. Verde depois que a central confirma.
             </p>
           </Link>
           <Link

@@ -22,8 +22,11 @@ export function duplicateUrnaMessage(zona: string, secao: string): string {
 }
 
 export function fiscalSuccessMessage(zona: string, secao: string): string {
-  return `BU zona ${zona} seção ${secao} enviada.`;
+  return `Zona ${zona} seção ${secao} enviada com sucesso. Vá para a próxima.`;
 }
+
+/** Idle screen returns after this delay on the success card. */
+export const SUCCESS_CLEAR_MS = 4000;
 
 export function isNetworkError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? "");
@@ -125,7 +128,7 @@ export function cameraFeedback(cause: string): FiscalFeedback {
     kind: "camera",
     title: "Câmera",
     cause,
-    nextStep: "Tente de novo, envie uma foto do QR, ou peça ajuda no WhatsApp da central.",
+    nextStep: "Tente de novo ou mande foto no WhatsApp da central.",
   };
 }
 

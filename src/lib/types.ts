@@ -71,9 +71,13 @@ export interface ParsedBu {
   secao: string;
   votes: ParsedCandidateVote[];
   rawText: string;
-  /** TSE QRBU:index:total when present. */
+  /** TSE QRBU / SEQL / ORQR index when present. */
   qrIndex?: number;
   qrTotal?: number;
+  /** TSE HASH — same urna across QR parts. */
+  urnaHash?: string | null;
+  /** TSE IDUE / IDCA when HASH is absent. */
+  urnaId?: string | null;
   /** TSE COMP:n when present. */
   comparecimento?: number | null;
 }

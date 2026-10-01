@@ -25,6 +25,7 @@ interface BuScannerProps {
   nextQr?: boolean;
   /** Exact payloads already accepted (QR 1). Leftover frames must not fire again. */
   ignoreExactPayloads?: string[];
+  showHelp?: boolean;
   whatsapp?: string | null;
   onCameraError?: (error: FiscalFeedback) => void;
 }
@@ -149,6 +150,7 @@ export function BuScanner({
   resetKey = 0,
   nextQr = false,
   ignoreExactPayloads = [],
+  showHelp = true,
   whatsapp,
   onCameraError,
 }: BuScannerProps) {
@@ -348,6 +350,7 @@ export function BuScanner({
 
   return (
     <div className="space-y-3">
+      {showHelp ? (
       <div
         className="rounded-2xl border-2 border-teal-700/30 bg-teal-50 px-4 py-3 text-teal-950"
         role="note"
@@ -363,6 +366,7 @@ export function BuScanner({
           Se falhar: leia de novo ou foto no WhatsApp da central.
         </p>
       </div>
+      ) : null}
 
       <div
         id="bu-qr-reader"

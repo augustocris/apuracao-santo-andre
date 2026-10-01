@@ -11,6 +11,8 @@ export interface FiscalFeedback {
   title: string;
   cause: string;
   nextStep: string;
+  /** Compact part1 vs part2 line — never a wall of text. */
+  debug?: string;
 }
 
 export const DUPLICATE_URNA_TITLE = "BU já enviada";
@@ -53,14 +55,21 @@ export function hasWhatsappSuporte(value: string | null | undefined): boolean {
   return whatsappDigits(value).length >= 10;
 }
 
+export function waitingSecondQrLabel(zona: string, secao: string): string {
+  const z = zona?.trim() || "—";
+  const s = secao?.trim() || "—";
+  return `Falta o 2º QR · zona ${z} seção ${s}`;
+}
+
 export function incompleteQrFeedback(index: number, total: number): FiscalFeedback {
   const shownIndex = Math.max(1, index);
   const shownTotal = Math.max(shownIndex, total);
+  const next = Math.min(shownIndex + 1, shownTotal);
   return {
     kind: "incomplete_qr",
-    title: `QR ${shownIndex} de ${shownTotal}`,
-    cause: `Este boletim tem ${shownTotal} QRs. Ainda falta filmar o restante.`,
-    nextStep: "Filme o próximo QR desta urna (mesma zona e seção). Não envie ainda.",
+    title: `Falta o ${next}º QR`,
+    cause: "",
+    nextStep: `Filme o ${next}º QR desta urna.`,
   };
 }
 
@@ -68,17 +77,28 @@ export function duplicateFeedback(zona: string, secao: string): FiscalFeedback {
   return {
     kind: "duplicate",
     title: DUPLICATE_URNA_TITLE,
-    cause: `A zona ${zona} seção ${secao} já foi gravada na central.`,
-    nextStep: "Pode ir à próxima urna. Não é falha de câmera.",
+    cause: "",
+    nextStep: `Zona ${zona} seção ${secao} já foi gravada. Próxima urna.`,
   };
 }
 
-export function parseFeedback(cause: string): FiscalFeedback {
+export function parseFeedback(cause: string, debug?: string): FiscalFeedback {
   return {
     kind: "parse",
     title: "QR não entrou",
-    cause,
-    nextStep: "Leia de novo. Se persistir, foto nítida do BU no WhatsApp da central.",
+    cause: "",
+    nextStep: cause.trim() || "Leia de novo ou mande foto no WhatsApp da central.",
+    debug: debug?.trim() || undefined,
+  };
+}
+
+export function qrMismatchFeedback(debug: string): FiscalFeedback {
+  return {
+    kind: "parse",
+    title: "QR não combina",
+    cause: "",
+    nextStep: "Filme o 2º QR desta urna.",
+    debug: debug.trim() || undefined,
   };
 }
 
@@ -119,6 +139,19 @@ export function feedbackFromError(
   }
   if (/já enviada|já cadastrada/i.test(message)) {
     return duplicateFeedback(opts?.zona ?? "—", opts?.secao ?? "—");
+  }
+  if (/outra urna|não combina/i.test(message)) {
+    const debug =
+      (err instanceof Error && "debug" in err
+        ? String((err as { debug?: string }).debug ?? "")
+        : "") || undefined;
+    return {
+      kind: "parse",
+      title: "QR não combina",
+      cause: "",
+      nextStep: "Filme o 2º QR desta urna.",
+      debug,
+    };
   }
   if (/de \d+|incompleto|filme o próximo/i.test(message) && /QR/i.test(message)) {
     const m = message.match(/(\d+)\s+de\s+(\d+)/i);

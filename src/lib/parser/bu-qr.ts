@@ -65,6 +65,8 @@ const METADATA_KEYS = new Set(
     "HASH",
     "SEQL",
     "ORQR",
+    "NRUE",
+    "NR_UE",
     "ASSI",
     "MAJO",
     "PROP",
@@ -525,9 +527,11 @@ function formatRegisteredList(numeros: string[]): string {
 }
 
 export class BuParseError extends Error {
-  constructor(message: string) {
+  debug?: string;
+  constructor(message: string, debug?: string) {
     super(message);
     this.name = "BuParseError";
+    this.debug = debug;
   }
 }
 
@@ -603,7 +607,7 @@ export function assertQrSetReadyToIngest(parts: ParsedBu[]): ParsedBu {
   const merged = mergeParsedBus(parts);
   if (merged.votes.length === 0) {
     throw new BuParseError(
-      "Nenhum voto de candidato encontrado no QR. Formatos aceitos: 4545:11 (TSE), CAND:4545 QTVO:11, CANDIDATO:4545 VOTOS:11, ou linhas Nome 4545 0011."
+      "Nenhum voto de candidato encontrado nos dois QRs."
     );
   }
   return merged;
@@ -615,9 +619,31 @@ export function parseUrnaFingerprint(text: string): {
 } {
   const folded = normalizePrintedBuText(String(text));
   const hash = folded.match(/HASH\s*:\s*([A-Za-z0-9]+)/i)?.[1] ?? null;
-  const idue = folded.match(/IDUE\s*:\s*(\d+)/i)?.[1] ?? null;
-  const idca = folded.match(/IDCA\s*:\s*(\d+)/i)?.[1] ?? null;
-  return { hash, urnaId: idue || idca };
+  const idue = folded.match(/\bIDUE\s*:\s*(\d+)/i)?.[1] ?? null;
+  const nrue = folded.match(/\bNR_?UE\s*:\s*(\d+)/i)?.[1] ?? null;
+  return { hash, urnaId: idue || nrue };
+}
+
+export function formatQrPartDebug(part: {
+  qrIndex?: number;
+  qrTotal?: number;
+  urnaId?: string | null;
+  urnaHash?: string | null;
+}): string {
+  const seql =
+    part.qrIndex && part.qrTotal
+      ? `${String(part.qrIndex).padStart(2, "0")}/${String(part.qrTotal).padStart(2, "0")}`
+      : "—";
+  const idue = part.urnaId?.trim() || "—";
+  const hash = part.urnaHash?.trim() ? part.urnaHash.trim().slice(0, 8) : "—";
+  return `SEQL ${seql} IDUE ${idue} HASH ${hash}`;
+}
+
+export function formatQrPairDebug(
+  part1: Parameters<typeof formatQrPartDebug>[0],
+  part2: Parameters<typeof formatQrPartDebug>[0]
+): string {
+  return `1: ${formatQrPartDebug(part1)} · 2: ${formatQrPartDebug(part2)}`;
 }
 
 export function isContinuationSequence(meta: { index: number; total: number } | null): boolean {
@@ -671,6 +697,22 @@ export function parseQrbuMeta(
       return { index, total };
     }
   }
+
+  const looseDe = folded.match(/\b(\d{1,2})\s+de\s+(\d{1,2})\b/i);
+  if (looseDe) {
+    const index = Number.parseInt(looseDe[1], 10);
+    const total = Number.parseInt(looseDe[2], 10);
+    if (
+      Number.isFinite(index) &&
+      Number.isFinite(total) &&
+      index >= 1 &&
+      total >= 1 &&
+      total <= 20 &&
+      index <= total
+    ) {
+      return { index, total };
+    }
+  }
   return null;
 }
 
@@ -698,22 +740,18 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
   }
   const zona = donor.zona;
   const secao = donor.secao;
-  const hash = parts.find((p) => p.urnaHash)?.urnaHash ?? null;
   const urnaId = parts.find((p) => p.urnaId)?.urnaId ?? null;
   for (const part of parts) {
-    if (hash && part.urnaHash && part.urnaHash !== hash) {
-      throw new BuParseError(
-        "Este QR é de outra urna (HASH diferente). Filme os QRs da mesma urna."
-      );
-    }
     if (urnaId && part.urnaId && part.urnaId !== urnaId) {
       throw new BuParseError(
-        "Este QR é de outra urna (identificador diferente). Filme os QRs da mesma urna."
+        "Este QR é de outra urna.",
+        formatQrPairDebug(donor, part)
       );
     }
     if (part.zona && part.secao && (part.zona !== zona || part.secao !== secao)) {
       throw new BuParseError(
-        `Este QR é de outra urna (zona ${part.zona} / seção ${part.secao}; esperado zona ${zona} / seção ${secao}).`
+        "Este QR é de outra urna.",
+        formatQrPairDebug(donor, part)
       );
     }
   }
@@ -757,7 +795,7 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
       .join("\n"),
     qrIndex: parts.length,
     qrTotal: qrTotal || parts.length,
-    urnaHash: hash,
+    urnaHash: parts.find((p) => p.urnaHash)?.urnaHash ?? null,
     urnaId,
     comparecimento,
   };
@@ -862,9 +900,7 @@ export function parseBuQrText(
     isContinuationSequence(qrbu);
 
   if (votes.length === 0 && !allowEmpty) {
-    throw new BuParseError(
-      "Nenhum voto de candidato encontrado no QR. Formatos aceitos: 4545:11 (TSE), CAND:4545 QTVO:11, CANDIDATO:4545 VOTOS:11, ou linhas Nome 4545 0011."
-    );
+    throw new BuParseError("Nenhum voto de candidato encontrado no QR.");
   }
 
   const fingerprint = parseUrnaFingerprint(text);
@@ -882,8 +918,8 @@ export function parseBuQrText(
 }
 
 /**
- * Live fiscal path: QR 1 requires zona+seção; QR 2 (SEQL/ORQR) does not.
- * HASH / IDUE must match the stored part 1. Never returns a partial set to ingest.
+ * Live fiscal path: QR 1 requires zona+seção; QR 2 (SEQL/ORQR/2 de 2) does not.
+ * Bind on IDUE / NR_UE / zona+seção. HASH is per-QR — never required to match.
  */
 export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): ParsedBu {
   const awaitingMore =
@@ -905,24 +941,16 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
 
   if (awaitingMore) {
     const first = previousParts[0];
-    if (first.urnaHash && parsed.urnaHash && first.urnaHash !== parsed.urnaHash) {
-      throw new BuParseError(
-        "Este QR é de outra urna (HASH diferente). Filme os QRs da mesma urna."
-      );
-    }
+    const debug = formatQrPairDebug(first, parsed);
     if (first.urnaId && parsed.urnaId && first.urnaId !== parsed.urnaId) {
-      throw new BuParseError(
-        "Este QR é de outra urna (identificador diferente). Filme os QRs da mesma urna."
-      );
+      throw new BuParseError("Este QR é de outra urna.", debug);
     }
     if (
       parsed.zona &&
       parsed.secao &&
       (parsed.zona !== first.zona || parsed.secao !== first.secao)
     ) {
-      throw new BuParseError(
-        `Este QR é de outra urna (zona ${parsed.zona} / seção ${parsed.secao}; a urna atual é zona ${first.zona} / seção ${first.secao}).`
-      );
+      throw new BuParseError("Este QR é de outra urna.", debug);
     }
     return inheritQrZonaSecao(parsed, first);
   }

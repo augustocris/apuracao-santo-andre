@@ -20,14 +20,16 @@ import {
 import {
   duplicateFeedback,
   feedbackFromError,
-  incompleteQrFeedback,
   isNetworkError,
   networkFeedback,
   parseFeedback,
+  qrMismatchFeedback,
+  waitingSecondQrLabel,
   type FiscalFeedback,
 } from "@/lib/fiscal-feedback";
 import {
   assertQrSetReadyToIngest,
+  BuParseError,
   describeQrProgress,
   isQrSetComplete,
   parseFiscalQrChunk,
@@ -202,8 +204,7 @@ export function FiscalApp() {
         setScanNonce((n) => n + 1);
 
         if (!isQrSetComplete(nextFragments)) {
-          const progress = describeQrProgress(nextFragments);
-          setFeedback(incompleteQrFeedback(progress.index, progress.total));
+          setFeedback(null);
           setConfirmOpen(false);
           return;
         }
@@ -215,10 +216,16 @@ export function FiscalApp() {
           setScanNonce((n) => n + 1);
           return;
         }
+        const debug =
+          err instanceof BuParseError ? err.debug : undefined;
         const cause =
           err instanceof Error ? err.message : "Falha ao processar o BU.";
-        setFeedback(parseFeedback(cause));
-        await persistParseFailure(raw, cause);
+        setFeedback(
+          /outra urna|não combina/i.test(cause)
+            ? qrMismatchFeedback(debug ?? "")
+            : parseFeedback(cause, debug)
+        );
+        await persistParseFailure(raw, debug ? `${cause} ${debug}` : cause);
         setScanNonce((n) => n + 1);
       } finally {
         setProcessing(false);
@@ -356,26 +363,27 @@ export function FiscalApp() {
         />
       ) : (
         <div className="w-full space-y-2">
-          {fragments.length > 0 && awaitingMore ? (
+          {fragments.length > 0 &&
+          awaitingMore &&
+          (!feedback || feedback.kind === "incomplete_qr") ? (
             <div
               role="status"
-              className="rounded-xl border border-teal-600 bg-teal-50 px-3 py-2.5 text-sm text-teal-950"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-600 bg-teal-50 px-3 py-2 text-teal-950"
             >
-              <p className="text-base font-bold">
-                QR {progress.index} de {progress.total} — filme o próximo
-              </p>
-              <p className="mt-1 text-sm font-medium text-teal-800">
-                Zona {fragments[0].zona} · Seção {fragments[0].secao}. Os dois
-                códigos desta urna.
+              <p className="text-base font-bold leading-snug">
+                {waitingSecondQrLabel(
+                  fragments[0].zona,
+                  fragments[0].secao
+                )}
               </p>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                className="mt-2 border-slate-300"
+                className="border-slate-300"
                 onClick={handleCancelFragments}
               >
-                Cancelar urna
+                Cancelar
               </Button>
             </div>
           ) : null}
@@ -385,6 +393,7 @@ export function FiscalApp() {
             resetKey={scanNonce}
             nextQr={awaitingMore}
             ignoreExactPayloads={fragments.map((part) => part.rawText)}
+            showHelp={!feedback || feedback.kind === "incomplete_qr"}
             whatsapp={whatsapp}
           />
         </div>

@@ -5,8 +5,8 @@ import {
   duplicateUrnaMessage,
   fiscalSuccessMessage,
   hasWhatsappSuporte,
-  incompleteQrFeedback,
   isNetworkError,
+  waitingSecondQrLabel,
   whatsappHref,
   whatsappLabel,
 } from "./fiscal-feedback";
@@ -21,16 +21,14 @@ describe("fiscal feedback copy", () => {
     assert.equal(fb.kind, "duplicate");
     assert.match(fb.title, /já enviada/i);
     assert.match(duplicateUrnaMessage("247", "0123"), /já enviada/);
-    assert.doesNotMatch(fb.cause, /c[aâ]mera/i);
-    assert.match(fb.nextStep, /n[aã]o é falha de c[aâ]mera/i);
+    assert.match(fb.nextStep, /j[aá] foi gravada/i);
   });
 
-  it("incomplete 1 de 2 tells fiscal to scan the rest", () => {
-    const fb = incompleteQrFeedback(1, 2);
-    assert.equal(fb.kind, "incomplete_qr");
-    assert.equal(fb.title, "QR 1 de 2");
-    assert.match(fb.nextStep, /pr[oó]ximo QR/i);
-    assert.match(fb.nextStep, /N[aã]o envie ainda/i);
+  it("one-line waiting status after QR 1", () => {
+    assert.equal(
+      waitingSecondQrLabel("001", "0477"),
+      "Falta o 2º QR · zona 001 seção 0477"
+    );
   });
 });
 

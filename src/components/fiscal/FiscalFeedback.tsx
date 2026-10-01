@@ -22,7 +22,7 @@ export function WhatsAppSupport({
   const ready = hasWhatsappSuporte(number);
 
   return (
-    <p className={cn("flex items-start gap-1.5 text-[11px] leading-snug", className)}>
+    <p className={cn("flex items-start gap-1.5 text-sm leading-snug", className)}>
       <MessageCircle className="mt-0.5 size-3.5 shrink-0" />
       {ready && href ? (
         <a
@@ -54,12 +54,12 @@ export function FiscalSuccessCard({
       role="status"
       className="rounded-xl border-2 border-emerald-500 bg-emerald-50 px-3 py-3 text-emerald-950"
     >
-      <p className="flex items-start gap-2 text-base font-bold leading-tight">
-        <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
+      <p className="flex items-start gap-2 text-lg font-bold leading-tight">
+        <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-emerald-600" />
         {fiscalSuccessMessage(zona, secao)}
       </p>
-      <p className="mt-1 pl-7 text-xs font-medium text-emerald-900">
-        Pode ir à próxima urna.
+      <p className="mt-1 pl-8 text-sm font-semibold text-emerald-900">
+        Próxima urna.
       </p>
     </div>
   );
@@ -81,10 +81,10 @@ export function FiscalErrorCard({
 
   return (
     <div role="alert" className={cn("rounded-xl border-2 px-3 py-3", tone)}>
-      <p className="text-sm font-bold">{error.title}</p>
-      <p className="mt-1 text-xs font-medium leading-snug">{error.cause}</p>
-      <p className="mt-2 text-xs font-semibold leading-snug">
-        Próximo passo: {error.nextStep}
+      <p className="text-base font-bold">{error.title}</p>
+      <p className="mt-1 text-sm font-medium leading-snug">{error.cause}</p>
+      <p className="mt-2 text-sm font-semibold leading-snug">
+        {error.nextStep}
       </p>
       {error.kind !== "duplicate" && error.kind !== "incomplete_qr" ? (
         <WhatsAppSupport number={whatsapp} className="mt-2" />

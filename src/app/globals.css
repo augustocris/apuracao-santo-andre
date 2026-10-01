@@ -137,6 +137,12 @@
   color: #0f1c24;
 }
 
+#bu-qr-reader video {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
 .theme-admin {
   /* PSDB campaign: deep navy / cyan / yellow */
   --campaign-navy: #003b7e;

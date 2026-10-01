@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  cargoRowsForChefe,
+  chefeGreeting,
   chefeMiniaturaFallback,
   filterChefeRankingRows,
+  leftoverAfterPair,
   overlayChefeFavoritos,
+  pickHighlightPair,
+  sortChefeFavoritesFirst,
 } from "./chefe-ranking";
 import { percentualNoCargo } from "./utils";
 import {
@@ -330,6 +335,189 @@ describe("percentual no cargo", () => {
   it("ignores 0-vote catalog rows in numerator and denominator", () => {
     assert.equal(percentualNoCargo(22, 110), percentualNoCargo(22, 110 + 0));
     assert.equal(percentualNoCargo(0, 110), 0);
+  });
+});
+
+describe("chefeGreeting", () => {
+  it("uses local hour and the session name", () => {
+    assert.equal(chefeGreeting(8, "Gilvan"), "Bom dia, Gilvan");
+    assert.equal(chefeGreeting(15, "Gilvan"), "Boa tarde, Gilvan");
+    assert.equal(chefeGreeting(21, "Cristiano"), "Boa noite, Cristiano");
+    assert.equal(chefeGreeting(3, "Gilvan"), "Boa noite, Gilvan");
+  });
+});
+
+describe("pickHighlightPair", () => {
+  it("picks the two highest vote totals, not hardcoded names", () => {
+    const rows = cargoRowsForChefe(
+      [
+        {
+          cargo: "Governador",
+          totalVotos: 140,
+          rankings: [
+            {
+              votos: 40,
+              percentual: 0,
+              candidato: {
+                id: "g-a",
+                numero: "13",
+                nome: "Haddad",
+                cargo: "Governador",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
+            {
+              votos: 100,
+              percentual: 0,
+              candidato: {
+                id: "g-b",
+                numero: "10",
+                nome: "Tarcísio",
+                cargo: "Governador",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
+            {
+              votos: 0,
+              percentual: 0,
+              candidato: {
+                id: "g-c",
+                numero: "45",
+                nome: "Outro",
+                cargo: "Governador",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
+          ],
+        },
+      ],
+      "Governador"
+    );
+    const pair = pickHighlightPair(rows);
+    assert.equal(pair.length, 2);
+    assert.equal(pair[0].candidato.nome, "Tarcísio");
+    assert.equal(pair[1].candidato.nome, "Haddad");
+    pair[0].votos = 10;
+    pair[1].votos = 200;
+    const flipped = pickHighlightPair(rows);
+    assert.equal(flipped[0].candidato.nome, "Haddad");
+    assert.equal(flipped[1].candidato.nome, "Tarcísio");
+  });
+
+  it("fills from catalog when nobody has votes", () => {
+    const rows = cargoRowsForChefe(
+      [
+        {
+          cargo: "Presidente",
+          totalVotos: 0,
+          rankings: [
+            {
+              votos: 0,
+              percentual: 0,
+              candidato: {
+                id: "p-bu",
+                numero: "17",
+                nome: "Candidato 17",
+                cargo: "Presidente",
+                foto_url: null,
+                origem: "bu",
+              },
+            },
+            {
+              votos: 0,
+              percentual: 0,
+              candidato: {
+                id: "p-cat",
+                numero: "13",
+                nome: "Lula",
+                cargo: "Presidente",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
+            {
+              votos: 0,
+              percentual: 0,
+              candidato: {
+                id: "p-cad",
+                numero: "22",
+                nome: "Flávio",
+                cargo: "Presidente",
+                foto_url: null,
+                origem: "cadastro",
+              },
+            },
+          ],
+        },
+      ],
+      "Presidente"
+    );
+    const pair = pickHighlightPair(rows);
+    assert.equal(pair.length, 2);
+    assert.equal(pair[0].candidato.origem, "cadastro");
+    assert.equal(pair[1].candidato.origem, "catalogo");
+  });
+});
+
+describe("sortChefeFavoritesFirst", () => {
+  it("keeps PIN favorites on top without hiding the rest", () => {
+    const rows = cargoRowsForChefe(
+      [
+        {
+          cargo: "Deputado Estadual",
+          totalVotos: 30,
+          rankings: [
+            {
+              votos: 20,
+              percentual: 0,
+              candidato: {
+                id: "de-1",
+                numero: "13131",
+                nome: "Roberto",
+                cargo: "Deputado Estadual",
+                foto_url: null,
+                origem: "cadastro",
+              },
+            },
+            {
+              votos: 10,
+              percentual: 0,
+              candidato: {
+                id: "de-2",
+                numero: "99999",
+                nome: "Outro",
+                cargo: "Deputado Estadual",
+                foto_url: null,
+                origem: "bu",
+              },
+            },
+            {
+              votos: 0,
+              percentual: 0,
+              candidato: {
+                id: "de-fav",
+                numero: "11111",
+                nome: "Favorito zero",
+                cargo: "Deputado Estadual",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
+          ],
+        },
+      ],
+      "Deputado Estadual"
+    );
+    const sorted = sortChefeFavoritesFirst(rows, new Set(["de-fav"]));
+    assert.equal(sorted[0].candidato.id, "de-fav");
+    assert.equal(sorted.length, 3);
+    assert.equal(sorted[1].candidato.id, "de-1");
+    const rest = leftoverAfterPair(rows, sorted.slice(0, 2), new Set(["de-fav"]));
+    assert.equal(rest.length, 1);
+    assert.equal(rest[0].candidato.id, "de-2");
   });
 });
 

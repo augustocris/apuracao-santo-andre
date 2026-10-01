@@ -95,7 +95,7 @@ Para um segundo PIN: `/admin` → Cadastro → **Acessos chefe** → nome + PIN 
 
 ## Chefe (`/chefe`)
 
-PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe** lista / adiciona / exclui (nome + PIN). Ranking, votos e telão são globais; as **estrelas** e **Somente favoritos** vêm só de `chefe_favoritos` daquele PIN. Exige migration `011`. Não substitui o telão de 5 cards.
+PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe** lista / adiciona / exclui (nome + PIN). Saudação **Bom dia/boa tarde/boa noite, {nome}**. Desktop: 2 cards de Governador + 2 de Presidente (os dois com mais votos) e 3 colunas (Dep. Estadual, Dep. Federal, Senador). Mobile: o mesmo 2×2, listas empilhadas. Favoritos do PIN no topo de cada lista. Exige migration `011`. Não substitui o telão (`/telao`).
 
 ## Fiscal flow (domingo)
 

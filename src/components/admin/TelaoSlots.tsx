@@ -173,18 +173,16 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
 
       <div
         className={cn(
-          "relative z-10 flex min-h-0 min-w-0 flex-1 flex-col justify-center",
-          size === "tall"
-            ? "gap-1 p-2 md:gap-2 md:p-4"
-            : "gap-0.5 p-1.5 md:gap-1.5 md:p-3"
+          "relative z-10 flex min-h-0 min-w-0 flex-1 flex-col",
+          size === "tall" ? "px-2 py-1.5 md:px-3 md:py-2.5" : "px-2 py-1.5 md:px-2.5 md:py-2"
         )}
       >
         <p
           className={cn(
-            "font-semibold uppercase tracking-[0.14em] text-[#00ADEF]",
+            "shrink-0 font-semibold uppercase tracking-[0.14em] text-[#00ADEF]",
             size === "tall"
-              ? "text-[10px] md:text-sm"
-              : "text-[9px] md:text-xs",
+              ? "text-[10px] md:text-xs"
+              : "text-[9px] md:text-[11px]",
             celebrating && "opacity-40"
           )}
         >
@@ -192,7 +190,7 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
         </p>
 
         {empty ? (
-          <div className="mt-1 flex flex-1 flex-col items-center justify-center gap-1 text-white/40 md:mt-3 md:gap-2">
+          <div className="mt-1 flex flex-1 flex-col items-center justify-center gap-1 text-white/40 md:gap-2">
             <UserRound
               className={
                 size === "tall" ? "size-6 md:size-10" : "size-5 md:size-7"
@@ -203,41 +201,42 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
         ) : (
           <div
             className={cn(
-              "mt-0.5 flex min-h-0 flex-1 flex-col justify-between gap-1 md:mt-1 md:gap-2",
-              celebrating && "pt-10 md:pt-14"
+              "mt-0.5 flex min-h-0 flex-1 flex-col",
+              celebrating && "pt-8 md:pt-12"
             )}
           >
-            <div className="min-w-0">
+            <div className="min-h-0 min-w-0 shrink">
               <p
                 className={cn(
                   "line-clamp-2 break-words font-bold leading-tight text-white",
                   size === "tall"
-                    ? "text-sm md:text-2xl lg:text-3xl"
-                    : "text-sm md:text-lg lg:text-xl"
+                    ? "text-sm md:text-xl lg:text-2xl"
+                    : "text-sm md:text-base lg:text-lg"
                 )}
               >
                 {slot.row!.candidato.nome}
               </p>
               <p
                 className={cn(
-                  "mt-0 tabular-nums text-white/55 md:mt-0.5",
+                  "shrink-0 tabular-nums leading-tight text-white/55",
                   size === "tall"
-                    ? "text-[11px] md:text-base"
-                    : "text-[10px] md:text-sm"
+                    ? "text-[11px] md:text-sm"
+                    : "text-[10px] md:text-xs"
                 )}
               >
                 Nº {slot.row!.candidato.numero}
               </p>
             </div>
 
-            <div className="mt-auto">
-              <div className="flex items-end justify-between gap-1.5">
+            <div className="mt-auto shrink-0 pt-1">
+              <div className="flex items-baseline justify-between gap-1.5">
                 <p
+                  data-votos
                   className={cn(
-                    "font-bold tabular-nums leading-none text-[#FFDE00]",
+                    "min-w-0 shrink-0 font-bold tabular-nums leading-tight text-[#FFDE00]",
                     size === "tall"
-                      ? "text-xl md:text-4xl lg:text-5xl"
-                      : "text-lg md:text-3xl"
+                      ? "text-2xl md:text-4xl"
+                      : "text-xl md:text-2xl"
                   )}
                 >
                   {formatVotes(votos)}
@@ -245,7 +244,7 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
                     className={cn(
                       "ml-1 font-medium text-white/55",
                       size === "tall"
-                        ? "text-[11px] md:text-lg"
+                        ? "text-[11px] md:text-base"
                         : "text-[10px] md:text-sm"
                     )}
                   >
@@ -254,11 +253,12 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
                 </p>
                 {showPctStrong && (
                   <p
+                    data-pct
                     className={cn(
-                      "shrink-0 font-bold tabular-nums leading-none text-[#00ADEF]",
+                      "shrink-0 font-bold tabular-nums leading-tight text-[#00ADEF]",
                       size === "tall"
-                        ? "text-base md:text-3xl"
-                        : "text-sm md:text-2xl"
+                        ? "text-base md:text-2xl"
+                        : "text-sm md:text-xl"
                     )}
                   >
                     {formatPercent(pct)}
@@ -266,10 +266,11 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
                 )}
                 {singleInCargo && !empty && (
                   <p
+                    data-pct
                     className={cn(
-                      "shrink-0 tabular-nums text-white/40",
+                      "shrink-0 tabular-nums leading-tight text-white/40",
                       size === "tall"
-                        ? "text-[11px] md:text-base"
+                        ? "text-[11px] md:text-sm"
                         : "text-[10px] md:text-xs"
                     )}
                   >
@@ -279,8 +280,8 @@ function SlotCard({ slot, size, singleInCargo, celebration }: SlotCardProps) {
               </div>
               <div
                 className={cn(
-                  "mt-1 overflow-hidden rounded-full bg-[#001a3a] md:mt-2",
-                  size === "tall" ? "h-1.5 md:h-2.5" : "h-1 md:h-1.5"
+                  "mt-1 overflow-hidden rounded-full bg-[#001a3a]",
+                  size === "tall" ? "h-1.5 md:h-2" : "h-1 md:h-1.5"
                 )}
               >
                 <div

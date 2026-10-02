@@ -18,6 +18,7 @@ import {
   storageZipOnlyHint,
   summarizeUrnaFotos,
   summarizeVincular,
+  takeInputFiles,
   urnaFotoIdKeys,
 } from "./urna-fotos";
 
@@ -242,6 +243,23 @@ describe("zip stream inspect (no inflate of unmatched)", () => {
   });
 });
 
+describe("takeInputFiles", () => {
+  it("copies files before clearing the live input", () => {
+    const file = new File([new Uint8Array([1, 2, 3])], "foto_cand2026_SP_div.zip", {
+      type: "application/zip",
+    });
+    const input = {
+      files: { 0: file, length: 1 } as unknown as FileList,
+      value: "C:\\fakepath\\foto_cand2026_SP_div.zip",
+    };
+    const copied = takeInputFiles(input);
+    assert.equal(copied.length, 1);
+    assert.equal(copied[0]?.name, "foto_cand2026_SP_div.zip");
+    assert.equal(input.value, "");
+    assert.equal(takeInputFiles({ files: null, value: "" }).length, 0);
+  });
+});
+
 describe("zip UI status and errors", () => {
   it("starts with Lendo ZIP… and then Lidos N de ~total", () => {
     assert.equal(
@@ -271,7 +289,7 @@ describe("zip UI status and errors", () => {
         scanned: 400,
         phase: "reading",
       }),
-      "Lidos 400 de ~26331"
+      "Lendo ZIP… · Lidos 400 de ~26331"
     );
     assert.match(
       formatUrnaFotoProgress({

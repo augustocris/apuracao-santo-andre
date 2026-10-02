@@ -86,6 +86,16 @@ export function emptyUrnaFotoProgress(): UrnaFotoProgress {
   };
 }
 
+/** Copia os File e zera o input — FileList é live e some se `value = ""` antes. */
+export function takeInputFiles(input: {
+  files: FileList | null;
+  value: string;
+}): File[] {
+  const list = input.files ? Array.from(input.files) : [];
+  input.value = "";
+  return list;
+}
+
 export function yieldToUi(): Promise<void> {
   return new Promise((resolve) => {
     const done = () => resolve();
@@ -1154,7 +1164,7 @@ export function summarizeUrnaFotos(result: UrnaFotoResult): string {
 }
 
 export function formatUrnaFotoProgress(p: UrnaFotoProgress): string {
-  if (p.phase === "uploading" || (p.uploaded > 0 || p.failed > 0)) {
+  if (p.phase === "uploading" || p.uploaded > 0 || p.failed > 0) {
     const lidos =
       p.scanned != null
         ? `Lidos ${p.scanned} de ~${p.total || TSE_ZIP_ENTRY_HINT}`
@@ -1162,7 +1172,7 @@ export function formatUrnaFotoProgress(p: UrnaFotoProgress): string {
     return `${lidos} · Enviada(s) ${p.uploaded} · falhas ${p.failed}`;
   }
   if ((p.scanned ?? 0) > 0) {
-    return `Lidos ${p.scanned} de ~${p.total || TSE_ZIP_ENTRY_HINT}`;
+    return `Lendo ZIP… · Lidos ${p.scanned} de ~${p.total || TSE_ZIP_ENTRY_HINT}`;
   }
   return p.status || "Lendo ZIP…";
 }

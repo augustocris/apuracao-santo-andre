@@ -47,6 +47,7 @@ export async function POST(request: Request) {
       upserted: result.upserted,
       skippedCadastro: result.skippedCadastro,
       duplicates: result.duplicates,
+      sqPersisted: result.sqPersisted,
       skipped: parsed.skipped,
       format: parsed.format,
       summary: summarizeChapadaParse(parsed),

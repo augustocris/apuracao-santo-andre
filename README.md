@@ -47,6 +47,7 @@ In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows 
    - [`supabase/migrations/009_fiscal_domingo.sql`](supabase/migrations/009_fiscal_domingo.sql) — `whatsapp_suporte`, fila `bus_pendentes`, realtime idempotente (sem 42710), `secoes_esperadas=1744` só se ainda for 0
    - [`supabase/migrations/010_zona_allowlist.sql`](supabase/migrations/010_zona_allowlist.sql) — allowlist das 6 zonas de Santo André no ingest
    - [`supabase/migrations/011_chefes_favoritos.sql`](supabase/migrations/011_chefes_favoritos.sql) — tabelas `chefes` + `chefe_favoritos`; seed Cristiano / `andre2026`
+   - [`supabase/migrations/012_sq_candidato_fotos.sql`](supabase/migrations/012_sq_candidato_fotos.sql) — garante `candidatos.sq_candidato` (idempotente com a 008) para casar fotos de urna
 3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
@@ -76,7 +77,8 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
 2. **Candidatos** — 5 oficiais do telão + **Importar chapada** (CSV do TSE `consulta_cand` **ou** `numero,nome,cargo`) → `origem=catalogo`. Não sobrescreve nomes oficiais. Depois: **Enviar ZIP de fotos de urna** (arquivos tipo `FSP{SQ}_div.jpg` / `FBR{SQ}_div.jpg`, `{SQ}_div.jpg` ou `FSP{SQ}.jpg` / `FBR{SQ}.jpg`, processado no navegador → bucket `candidatos`).
    - TSE **SP** (`consulta_cand_2026_SP`): cargos estaduais; filtro `SG_UF` SP. **Não traz Presidente** (é nacional).
    - TSE **Brasil/Presidente**: importe também o CSV com `SG_UF=BR` e `DS_CARGO=PRESIDENTE`. Dois arquivos são aceitos (upsert). Presidente entra com UF BR ou vazia.
-   - Colunas: `NR_CANDIDATO`, `NM_URNA_CANDIDATO` (fallback `NM_CANDIDATO`), `DS_CARGO`. Vice/suplente/prefeito/vereador ignorados.
+   - Colunas: `NR_CANDIDATO`, `NM_URNA_CANDIDATO` (fallback `NM_CANDIDATO`), `DS_CARGO`, `SQ_CANDIDATO` (número ou texto do Excel, ex. `250000252653` / `2.50000252653E+11`). Vice/suplente/prefeito/vereador ignorados.
+   - Fotos já no bucket: **não reenvie o ZIP**. 1) se `sq_candidato` não existir, cole a `008` ou a `012`; 2) reimporte `consulta_cand2026_SP` (+ CSV BR/Presidente); 3) **Vincular fotos já no Storage**. Isso preenche `foto_url` só em `origem=catalogo` sem apagar as 5 oficiais.
    - Simplificado: `supabase/seed-chapada-exemplo.csv`. TSE SP de exemplo: `supabase/seed-consulta-cand-exemplo.csv`. TSE BR: `supabase/seed-consulta-cand-br-exemplo.csv`.
    - Deputado Estadual → 5 dígitos (1)
    - Deputado Federal → 4 dígitos (1)
@@ -124,7 +126,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. 
 1. Push to `main` — Vercel auto-deploys if the project is connected.
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
-4. Run SQL migrations `001` … `011` on Supabase. **010 é a allowlist das 6 zonas** (`ingest_bu_completo` recusa zona fora; seed só se `zonas_config` estiver vazio). **011** é acessos chefe + favoritos por PIN. **009** é WhatsApp + fila de erro. A Vercel não executa SQL.
+4. Run SQL migrations `001` … `012` on Supabase. **010 é a allowlist das 6 zonas** (`ingest_bu_completo` recusa zona fora; seed só se `zonas_config` estiver vazio). **011** é acessos chefe + favoritos por PIN. **012** (ou **008**) é `sq_candidato` para fotos de urna. **009** é WhatsApp + fila de erro. A Vercel não executa SQL.
 5. Point fiscales to `/fiscal`, telão to `/telao`, admin to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`). Favoritos no ranking do chefe exigem a 011.
 
 ## Stack

@@ -5,6 +5,7 @@ import {
   decodeChapadaBytes,
   keepByUf,
   mapTseCargo,
+  normalizeSqCandidato,
   parseChapadaPayload,
   situacaoKeep,
   summarizeChapadaParse,
@@ -172,6 +173,37 @@ SP;SENADOR;2;130;SEGUNDO;PENDENTE;OUTRO
     assert.equal(parsed.rows[0].nome, "PRIMEIRO");
     assert.equal(parsed.skipped.duplicates, 1);
   });
+
+  it("keeps SQ_CANDIDATO when Excel sends a number or scientific notation", () => {
+    assert.equal(normalizeSqCandidato(250000252653), "250000252653");
+    assert.equal(normalizeSqCandidato("250000252653"), "250000252653");
+    assert.equal(normalizeSqCandidato("250000252653.0"), "250000252653");
+    assert.equal(normalizeSqCandidato("2.50000252653E+11"), "250000252653");
+    assert.equal(normalizeSqCandidato("2,50000252653E+11"), "250000252653");
+    assert.equal(normalizeSqCandidato("#NULO#"), null);
+
+    const csv = `SG_UF;DS_CARGO;SQ_CANDIDATO;NR_CANDIDATO;NM_URNA_CANDIDATO;DS_SITUACAO_CANDIDATURA;DS_DETALHE_SITUACAO_CAND
+SP;DEPUTADO FEDERAL;2.50000252653E+11;1001;KEILA GISELLE;APTO;DEFERIDO
+SP;GOVERNADOR;250000252653.0;13;FERNANDO HADDAD;APTO;DEFERIDO
+`;
+    const parsed = parseChapadaPayload(csv);
+    const keila = parsed.rows.find((r) => r.numero === "1001");
+    const haddad = parsed.rows.find((r) => r.numero === "13");
+    assert.equal(keila?.sq_candidato, "250000252653");
+    assert.equal(haddad?.sq_candidato, "250000252653");
+
+    const json = parseChapadaPayload(
+      JSON.stringify([
+        {
+          NR_CANDIDATO: 22,
+          NM_URNA_CANDIDATO: "FLAVIO",
+          DS_CARGO: "PRESIDENTE",
+          SQ_CANDIDATO: 250000252653,
+        },
+      ])
+    );
+    assert.equal(json.rows[0]?.sq_candidato, "250000252653");
+  });
 });
 
 describe("tse cargo and uf helpers", () => {
@@ -230,6 +262,51 @@ describe("import chapada", () => {
     );
     assert.equal(keila?.nome, "Keila Giselle");
     assert.equal(keila?.origem, "catalogo");
+  });
+
+  it("persists numeric SQ on catalog and does not wipe existing catalog foto", async () => {
+    upsertMockCandidatos([
+      {
+        numero: "1001",
+        nome: "Keila Giselle",
+        cargo: "Deputado Federal",
+        foto_url: "https://cdn.example/keila.jpg",
+        origem: "catalogo",
+      },
+    ]);
+    const featured = getMockCandidatos().find(
+      (c) => c.numero === "10" && c.cargo === "Governador"
+    );
+    const featuredFoto = featured?.foto_url ?? null;
+    const result = await importCandidatos(
+      [
+        {
+          numero: "1001",
+          nome: "Keila Giselle",
+          cargo: "Deputado Federal",
+          sq_candidato: 250000252653 as unknown as string,
+        },
+        {
+          numero: "10",
+          nome: "Tarcisio CSV",
+          cargo: "Governador",
+          sq_candidato: "250000111111",
+        },
+      ],
+      { origem: "catalogo" }
+    );
+    assert.equal(result.sqPersisted, true);
+    const keila = getMockCandidatos().find(
+      (c) => c.numero === "1001" && c.cargo === "Deputado Federal"
+    );
+    assert.equal(keila?.sq_candidato, "250000252653");
+    assert.equal(keila?.foto_url, "https://cdn.example/keila.jpg");
+    const stillFeatured = getMockCandidatos().find(
+      (c) => c.numero === "10" && c.cargo === "Governador"
+    );
+    assert.equal(stillFeatured?.origem, "cadastro");
+    assert.equal(stillFeatured?.foto_url, featuredFoto);
+    assert.notEqual(stillFeatured?.nome, "Tarcisio CSV");
   });
 
   it("unifies padded duplicates before upsert and reports count", async () => {

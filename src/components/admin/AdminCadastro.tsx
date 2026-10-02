@@ -293,6 +293,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     } catch {
       /* ignore quota */
     }
+    const withSq = parsed.rows.filter((r) => r.sq_candidato).length;
     const skipOficiais =
       result.skippedCadastro > 0
         ? ` ${result.skippedCadastro} oficial(is) do telão preservado(s).`
@@ -301,8 +302,11 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       result.duplicates > 0 && parsed.skipped.duplicates === 0
         ? ` ${result.duplicates} duplicata(s) número+cargo unificada(s).`
         : "";
+    const sqNote = result.sqPersisted
+      ? ` ${withSq} com SQ_CANDIDATO.`
+      : " Coluna sq_candidato ausente — rode a migration 008 ou 012 no SQL Editor e importe de novo.";
     setMessage(
-      `Chapada: ${summarizeChapadaParse(parsed)}. ${result.upserted} gravado(s) no catálogo.${skipOficiais}${extraDups}`
+      `Chapada: ${summarizeChapadaParse(parsed)}. ${result.upserted} gravado(s) no catálogo.${skipOficiais}${extraDups}${sqNote}`
     );
     setChapadaText("");
     await reload();
@@ -424,16 +428,22 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     setError(null);
     setMessage(null);
     try {
-      const result = await linkStoredUrnaFotos();
+      const extra =
+        lastChapadaRows.length > 0
+          ? indexFromChapadaRows(lastChapadaRows)
+          : undefined;
+      const result = await linkStoredUrnaFotos({ extraIndex: extra });
       if (!result.storageConfigured) {
         setMessage("Storage não configurado — envie o ZIP ou um arquivo por destaque.");
-      } else if (result.linked > 0) {
+      } else if (result.linked > 0 || result.sqFilled > 0) {
         setMessage(
-          `${result.linked} foto(s) do Storage vinculadas pelo SQ_CANDIDATO.`
+          `${result.linked} foto(s) do catálogo vinculadas pelo SQ_CANDIDATO` +
+            (result.sqFilled ? ` · ${result.sqFilled} SQ gravado(s)` : "") +
+            `. Oficiais do telão com foto foram mantidos.`
         );
       } else {
         setMessage(
-          `Nenhuma foto nova no Storage (${result.checked} arquivo(s) vistos). Envie o ZIP ou um arquivo.`
+          `Nenhuma foto nova (${result.checked} arquivo(s) no Storage). Reimporte o CSV do TSE (para gravar SQ_CANDIDATO) e clique de novo — não precisa reenviar o ZIP.`
         );
       }
       await reload();
@@ -984,12 +994,11 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               Fotos dos destaques do /chefe
             </h3>
             <p className="text-sm text-slate-300">
-              Tarcísio (10), Haddad (13), Lula e Flávio. Sem inventar imagem —
-              se o Storage já tem arquivo com o{" "}
-              <code className="text-[#FFDE00]">SQ_CANDIDATO</code>, vincule. Senão,
-              envie o ZIP acima ou um arquivo aqui. Só grava{" "}
-              <code className="text-slate-200">foto_url</code> (não vira oficial
-              do telão).
+              Tarcísio (10), Haddad (13), Lula e Flávio. Sem inventar URL. Se o
+              ZIP já foi enviado, reimporte o CSV do TSE (grava{" "}
+              <code className="text-[#FFDE00]">SQ_CANDIDATO</code>, mesmo número
+              do Excel na coluna G) e clique em vincular — não reenvie o ZIP.
+              Oficiais do telão com foto não são sobrescritos.
             </p>
             <ul className="divide-y divide-white/10 overflow-hidden rounded-lg border border-white/10">
               {pinFotos.map((pin) => (

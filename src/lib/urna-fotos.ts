@@ -4,7 +4,7 @@ import {
 } from "@/lib/supabase";
 import { unzip } from "fflate";
 import { prepareCandidatePhoto } from "@/lib/candidato-foto";
-import { applyCandidatoFotos, listCandidatos } from "@/lib/data";
+import { applyCandidatoFotos, applyCandidatoSq, listCandidatos } from "@/lib/data";
 import type { ChapadaRow } from "@/lib/chapada";
 import type { Candidato } from "@/lib/types";
 import { normalizeCandidateNumero } from "@/lib/parser/bu-qr";
@@ -415,6 +415,22 @@ export async function processUrnaFotos(
         `${applied.notFound} foto(s) enviada(s) sem candidato correspondente no banco.`
       );
     }
+    const sqItems = pendingUrls
+      .map((item) => {
+        const list = index.byNumero.get(normalizeCandidateNumero(item.numero));
+        const target = list?.find((t) => t.cargo === item.cargo);
+        const sq = target?.sq_candidato?.replace(/\D/g, "") || "";
+        return sq
+          ? { numero: item.numero, cargo: item.cargo, sq_candidato: sq }
+          : null;
+      })
+      .filter(
+        (x): x is { numero: string; cargo: string; sq_candidato: string } =>
+          x != null
+      );
+    if (sqItems.length > 0) {
+      await applyCandidatoSq(sqItems);
+    }
   }
 
   return {
@@ -431,12 +447,19 @@ export async function processUrnaFotos(
 export function planStorageFotoLinks(
   objectPaths: string[],
   index: UrnaFotoIndex
-): Array<{ numero: string; cargo: string; path: string; id?: string }> {
+): Array<{
+  numero: string;
+  cargo: string;
+  path: string;
+  id?: string;
+  sq_candidato?: string | null;
+}> {
   const planned: Array<{
     numero: string;
     cargo: string;
     path: string;
     id?: string;
+    sq_candidato?: string | null;
   }> = [];
   const seen = new Set<string>();
   for (const path of objectPaths) {
@@ -451,6 +474,7 @@ export function planStorageFotoLinks(
       cargo: match.target.cargo,
       path,
       id: match.target.id,
+      sq_candidato: match.target.sq_candidato ?? null,
     });
   }
   return planned;
@@ -495,22 +519,47 @@ export async function listStorageFotoPaths(): Promise<string[]> {
  * Se o bucket já tem FSP/FBR{SQ}_div e o candidato tem sq_candidato sem
  * foto_url, grava a URL pública. Não inventa imagem.
  */
-export async function linkStoredUrnaFotos(): Promise<{
+export async function linkStoredUrnaFotos(opts?: {
+  extraIndex?: UrnaFotoIndex;
+}): Promise<{
   linked: number;
+  sqFilled: number;
   checked: number;
   storageConfigured: boolean;
 }> {
   const supabase = getSupabase();
   if (!supabase) {
-    return { linked: 0, checked: 0, storageConfigured: false };
+    return { linked: 0, sqFilled: 0, checked: 0, storageConfigured: false };
   }
-  const [paths, index] = await Promise.all([
+  const [paths, dbIndex] = await Promise.all([
     listStorageFotoPaths(),
     indexFromDatabase(),
   ]);
+  const index = opts?.extraIndex
+    ? mergeUrnaFotoIndexes(opts.extraIndex, dbIndex)
+    : dbIndex;
   const planned = planStorageFotoLinks(paths, index);
+  const sqItems = planned
+    .map((row) => {
+      const sq = (row.sq_candidato ?? "").replace(/\D/g, "");
+      return sq
+        ? { numero: row.numero, cargo: row.cargo, sq_candidato: sq }
+        : null;
+    })
+    .filter(
+      (x): x is { numero: string; cargo: string; sq_candidato: string } =>
+        x != null
+    );
+  const sqFilled =
+    sqItems.length > 0 ? (await applyCandidatoSq(sqItems)).updated : 0;
+
   if (planned.length === 0) {
-    return { linked: 0, checked: paths.length, storageConfigured: true };
+    return {
+      linked: 0,
+      sqFilled,
+      checked: paths.length,
+      storageConfigured: true,
+    };
   }
   const items: Array<{ numero: string; cargo: string; foto_url: string }> = [];
   for (const row of planned) {
@@ -523,11 +572,17 @@ export async function linkStoredUrnaFotos(): Promise<{
     });
   }
   if (items.length === 0) {
-    return { linked: 0, checked: paths.length, storageConfigured: true };
+    return {
+      linked: 0,
+      sqFilled,
+      checked: paths.length,
+      storageConfigured: true,
+    };
   }
   const applied = await applyCandidatoFotos(items);
   return {
     linked: applied.updated,
+    sqFilled,
     checked: paths.length,
     storageConfigured: true,
   };

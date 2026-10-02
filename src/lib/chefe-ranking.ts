@@ -99,7 +99,7 @@ export function chefeGreeting(hour: number, nome: string): string {
   return `Boa noite, ${who}`;
 }
 
-function matchesChefeQuery(row: ChefeRankingFlatRow, query: string): boolean {
+export function matchesChefeQuery(row: ChefeRankingFlatRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   const digits = q.replace(/\D/g, "");
@@ -107,6 +107,15 @@ function matchesChefeQuery(row: ChefeRankingFlatRow, query: string): boolean {
     row.candidato.nome.toLowerCase().includes(q) ||
     row.candidato.numero.includes(digits || q)
   );
+}
+
+/** Filtra uma lista já montada (ex.: favoritos + top 10) por nome ou número. */
+export function filterChefeRowsByQuery(
+  rows: ChefeRankingFlatRow[],
+  query: string
+): ChefeRankingFlatRow[] {
+  if (!query.trim()) return rows;
+  return rows.filter((row) => matchesChefeQuery(row, query));
 }
 
 function origemFillRank(row: ChefeRankingFlatRow): number {

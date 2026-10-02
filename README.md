@@ -97,7 +97,7 @@ Para um segundo PIN: `/admin` → Cadastro → **Acessos chefe** → nome + PIN 
 
 ## Chefe (`/chefe`)
 
-PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe** lista / adiciona / exclui (nome + PIN). Header numa linha: **Chefe · Ranking geral · Bom dia/tarde/noite, {nome} · Sair** (Telão miúdo se couber). Barra com **exatamente quatro** pins — Governador **Tarcísio (nº 10)** e **Fernando Haddad (nº 13)**; Presidente **Lula** e **Flávio**. Desktop: chips compactos + 3 colunas (catálogo, busca, sort; favoritos do PIN no topo). Mobile: pins maiores (2×2), pinch-zoom liberado, filtro **Todos / Dep. Estadual / Dep. Federal / Senador** (o cargo escolhido sobe; os outros na ordem estadual→federal→senador) e em cada bloco só **favoritos do PIN + 10 mais votados**. Fotos dos pins vêm de `foto_url`. Exige migration `011`. Não substitui o telão (`/telao`).
+PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe** lista / adiciona / exclui (nome + PIN). Header numa linha: **Chefe · Ranking geral · Bom dia/tarde/noite, {nome} · Sair** (Telão miúdo se couber). Barra com **exatamente quatro** pins — Governador **Tarcísio (nº 10)** e **Fernando Haddad (nº 13)**; Presidente **Lula** e **Flávio**. Desktop: chips compactos + 3 colunas (catálogo, busca, sort; favoritos do PIN no topo). Mobile: pins maiores (2×2), pinch-zoom liberado, filtro **Todos / Dep. Estadual / Dep. Federal / Senador** (o cargo escolhido sobe; os outros na ordem estadual→federal→senador) e em cada bloco só **favoritos do PIN + 10 mais votados**, com busca **Nome ou número** no topo de Estadual e Federal (e Senador). Fotos dos pins vêm de `foto_url`. Exige migration `011`. Não substitui o telão (`/telao`).
 
 ## Fiscal flow (domingo)
 

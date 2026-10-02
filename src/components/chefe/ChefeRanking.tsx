@@ -24,6 +24,7 @@ import {
   chefeMiniaturaFallback,
   isChefeFavoritoId,
   isSyntheticPinnedId,
+  filterChefeRowsByQuery,
   mobileChefeCargoRows,
   orderChefeMobileCargos,
   pinChefeHighlights,
@@ -360,31 +361,48 @@ function CargoColumn({
 function MobileCargoBlock({
   titulo,
   rows,
+  query,
+  onQuery,
   favoritoIds,
   savingIds,
   onToggle,
 }: {
   titulo: string;
   rows: ChefeRankingFlatRow[];
+  query: string;
+  onQuery: (value: string) => void;
   favoritoIds: ReadonlySet<string>;
   savingIds: ReadonlySet<string>;
   onToggle: (candidato: Candidato) => void;
 }) {
+  const filtered = filterChefeRowsByQuery(rows, query);
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
       <h2 className="px-3 pt-2.5 text-base font-bold text-slate-900">
         {titulo}
       </h2>
-      <p className="px-3 pb-1.5 text-xs text-slate-500">
+      <p className="px-3 text-xs text-slate-500">
         Favoritos deste PIN + 10 mais votados
       </p>
-      {rows.length === 0 ? (
+      <label className="relative block px-3 pb-2 pt-1.5">
+        <span className="sr-only">Buscar em {titulo}</span>
+        <Search className="pointer-events-none absolute left-6 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+        <Input
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="Nome ou número"
+          className="h-11 pl-9 text-base"
+          inputMode="search"
+          autoComplete="off"
+        />
+      </label>
+      {filtered.length === 0 ? (
         <p className="px-3 py-5 text-sm text-slate-500">
-          Catálogo vazio neste cargo
+          {query.trim() ? "Nenhum resultado" : "Catálogo vazio neste cargo"}
         </p>
       ) : (
         <ul className="divide-y divide-slate-100">
-          {rows.map((row, index) => (
+          {filtered.map((row, index) => (
             <CargoRow
               key={`${row.candidato.id}-${row.cargo}`}
               row={row}
@@ -434,6 +452,8 @@ export function ChefeRanking() {
   const [pinBusy, setPinBusy] = useState(false);
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
   const [colQueries, setColQueries] = useState<ColunaQuery>(EMPTY_COL_QUERY);
+  const [mobileQueries, setMobileQueries] =
+    useState<ColunaQuery>(EMPTY_COL_QUERY);
   const [colSorts, setColSorts] = useState<ColunaSort>(DEFAULT_COL_SORT);
   const [favoritoIds, setFavoritoIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -605,6 +625,7 @@ export function ChefeRanking() {
     setFavoritoIds(new Set());
     setSnapshot(EMPTY);
     setColQueries(EMPTY_COL_QUERY);
+    setMobileQueries(EMPTY_COL_QUERY);
     setColSorts(DEFAULT_COL_SORT);
   }
 
@@ -798,6 +819,10 @@ export function ChefeRanking() {
             key={col.cargo}
             titulo={col.titulo}
             rows={col.rows}
+            query={mobileQueries[col.cargo]}
+            onQuery={(value) =>
+              setMobileQueries((prev) => ({ ...prev, [col.cargo]: value }))
+            }
             favoritoIds={favoritoIds}
             savingIds={savingIds}
             onToggle={toggleFavorito}

@@ -12,6 +12,7 @@ import {
   CHEFE_PINNED_GOVERNADORES,
   CHEFE_PINNED_PRESIDENTES,
   sortChefeFavoritesFirst,
+  filterChefeRowsByQuery,
   mobileChefeCargoRows,
   orderChefeMobileCargos,
   toggleChefeColumnSort,
@@ -750,6 +751,12 @@ describe("mobile chefe cargo filter", () => {
     assert.ok(listed.slice(1).every((r) => r.candidato.id !== "de-12"));
     assert.equal(listed[1].candidato.id, "de-0");
     assert.equal(listed[10].candidato.id, "de-9");
+    const byName = filterChefeRowsByQuery(listed, "Cand 3");
+    assert.equal(byName.length, 1);
+    assert.equal(byName[0].candidato.id, "de-3");
+    const byNum = filterChefeRowsByQuery(listed, "10000");
+    assert.equal(byNum[0].candidato.id, "de-0");
+    assert.equal(filterChefeRowsByQuery(listed, "zzz").length, 0);
   });
 });
 

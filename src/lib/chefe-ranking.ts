@@ -133,6 +133,151 @@ export function cargoRowsForChefe(
     .filter((row) => matchesChefeQuery(row, query));
 }
 
+export function foldChefeName(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sameChefeCargo(a: string, b: string): boolean {
+  return foldChefeName(a) === foldChefeName(b);
+}
+
+function sameChefeNumero(a: string, b: string): boolean {
+  const da = a.replace(/\D/g, "").replace(/^0+(?=\d)/, "") || "";
+  const db = b.replace(/\D/g, "").replace(/^0+(?=\d)/, "") || "";
+  return Boolean(da) && da === db;
+}
+
+function nameMatchesHints(nome: string, hints: readonly string[]): boolean {
+  const folded = foldChefeName(nome);
+  return hints.some((hint) => folded.includes(hint));
+}
+
+export type ChefePinSpec = {
+  cargo: string;
+  label: string;
+  /** Governador: casa cargo+número primeiro. */
+  numero?: string;
+  nameHints: readonly string[];
+};
+
+export const CHEFE_PINNED_GOVERNADORES: readonly ChefePinSpec[] = [
+  {
+    cargo: "Governador",
+    label: "Tarcísio",
+    numero: "10",
+    nameHints: ["tarcisio"],
+  },
+  {
+    cargo: "Governador",
+    label: "Fernando Haddad",
+    numero: "13",
+    nameHints: ["haddad", "fernando haddad"],
+  },
+];
+
+export const CHEFE_PINNED_PRESIDENTES: readonly ChefePinSpec[] = [
+  {
+    cargo: "Presidente",
+    label: "Lula",
+    nameHints: ["lula"],
+  },
+  {
+    cargo: "Presidente",
+    label: "Flávio",
+    nameHints: ["flavio"],
+  },
+];
+
+function pickBestPinned(rows: ChefeRankingFlatRow[]): ChefeRankingFlatRow {
+  return [...rows].sort(
+    (a, b) =>
+      b.votos - a.votos ||
+      origemFillRank(a) - origemFillRank(b) ||
+      a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
+  )[0];
+}
+
+function rowsInCargo(
+  rows: ChefeRankingFlatRow[],
+  cargo: string
+): ChefeRankingFlatRow[] {
+  return rows.filter(
+    (r) =>
+      sameChefeCargo(r.cargo, cargo) || sameChefeCargo(r.candidato.cargo, cargo)
+  );
+}
+
+/** Casa um pin no catálogo: cargo+número, depois nome da urna (acentos flexíveis). */
+export function findPinnedRow(
+  rows: ChefeRankingFlatRow[],
+  spec: ChefePinSpec
+): ChefeRankingFlatRow | null {
+  const inCargo = rowsInCargo(rows, spec.cargo);
+  if (inCargo.length === 0) return null;
+
+  if (spec.numero) {
+    const byNum = inCargo.filter((r) =>
+      sameChefeNumero(r.candidato.numero, spec.numero!)
+    );
+    if (byNum.length > 0) return pickBestPinned(byNum);
+  }
+
+  const byName = inCargo.filter((r) =>
+    nameMatchesHints(r.candidato.nome, spec.nameHints)
+  );
+  if (byName.length === 0) return null;
+
+  const named = pickBestPinned(byName);
+  if (named.candidato.numero) {
+    const byNum = inCargo.filter((r) =>
+      sameChefeNumero(r.candidato.numero, named.candidato.numero)
+    );
+    if (byNum.length > 0) return pickBestPinned(byNum);
+  }
+  return named;
+}
+
+export function syntheticPinnedRow(spec: ChefePinSpec): ChefeRankingFlatRow {
+  const numero = spec.numero ?? "";
+  return {
+    votos: 0,
+    percentual: 0,
+    cargo: spec.cargo,
+    candidato: {
+      id: `pin:${spec.cargo}:${numero || spec.label}`,
+      numero,
+      nome: spec.label,
+      cargo: spec.cargo,
+      foto_url: null,
+      origem: "catalogo",
+    },
+  };
+}
+
+export function isSyntheticPinnedId(id: string): boolean {
+  return id.startsWith("pin:");
+}
+
+/** Exatamente os pins, na ordem de votos (líder primeiro). Sem o resto do cargo. */
+export function pinChefeHighlights(
+  rows: ChefeRankingFlatRow[],
+  specs: readonly ChefePinSpec[]
+): ChefeRankingFlatRow[] {
+  const picked = specs.map(
+    (spec) => findPinnedRow(rows, spec) ?? syntheticPinnedRow(spec)
+  );
+  return [...picked].sort(
+    (a, b) =>
+      b.votos - a.votos ||
+      a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
+  );
+}
+
 /**
  * Os dois com mais votos. Sem votos (ou empate em zero), preenche com
  * cadastro/catálogo — sem nomes fixos, para o 1º acompanhar a apuração.

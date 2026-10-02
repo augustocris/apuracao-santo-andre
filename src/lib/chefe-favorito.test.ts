@@ -7,7 +7,9 @@ import {
   filterChefeRankingRows,
   leftoverAfterPair,
   overlayChefeFavoritos,
-  pickHighlightPair,
+  pinChefeHighlights,
+  CHEFE_PINNED_GOVERNADORES,
+  CHEFE_PINNED_PRESIDENTES,
   sortChefeFavoritesFirst,
 } from "./chefe-ranking";
 import { percentualNoCargo } from "./utils";
@@ -347,45 +349,45 @@ describe("chefeGreeting", () => {
   });
 });
 
-describe("pickHighlightPair", () => {
-  it("picks the two highest vote totals, not hardcoded names", () => {
+describe("pinChefeHighlights", () => {
+  it("pins governor 10 and 13 by cargo+number and ignores the rest", () => {
     const rows = cargoRowsForChefe(
       [
         {
           cargo: "Governador",
-          totalVotos: 140,
+          totalVotos: 215,
           rankings: [
+            {
+              votos: 80,
+              percentual: 0,
+              candidato: {
+                id: "g-other",
+                numero: "45",
+                nome: "Carlos Machado",
+                cargo: "Governador",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
             {
               votos: 40,
               percentual: 0,
               candidato: {
-                id: "g-a",
+                id: "g-13",
                 numero: "13",
-                nome: "Haddad",
+                nome: "Fernando Haddad",
                 cargo: "Governador",
                 foto_url: null,
                 origem: "catalogo",
               },
             },
             {
-              votos: 100,
+              votos: 95,
               percentual: 0,
               candidato: {
-                id: "g-b",
+                id: "g-10",
                 numero: "10",
-                nome: "Tarcísio",
-                cargo: "Governador",
-                foto_url: null,
-                origem: "catalogo",
-              },
-            },
-            {
-              votos: 0,
-              percentual: 0,
-              candidato: {
-                id: "g-c",
-                numero: "45",
-                nome: "Outro",
+                nome: "Tarcísio de Freitas",
                 cargo: "Governador",
                 foto_url: null,
                 origem: "catalogo",
@@ -396,43 +398,90 @@ describe("pickHighlightPair", () => {
       ],
       "Governador"
     );
-    const pair = pickHighlightPair(rows);
+    const pair = pinChefeHighlights(rows, CHEFE_PINNED_GOVERNADORES);
     assert.equal(pair.length, 2);
-    assert.equal(pair[0].candidato.nome, "Tarcísio");
-    assert.equal(pair[1].candidato.nome, "Haddad");
+    assert.equal(pair[0].candidato.numero, "10");
+    assert.equal(pair[1].candidato.numero, "13");
+    assert.equal(
+      pair.some((r) => r.candidato.nome === "Carlos Machado"),
+      false
+    );
     pair[0].votos = 10;
     pair[1].votos = 200;
-    const flipped = pickHighlightPair(rows);
-    assert.equal(flipped[0].candidato.nome, "Haddad");
-    assert.equal(flipped[1].candidato.nome, "Tarcísio");
+    const flipped = pinChefeHighlights(rows, CHEFE_PINNED_GOVERNADORES);
+    assert.equal(flipped[0].candidato.nome, "Fernando Haddad");
+    assert.equal(flipped[1].candidato.nome, "Tarcísio de Freitas");
   });
 
-  it("fills from catalog when nobody has votes", () => {
+  it("falls back to governor name when the number is missing", () => {
+    const rows = cargoRowsForChefe(
+      [
+        {
+          cargo: "Governador",
+          totalVotos: 10,
+          rankings: [
+            {
+              votos: 10,
+              percentual: 0,
+              candidato: {
+                id: "g-name",
+                numero: "99",
+                nome: "Tarcísio de Freitas",
+                cargo: "Governador",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
+          ],
+        },
+      ],
+      "Governador"
+    );
+    const pair = pinChefeHighlights(rows, CHEFE_PINNED_GOVERNADORES);
+    assert.equal(pair.length, 2);
+    assert.ok(pair.some((r) => r.candidato.id === "g-name"));
+    assert.ok(pair.some((r) => r.candidato.nome === "Fernando Haddad"));
+    assert.ok(pair.some((r) => r.candidato.id.startsWith("pin:")));
+  });
+
+  it("pins Lula and Flávio by folded urna name and uses numero+cargo", () => {
     const rows = cargoRowsForChefe(
       [
         {
           cargo: "Presidente",
-          totalVotos: 0,
+          totalVotos: 30,
           rankings: [
             {
-              votos: 0,
+              votos: 12,
               percentual: 0,
               candidato: {
-                id: "p-bu",
-                numero: "17",
-                nome: "Candidato 17",
+                id: "p-other",
+                numero: "15",
+                nome: "Clariana",
                 cargo: "Presidente",
                 foto_url: null,
-                origem: "bu",
+                origem: "catalogo",
               },
             },
             {
-              votos: 0,
+              votos: 8,
               percentual: 0,
               candidato: {
-                id: "p-cat",
+                id: "p-lula",
                 numero: "13",
-                nome: "Lula",
+                nome: "LULA",
+                cargo: "Presidente",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
+            {
+              votos: 10,
+              percentual: 0,
+              candidato: {
+                id: "p-flavio",
+                numero: "22",
+                nome: "FLÁVIO",
                 cargo: "Presidente",
                 foto_url: null,
                 origem: "catalogo",
@@ -442,12 +491,12 @@ describe("pickHighlightPair", () => {
               votos: 0,
               percentual: 0,
               candidato: {
-                id: "p-cad",
-                numero: "22",
-                nome: "Flávio",
+                id: "p-edmilson",
+                numero: "50",
+                nome: "Edmilson",
                 cargo: "Presidente",
                 foto_url: null,
-                origem: "cadastro",
+                origem: "catalogo",
               },
             },
           ],
@@ -455,10 +504,27 @@ describe("pickHighlightPair", () => {
       ],
       "Presidente"
     );
-    const pair = pickHighlightPair(rows);
+    const pair = pinChefeHighlights(rows, CHEFE_PINNED_PRESIDENTES);
     assert.equal(pair.length, 2);
-    assert.equal(pair[0].candidato.origem, "cadastro");
-    assert.equal(pair[1].candidato.origem, "catalogo");
+    const nomes = pair.map((r) => r.candidato.nome).sort();
+    assert.deepEqual(nomes, ["FLÁVIO", "LULA"]);
+    assert.ok(pair.some((r) => r.candidato.numero === "13"));
+    assert.ok(pair.some((r) => r.candidato.numero === "22"));
+    assert.equal(
+      pair.some((r) => /clariana|edmilson/i.test(r.candidato.nome)),
+      false
+    );
+  });
+
+  it("synthesizes 0-vote slots when the catalog has nobody", () => {
+    const pair = pinChefeHighlights([], CHEFE_PINNED_PRESIDENTES);
+    assert.equal(pair.length, 2);
+    assert.deepEqual(
+      pair.map((r) => r.candidato.nome).sort(),
+      ["Flávio", "Lula"]
+    );
+    assert.ok(pair.every((r) => r.votos === 0));
+    assert.ok(pair.every((r) => r.candidato.id.startsWith("pin:")));
   });
 });
 

@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CHEFE_SESSION_ID_KEY, CHEFE_UNLOCK_KEY } from "@/lib/cargos";
 import {
+  CHEFE_PINNED_GOVERNADORES,
+  CHEFE_PINNED_PRESIDENTES,
   cargoRowsForChefe,
   chefeGreeting,
   chefeMiniaturaFallback,
   isChefeFavoritoId,
-  leftoverAfterPair,
-  pickHighlightPair,
+  isSyntheticPinnedId,
+  pinChefeHighlights,
   sortChefeFavoritesFirst,
   type ChefeRankingFlatRow,
 } from "@/lib/chefe-ranking";
@@ -42,17 +44,25 @@ const EMPTY: DashboardSnapshot = {
 };
 
 const COLUNAS = [
-  { cargo: "Deputado Estadual", titulo: "Deputado Estadual" },
-  { cargo: "Deputado Federal", titulo: "Deputado Federal" },
+  { cargo: "Deputado Estadual", titulo: "Dep. Estadual" },
+  { cargo: "Deputado Federal", titulo: "Dep. Federal" },
   { cargo: "Senador", titulo: "Senador" },
 ] as const;
+
+type ColunaQuery = Record<(typeof COLUNAS)[number]["cargo"], string>;
+
+const EMPTY_COL_QUERY: ColunaQuery = {
+  "Deputado Estadual": "",
+  "Deputado Federal": "",
+  Senador: "",
+};
 
 function ChefeFoto({
   candidato,
   size = "sm",
 }: {
   candidato: Candidato;
-  size?: "sm" | "lg";
+  size?: "xs" | "sm";
 }) {
   const [failed, setFailed] = useState(false);
   const src = candidato.foto_url?.trim() || "";
@@ -63,9 +73,9 @@ function ChefeFoto({
     <span
       className={cn(
         "inline-flex shrink-0 items-center justify-center overflow-hidden bg-teal-100 font-bold leading-none text-teal-900",
-        size === "lg"
-          ? "size-11 rounded-xl text-[11px] md:size-20 md:text-base"
-          : "size-10 rounded-full text-[10px]"
+        size === "xs"
+          ? "size-6 rounded-md text-[9px]"
+          : "size-8 rounded-full text-[10px] md:size-9"
       )}
       title={candidato.nome}
     >
@@ -89,16 +99,21 @@ function StarButton({
   favorito,
   busy,
   onToggle,
+  compact = false,
 }: {
   candidato: Candidato;
   favorito: boolean;
   busy: boolean;
   onToggle: (candidato: Candidato) => void;
+  compact?: boolean;
 }) {
   return (
     <button
       type="button"
-      className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-amber-500 hover:bg-amber-50 disabled:opacity-50 md:size-9"
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-md text-amber-500 hover:bg-amber-50 disabled:opacity-50",
+        compact ? "size-7" : "size-11 md:size-8"
+      )}
       disabled={busy}
       onClick={() => onToggle(candidato)}
       aria-pressed={favorito}
@@ -111,7 +126,7 @@ function StarButton({
     >
       <Star
         className={cn(
-          "size-5 md:size-4",
+          compact ? "size-3.5" : "size-5 md:size-4",
           favorito ? "fill-amber-400 text-amber-500" : "text-slate-300"
         )}
       />
@@ -119,52 +134,42 @@ function StarButton({
   );
 }
 
-function HighlightCard({
+function HighlightChip({
   row,
-  place,
   favorito,
   busy,
   onToggle,
 }: {
   row: ChefeRankingFlatRow;
-  place: 1 | 2;
   favorito: boolean;
   busy: boolean;
   onToggle: (candidato: Candidato) => void;
 }) {
+  const synthetic = isSyntheticPinnedId(row.candidato.id);
   return (
-    <article className="relative flex min-w-0 flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-2.5 pr-12 shadow-sm md:flex-row md:items-stretch md:gap-4 md:p-4 md:pr-4">
-      <div className="absolute right-1 top-1 md:static md:order-4 md:self-start">
+    <article className="flex h-8 min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-slate-200 bg-white px-1.5 md:h-9 md:gap-2 md:px-2">
+      <ChefeFoto candidato={row.candidato} size="xs" />
+      <div className="min-w-0 flex-1 leading-tight">
+        <p className="truncate text-[11px] font-semibold text-slate-900 md:text-xs">
+          {row.candidato.nome}
+        </p>
+        <p className="truncate text-[10px] tabular-nums text-slate-500">
+          {row.candidato.numero ? `Nº ${row.candidato.numero} · ` : ""}
+          {formatVotes(row.votos)}
+          <span className="ml-1 text-slate-400">
+            {formatPercent(row.percentual)}
+          </span>
+        </p>
+      </div>
+      {!synthetic && (
         <StarButton
           candidato={row.candidato}
           favorito={favorito}
           busy={busy}
           onToggle={onToggle}
+          compact
         />
-      </div>
-      <div className="flex min-w-0 items-start gap-2 md:contents">
-        <ChefeFoto candidato={row.candidato} size="lg" />
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-teal-800">
-            {row.cargo} · {place}º
-          </p>
-          <p className="mt-0.5 line-clamp-2 text-[13px] font-bold leading-snug break-words text-slate-900 md:text-lg">
-            {row.candidato.nome}
-          </p>
-          <p className="text-[11px] tabular-nums text-slate-500">
-            Nº {row.candidato.numero}
-          </p>
-        </div>
-      </div>
-      <p className="font-bold tabular-nums text-teal-800 md:order-3 md:mt-auto md:text-xl">
-        {formatVotes(row.votos)}
-        <span className="ml-1 text-[11px] font-medium text-slate-500 md:text-sm">
-          votos
-        </span>
-        <span className="ml-2 text-[11px] font-semibold text-slate-400 md:text-sm">
-          {formatPercent(row.percentual)}
-        </span>
-      </p>
+      )}
     </article>
   );
 }
@@ -185,27 +190,27 @@ function CargoRow({
   return (
     <li
       className={cn(
-        "flex items-center gap-2 px-2 py-1.5 md:px-3",
+        "flex items-center gap-1.5 px-2 py-1 md:px-2.5",
         favorito && "bg-amber-50/80"
       )}
     >
-      <span className="w-5 shrink-0 text-center text-[11px] tabular-nums text-slate-400">
+      <span className="w-4 shrink-0 text-center text-[10px] tabular-nums text-slate-400">
         {index + 1}
       </span>
       <ChefeFoto candidato={row.candidato} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-900">
+        <p className="truncate text-[13px] font-medium leading-tight text-slate-900">
           {row.candidato.nome}
         </p>
-        <p className="text-[11px] tabular-nums text-slate-500">
+        <p className="text-[10px] tabular-nums text-slate-500">
           Nº {row.candidato.numero}
         </p>
       </div>
       <div className="shrink-0 text-right">
-        <p className="text-sm font-bold tabular-nums text-teal-800">
+        <p className="text-[13px] font-bold tabular-nums leading-tight text-teal-800">
           {formatVotes(row.votos)}
         </p>
-        <p className="text-[11px] tabular-nums text-slate-400">
+        <p className="text-[10px] tabular-nums text-slate-400">
           {formatPercent(row.percentual)}
         </p>
       </div>
@@ -222,25 +227,41 @@ function CargoRow({
 function CargoColumn({
   titulo,
   rows,
+  query,
+  onQuery,
   favoritoIds,
   savingIds,
   onToggle,
 }: {
   titulo: string;
   rows: ChefeRankingFlatRow[];
+  query: string;
+  onQuery: (value: string) => void;
   favoritoIds: ReadonlySet<string>;
   savingIds: ReadonlySet<string>;
   onToggle: (candidato: Candidato) => void;
 }) {
   return (
-    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <h2 className="shrink-0 border-b border-slate-100 px-3 py-2 text-sm font-bold text-slate-900">
+    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <h2 className="shrink-0 px-2 pt-1.5 text-[13px] font-bold text-slate-900">
         {titulo}
       </h2>
+      <label className="relative shrink-0 px-2 pb-1.5 pt-1">
+        <span className="sr-only">Buscar em {titulo}</span>
+        <Search className="pointer-events-none absolute left-4 top-1/2 size-3 -translate-y-1/2 text-slate-400" />
+        <Input
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="Nome ou número"
+          className="h-7 pl-7 text-xs"
+        />
+      </label>
       {rows.length === 0 ? (
-        <p className="px-3 py-6 text-sm text-slate-500">Nenhum voto ainda</p>
+        <p className="px-2 py-4 text-xs text-slate-500">
+          {query.trim() ? "Nenhum resultado" : "Nenhum voto ainda"}
+        </p>
       ) : (
-        <ul className="divide-y divide-slate-100">
+        <ul className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
           {rows.map((row, index) => (
             <CargoRow
               key={`${row.candidato.id}-${row.cargo}`}
@@ -290,7 +311,7 @@ export function ChefeRanking() {
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinBusy, setPinBusy] = useState(false);
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
-  const [query, setQuery] = useState("");
+  const [colQueries, setColQueries] = useState<ColunaQuery>(EMPTY_COL_QUERY);
   const [favoritoIds, setFavoritoIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -360,29 +381,21 @@ export function ChefeRanking() {
 
   const groups = snapshot.rankingGeralByCargo;
 
-  const governadores = useMemo(
-    () => cargoRowsForChefe(groups, "Governador", query),
-    [groups, query]
+  const govPins = useMemo(
+    () =>
+      pinChefeHighlights(
+        cargoRowsForChefe(groups, "Governador"),
+        CHEFE_PINNED_GOVERNADORES
+      ),
+    [groups]
   );
-  const presidentes = useMemo(
-    () => cargoRowsForChefe(groups, "Presidente", query),
-    [groups, query]
-  );
-  const govPair = useMemo(
-    () => pickHighlightPair(governadores),
-    [governadores]
-  );
-  const presPair = useMemo(
-    () => pickHighlightPair(presidentes),
-    [presidentes]
-  );
-  const govRest = useMemo(
-    () => leftoverAfterPair(governadores, govPair, favoritoIds),
-    [governadores, govPair, favoritoIds]
-  );
-  const presRest = useMemo(
-    () => leftoverAfterPair(presidentes, presPair, favoritoIds),
-    [presidentes, presPair, favoritoIds]
+  const presPins = useMemo(
+    () =>
+      pinChefeHighlights(
+        cargoRowsForChefe(groups, "Presidente"),
+        CHEFE_PINNED_PRESIDENTES
+      ),
+    [groups]
   );
 
   const colunas = useMemo(
@@ -390,11 +403,11 @@ export function ChefeRanking() {
       COLUNAS.map((col) => ({
         ...col,
         rows: sortChefeFavoritesFirst(
-          cargoRowsForChefe(groups, col.cargo, query),
+          cargoRowsForChefe(groups, col.cargo, colQueries[col.cargo]),
           favoritoIds
         ),
       })),
-    [groups, query, favoritoIds]
+    [groups, colQueries, favoritoIds]
   );
 
   async function handleUnlock(e: FormEvent) {
@@ -425,10 +438,12 @@ export function ChefeRanking() {
     setChefe(null);
     setFavoritoIds(new Set());
     setSnapshot(EMPTY);
+    setColQueries(EMPTY_COL_QUERY);
   }
 
   async function toggleFavorito(candidato: Candidato) {
     if (!chefe || savingIds.has(candidato.id)) return;
+    if (isSyntheticPinnedId(candidato.id)) return;
     const next = !isChefeFavoritoId(candidato.id, favoritoIds);
     const previous = new Set(favoritoIds);
     setFavoritoIds((prev) => {
@@ -509,132 +524,91 @@ export function ChefeRanking() {
   const saudacao = chefeGreeting(hour, chefe.nome);
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-5 md:px-6">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
-        <div className="min-w-0">
-          <p className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-800">
-            <Trophy className="size-3.5" />
-            Chefe
-          </p>
-          <h1 className="text-2xl font-bold text-slate-900">Ranking geral</h1>
-          <p className="mt-0.5 text-sm text-slate-600">{saudacao}</p>
-        </div>
-        <div className="flex items-center gap-3">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col px-3 py-1.5 md:overflow-hidden md:px-4 md:py-2">
+      <header className="flex h-8 shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[13px] leading-none">
+        <Trophy className="size-3.5 shrink-0 text-teal-800" aria-hidden />
+        <span className="font-semibold text-teal-800">Chefe</span>
+        <span className="text-slate-300" aria-hidden>
+          ·
+        </span>
+        <h1 className="font-bold text-slate-900">Ranking geral</h1>
+        <span className="text-slate-300" aria-hidden>
+          ·
+        </span>
+        <p className="min-w-0 truncate text-slate-600">{saudacao}</p>
+        {loading && (
+          <Loader2
+            className="size-3.5 shrink-0 animate-spin text-slate-400"
+            aria-label="Carregando"
+          />
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-2">
           <Link
             href="/telao"
-            className="text-xs text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+            className="hidden text-[11px] text-slate-400 underline-offset-2 hover:text-slate-700 hover:underline sm:inline"
           >
             Telão
           </Link>
-          <Button
+          <button
             type="button"
-            variant="outline"
-            className="h-9 border-slate-300 px-3"
+            className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-600 hover:text-slate-900"
             onClick={handleLock}
           >
-            <LogOut className="size-4" />
+            <LogOut className="size-3.5" />
             Sair
-          </Button>
-        </div>
+          </button>
+        </span>
       </header>
 
-      <label className="relative max-w-md">
-        <span className="sr-only">Buscar</span>
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar nome ou número"
-          className="h-10 pl-9"
-        />
-      </label>
-
-      {loading && (
-        <p className="flex items-center gap-2 text-sm text-slate-600">
-          <Loader2 className="size-4 animate-spin" /> Carregando…
-        </p>
-      )}
       {error && (
         <p
           role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
+          className="mb-1 shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900"
         >
           {error}
         </p>
       )}
 
-      {!loading && (
-        <>
-          <div className="grid grid-cols-2 gap-2 md:gap-3">
-            {govPair.length === 0 ? (
-              <p className="col-span-2 rounded-2xl border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500">
-                Nenhum voto ainda
-              </p>
-            ) : (
-              govPair.map((row, i) => (
-                <HighlightCard
-                  key={row.candidato.id}
-                  row={row}
-                  place={i === 0 ? 1 : 2}
-                  favorito={isChefeFavoritoId(row.candidato.id, favoritoIds)}
-                  busy={savingIds.has(row.candidato.id)}
-                  onToggle={toggleFavorito}
-                />
-              ))
-            )}
-          </div>
-          {govRest.length > 0 && (
-            <CargoColumn
-              titulo="Outros governadores"
-              rows={govRest}
-              favoritoIds={favoritoIds}
-              savingIds={savingIds}
-              onToggle={toggleFavorito}
-            />
-          )}
+      <section
+        aria-label="Governador e Presidente"
+        className="grid shrink-0 grid-cols-2 gap-1 md:grid-cols-4 md:gap-1.5"
+      >
+        {govPins.map((row) => (
+          <HighlightChip
+            key={`gov-${row.candidato.id}`}
+            row={row}
+            favorito={isChefeFavoritoId(row.candidato.id, favoritoIds)}
+            busy={savingIds.has(row.candidato.id)}
+            onToggle={toggleFavorito}
+          />
+        ))}
+        {presPins.map((row) => (
+          <HighlightChip
+            key={`pres-${row.candidato.id}`}
+            row={row}
+            favorito={isChefeFavoritoId(row.candidato.id, favoritoIds)}
+            busy={savingIds.has(row.candidato.id)}
+            onToggle={toggleFavorito}
+          />
+        ))}
+      </section>
 
-          <div className="grid grid-cols-2 gap-2 md:gap-3">
-            {presPair.length === 0 ? (
-              <p className="col-span-2 rounded-2xl border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500">
-                Nenhum voto ainda
-              </p>
-            ) : (
-              presPair.map((row, i) => (
-                <HighlightCard
-                  key={row.candidato.id}
-                  row={row}
-                  place={i === 0 ? 1 : 2}
-                  favorito={isChefeFavoritoId(row.candidato.id, favoritoIds)}
-                  busy={savingIds.has(row.candidato.id)}
-                  onToggle={toggleFavorito}
-                />
-              ))
-            )}
-          </div>
-          {presRest.length > 0 && (
-            <CargoColumn
-              titulo="Outros presidentes"
-              rows={presRest}
-              favoritoIds={favoritoIds}
-              savingIds={savingIds}
-              onToggle={toggleFavorito}
-            />
-          )}
-
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            {colunas.map((col) => (
-              <CargoColumn
-                key={col.cargo}
-                titulo={col.titulo}
-                rows={col.rows}
-                favoritoIds={favoritoIds}
-                savingIds={savingIds}
-                onToggle={toggleFavorito}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-1 gap-2 md:grid-cols-3 md:overflow-hidden">
+        {colunas.map((col) => (
+          <CargoColumn
+            key={col.cargo}
+            titulo={col.titulo}
+            rows={col.rows}
+            query={colQueries[col.cargo]}
+            onQuery={(value) =>
+              setColQueries((prev) => ({ ...prev, [col.cargo]: value }))
+            }
+            favoritoIds={favoritoIds}
+            savingIds={savingIds}
+            onToggle={toggleFavorito}
+          />
+        ))}
+      </div>
     </div>
   );
 }

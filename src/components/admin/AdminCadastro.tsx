@@ -435,16 +435,23 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       const result = await linkStoredUrnaFotos({ extraIndex: extra });
       if (!result.storageConfigured) {
         setMessage("Storage não configurado — envie o ZIP ou um arquivo por destaque.");
-      } else if (result.linked > 0 || result.sqFilled > 0) {
-        setMessage(
-          `${result.linked} foto(s) do catálogo vinculadas pelo SQ_CANDIDATO` +
-            (result.sqFilled ? ` · ${result.sqFilled} SQ gravado(s)` : "") +
-            `. Oficiais do telão com foto foram mantidos.`
-        );
       } else {
-        setMessage(
-          `Nenhuma foto nova (${result.checked} arquivo(s) no Storage). Reimporte o CSV do TSE (para gravar SQ_CANDIDATO) e clique de novo — não precisa reenviar o ZIP.`
-        );
+        const bits = [
+          `Vistos ${result.listed} arquivo(s) no Storage`,
+          `${result.linked} URL(s) gravada(s) no catálogo`,
+        ];
+        if (result.skippedCadastro) {
+          bits.push(`${result.skippedCadastro} oficial(is) com foto mantida`);
+        }
+        if (result.unmatched) {
+          bits.push(`${result.unmatched} arquivo(s) sem SQ no catálogo`);
+        }
+        if (result.listed === 0) {
+          bits.push("bucket vazio ou listagem sem permissão");
+        } else if (result.linked === 0) {
+          bits.push("SQ já está no banco — confira se o arquivo é FSP{sq}_div.jpg / FBR{sq}_div.jpg");
+        }
+        setMessage(`${bits.join(" · ")}.`);
       }
       await reload();
       onConfigSaved?.();

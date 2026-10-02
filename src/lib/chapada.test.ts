@@ -204,6 +204,28 @@ SP;GOVERNADOR;250000252653.0;13;FERNANDO HADDAD;APTO;DEFERIDO
     );
     assert.equal(json.rows[0]?.sq_candidato, "250000252653");
   });
+
+  it("reads SQ_CANDIDATO from the header first, else column E (not G)", () => {
+    const byHeader = parseChapadaPayload(
+      `NR_CANDIDATO;NM_URNA_CANDIDATO;DS_CARGO;SG_UF;OUTRA;SQ_CANDIDATO
+1001;KEILA;DEPUTADO FEDERAL;SP;IGNORAR;250000252653
+`
+    );
+    assert.equal(byHeader.rows[0]?.sq_candidato, "250000252653");
+
+    const byColE = parseChapadaPayload(
+      `NR_CANDIDATO;NM_URNA_CANDIDATO;DS_CARGO;SG_UF;SQ_CANDIDATO
+2739;NOME;DEPUTADO FEDERAL;SP;250000111111
+`
+    );
+    assert.equal(byColE.rows[0]?.sq_candidato, "250000111111");
+
+    const positionalE = parseChapadaPayload(
+      `1001,Keila Giselle,Deputado Federal,SP,250000252653,colunaF,colunaG`
+    );
+    assert.equal(positionalE.rows[0]?.sq_candidato, "250000252653");
+    assert.notEqual(positionalE.rows[0]?.sq_candidato, "colunaG");
+  });
 });
 
 describe("tse cargo and uf helpers", () => {

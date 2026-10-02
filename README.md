@@ -78,7 +78,7 @@ As policies RLS seguem o estilo aberto da `001` (anon select/insert/update em co
    - TSE **SP** (`consulta_cand_2026_SP`): cargos estaduais; filtro `SG_UF` SP. **Não traz Presidente** (é nacional).
    - TSE **Brasil/Presidente**: importe também o CSV com `SG_UF=BR` e `DS_CARGO=PRESIDENTE`. Dois arquivos são aceitos (upsert). Presidente entra com UF BR ou vazia.
    - Colunas: `NR_CANDIDATO`, `NM_URNA_CANDIDATO` (fallback `NM_CANDIDATO`), `DS_CARGO`, `SQ_CANDIDATO` (número ou texto do Excel, ex. `250000252653` / `2.50000252653E+11`). Vice/suplente/prefeito/vereador ignorados.
-   - Fotos já no bucket: **não reenvie o ZIP**. 1) se `sq_candidato` não existir, cole a `008` ou a `012`; 2) reimporte `consulta_cand2026_SP` (+ CSV BR/Presidente); 3) **Vincular fotos já no Storage**. Isso preenche `foto_url` só em `origem=catalogo` sem apagar as 5 oficiais.
+   - Fotos já no bucket: **não reenvie o ZIP**. Se `sq_candidato` já está no catálogo, só **Vincular fotos já no Storage** (lista o bucket inteiro, inclusive subpastas, e mostra quantos arquivos viu vs quantas URLs gravou). SQ no CSV: header `SQ_CANDIDATO` ou coluna E. Oficiais do telão não perdem foto.
    - Simplificado: `supabase/seed-chapada-exemplo.csv`. TSE SP de exemplo: `supabase/seed-consulta-cand-exemplo.csv`. TSE BR: `supabase/seed-consulta-cand-br-exemplo.csv`.
    - Deputado Estadual → 5 dígitos (1)
    - Deputado Federal → 4 dígitos (1)

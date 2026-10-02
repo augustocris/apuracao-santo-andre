@@ -289,7 +289,7 @@ describe("zip UI status and errors", () => {
         scanned: 400,
         phase: "reading",
       }),
-      "Lidos 400 de ~26331"
+      "Lendo ZIP… · Lidos 400 de ~26331"
     );
     assert.match(
       formatUrnaFotoProgress({

@@ -63,6 +63,7 @@ import {
   emptyUrnaFotoProgress,
   formatUrnaFotoProgress,
   takeInputFiles,
+  yieldToUi,
   type UrnaFotoProgress,
   type UrnaFotoResult,
 } from "@/lib/urna-fotos";
@@ -390,6 +391,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       setFotoBusy(false);
       return;
     }
+    await yieldToUi();
     try {
       const zipFiles = list.filter((f) =>
         /\.zip$/i.test(f.name) || f.type === "application/zip"

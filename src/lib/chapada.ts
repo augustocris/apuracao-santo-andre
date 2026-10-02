@@ -161,10 +161,21 @@ export function normalizeSqCandidato(raw: unknown): string | null {
   return digits || null;
 }
 
-function sqFromRecord(rec: Record<string, string>): string | null {
-  return normalizeSqCandidato(
+/** Header SQ_CANDIDATO first; if missing, column E (index 4) — never G. */
+export const SQ_CANDIDATO_COL_E = 4;
+
+function sqFromRecord(
+  rec: Record<string, string>,
+  parts?: string[]
+): string | null {
+  const byHeader = normalizeSqCandidato(
     rec.SQ_CANDIDATO || rec.SQCANDIDATO || rec.SQ || ""
   );
+  if (byHeader) return byHeader;
+  if (parts && parts.length > SQ_CANDIDATO_COL_E) {
+    return normalizeSqCandidato(parts[SQ_CANDIDATO_COL_E]);
+  }
+  return null;
 }
 
 function stripAccentsUpper(value: string): string {
@@ -288,7 +299,10 @@ function rowFromParts(
     pushError(errors, `Linha ${index}: ${validated.message}`);
     return null;
   }
-  return { numero: validated.numero, nome, cargo };
+  const row: ChapadaRow = { numero: validated.numero, nome, cargo };
+  const sq = normalizeSqCandidato(parts[SQ_CANDIDATO_COL_E]);
+  if (sq) row.sq_candidato = sq;
+  return row;
 }
 
 function recordFromHeader(header: string[], parts: string[]): Record<string, string> {
@@ -306,7 +320,8 @@ function parseNamedRow(
   format: "tse" | "simplificado",
   errors: string[],
   skipped: ChapadaSkipCounts,
-  hasSituacaoCols: boolean
+  hasSituacaoCols: boolean,
+  parts?: string[]
 ): ChapadaRow | null {
   const numeroRaw = tseCell(rec.NR_CANDIDATO || rec.NUMERO || "");
   const nome = tseCell(
@@ -365,7 +380,7 @@ function parseNamedRow(
     return null;
   }
 
-  const sq = sqFromRecord(rec);
+  const sq = sqFromRecord(rec, parts);
   const row: ChapadaRow = { numero: validated.numero, nome, cargo };
   if (sq) row.sq_candidato = sq;
   if (apto) row.apto = true;
@@ -503,14 +518,16 @@ export function parseChapadaPayload(text: string): ParseChapadaResult {
 
   const rows: ChapadaRow[] = [];
   lines.slice(1).forEach((line, i) => {
-    const rec = recordFromHeader(headerKeys, splitCsvLine(line));
+    const parts = splitCsvLine(line);
+    const rec = recordFromHeader(headerKeys, parts);
     const parsed = parseNamedRow(
       rec,
       i + 2,
       isTse ? "tse" : "simplificado",
       errors,
       skipped,
-      hasSituacaoCols
+      hasSituacaoCols,
+      parts
     );
     if (parsed) rows.push(parsed);
   });

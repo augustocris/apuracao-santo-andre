@@ -156,10 +156,13 @@ export function isUrnaImagePath(path: string): boolean {
  * Prefix is F + 2-letter UF (`FSP`, `FBR`, …).
  */
 const TSE_FOTO_STEM = /^(?:f[a-z]{2})?(\d+)(?:_div)?$/i;
+/** FSP{sq}_div / FBR{sq}_div anywhere in the path (folders, prefixes). */
+const TSE_FUF_SQ = /f[a-z]{2}(\d{8,16})(?:_div)?/gi;
 const MAX_NR_CANDIDATO_DIGITS = 5;
 
 export function urnaFotoIdKeys(path: string): string[] {
-  const base = urnaFotoBasename(path);
+  const cleaned = path.replace(/\\/g, "/");
+  const base = urnaFotoBasename(cleaned);
   const keys: string[] = [];
   const seen = new Set<string>();
   const add = (raw: string) => {
@@ -173,8 +176,15 @@ export function urnaFotoIdKeys(path: string): string[] {
   const explicit = base.match(TSE_FOTO_STEM);
   if (explicit?.[1]) add(explicit[1]);
 
+  for (const m of cleaned.matchAll(TSE_FUF_SQ)) {
+    if (m[1]) add(m[1]);
+  }
+
   const runs = [...base.matchAll(/\d+/g)].map((m) => m[0]);
   runs.sort((a, b) => b.length - a.length);
+  for (const run of runs) {
+    if (run.length >= 8) add(run);
+  }
   for (const run of runs) add(run);
 
   return keys;
@@ -480,31 +490,62 @@ export function planStorageFotoLinks(
   return planned;
 }
 
-async function listStoragePrefix(prefix: string): Promise<string[]> {
+const STORAGE_PAGE = 1000;
+const EXTRA_STORAGE_PREFIXES = [
+  "urna",
+  "fotos",
+  "foto_cand2026_SP_div",
+  "foto_cand2026_BR_div",
+  "foto_cand2026_SP",
+  "foto_cand2026_BR",
+  "candidatos",
+];
+
+function isStorageFolder(
+  item: { id?: string | null; metadata?: unknown; name?: string },
+  name: string
+): boolean {
+  if (IMAGE_EXT.test(name)) return false;
+  return !item.id || item.metadata == null;
+}
+
+async function listStoragePrefix(
+  prefix: string,
+  seen: Set<string>
+): Promise<string[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
   const paths: string[] = [];
-  const pageSize = 100;
   let offset = 0;
+  let prevFirst = "";
   for (;;) {
     const { data, error } = await supabase.storage.from(BUCKET).list(prefix, {
-      limit: pageSize,
+      limit: STORAGE_PAGE,
       offset,
       sortBy: { column: "name", order: "asc" },
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (offset === 0 && prefix) return [];
+      throw new Error(
+        `Falha ao listar Storage (${prefix || "/"}): ${error.message}`
+      );
+    }
     if (!data || data.length === 0) break;
+    const first = data[0]?.name ?? "";
+    if (offset > 0 && first === prevFirst) break;
+    prevFirst = first;
     for (const item of data) {
       const full = prefix ? `${prefix}/${item.name}` : item.name;
-      const isFolder = !item.id || item.metadata == null;
-      if (isFolder) {
-        paths.push(...(await listStoragePrefix(full)));
+      if (seen.has(full)) continue;
+      seen.add(full);
+      if (isStorageFolder(item, item.name)) {
+        paths.push(...(await listStoragePrefix(full, seen)));
       } else if (isUrnaImagePath(full)) {
         paths.push(full);
       }
     }
-    if (data.length < pageSize) break;
-    offset += pageSize;
+    if (data.length < STORAGE_PAGE) break;
+    offset += STORAGE_PAGE;
   }
   return paths;
 }
@@ -512,7 +553,13 @@ async function listStoragePrefix(prefix: string): Promise<string[]> {
 export async function listStorageFotoPaths(): Promise<string[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  return listStoragePrefix("");
+  const seen = new Set<string>();
+  const paths = await listStoragePrefix("", seen);
+  for (const extra of EXTRA_STORAGE_PREFIXES) {
+    if (seen.has(extra)) continue;
+    paths.push(...(await listStoragePrefix(extra, seen)));
+  }
+  return paths;
 }
 
 /**
@@ -523,14 +570,24 @@ export async function linkStoredUrnaFotos(opts?: {
   extraIndex?: UrnaFotoIndex;
 }): Promise<{
   linked: number;
+  listed: number;
+  unmatched: number;
+  skippedCadastro: number;
   sqFilled: number;
   checked: number;
   storageConfigured: boolean;
 }> {
+  const empty = {
+    linked: 0,
+    listed: 0,
+    unmatched: 0,
+    skippedCadastro: 0,
+    sqFilled: 0,
+    checked: 0,
+    storageConfigured: false,
+  };
   const supabase = getSupabase();
-  if (!supabase) {
-    return { linked: 0, sqFilled: 0, checked: 0, storageConfigured: false };
-  }
+  if (!supabase) return empty;
   const [paths, dbIndex] = await Promise.all([
     listStorageFotoPaths(),
     indexFromDatabase(),
@@ -538,7 +595,35 @@ export async function linkStoredUrnaFotos(opts?: {
   const index = opts?.extraIndex
     ? mergeUrnaFotoIndexes(opts.extraIndex, dbIndex)
     : dbIndex;
-  const planned = planStorageFotoLinks(paths, index);
+  let unmatched = 0;
+  let skippedCadastro = 0;
+  const planned: ReturnType<typeof planStorageFotoLinks> = [];
+  const seenKey = new Set<string>();
+  for (const path of paths) {
+    const match = matchUrnaFotoFilename(path, index);
+    if (!match) {
+      unmatched += 1;
+      continue;
+    }
+    if ("ambiguous" in match) {
+      unmatched += 1;
+      continue;
+    }
+    if (match.target.foto_url?.trim()) {
+      skippedCadastro += 1;
+      continue;
+    }
+    const key = `${match.target.cargo}::${match.target.numero}`;
+    if (seenKey.has(key)) continue;
+    seenKey.add(key);
+    planned.push({
+      numero: match.target.numero,
+      cargo: match.target.cargo,
+      path,
+      id: match.target.id,
+      sq_candidato: match.target.sq_candidato ?? null,
+    });
+  }
   const sqItems = planned
     .map((row) => {
       const sq = (row.sq_candidato ?? "").replace(/\D/g, "");
@@ -553,15 +638,12 @@ export async function linkStoredUrnaFotos(opts?: {
   const sqFilled =
     sqItems.length > 0 ? (await applyCandidatoSq(sqItems)).updated : 0;
 
-  if (planned.length === 0) {
-    return {
-      linked: 0,
-      sqFilled,
-      checked: paths.length,
-      storageConfigured: true,
-    };
-  }
-  const items: Array<{ numero: string; cargo: string; foto_url: string }> = [];
+  const items: Array<{
+    numero: string;
+    cargo: string;
+    foto_url: string;
+    id?: string;
+  }> = [];
   for (const row of planned) {
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(row.path);
     if (!data?.publicUrl) continue;
@@ -569,19 +651,18 @@ export async function linkStoredUrnaFotos(opts?: {
       numero: row.numero,
       cargo: row.cargo,
       foto_url: data.publicUrl,
+      id: row.id,
     });
   }
-  if (items.length === 0) {
-    return {
-      linked: 0,
-      sqFilled,
-      checked: paths.length,
-      storageConfigured: true,
-    };
-  }
-  const applied = await applyCandidatoFotos(items);
+  const applied =
+    items.length > 0
+      ? await applyCandidatoFotos(items)
+      : { updated: 0, skippedCadastroFoto: 0, notFound: 0 };
   return {
     linked: applied.updated,
+    listed: paths.length,
+    unmatched,
+    skippedCadastro: skippedCadastro + applied.skippedCadastroFoto,
     sqFilled,
     checked: paths.length,
     storageConfigured: true,

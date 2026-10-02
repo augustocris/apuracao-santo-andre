@@ -94,6 +94,11 @@ describe("urna photo filename matching", () => {
       assert.equal(hit.target.cargo, "Presidente", name);
       assert.equal(hit.target.sq_candidato, "250000555555", name);
     }
+    assert.ok(
+      urnaFotoIdKeys("urna/FBR250000555555_div-1728000000000.jpg").includes(
+        "250000555555"
+      )
+    );
     assert.deepEqual(urnaFotoIdKeys("FBR250000555555_div.jpg")[0], "250000555555");
     assert.deepEqual(
       urnaFotoIdKeys("2026_FBR250000555555_div.jpg")[0],

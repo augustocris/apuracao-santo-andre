@@ -905,14 +905,7 @@ export async function listCandidatos(opts?: {
   if (!supabase) {
     list = getMockCandidatos();
   } else {
-    const { data, error } = await supabase
-      .from("candidatos")
-      .select("*")
-      .order("cargo")
-      .order("numero");
-
-    if (error) throw new Error(error.message);
-    list = (data ?? []) as Candidato[];
+    list = await fetchAllSupabaseRows<Candidato>(supabase, "candidatos", "*");
   }
 
   list = list.map(normalizeCandidato);
@@ -1794,11 +1787,6 @@ export async function importCandidatos(
   const selectCols = hasSq
     ? "id, numero, cargo, origem, foto_url, sq_candidato"
     : "id, numero, cargo, origem, foto_url";
-  const { data: current, error: listError } = await supabase
-    .from("candidatos")
-    .select(selectCols);
-  if (listError) throw new Error(listError.message);
-
   type Existing = {
     id: string;
     numero: string;
@@ -1807,7 +1795,11 @@ export async function importCandidatos(
     foto_url?: string | null;
     sq_candidato?: string | null;
   };
-  const existingList = (current as unknown as Existing[] | null) ?? [];
+  const existingList = await fetchAllSupabaseRows<Existing>(
+    supabase,
+    "candidatos",
+    selectCols
+  );
   const cadastroMap = new Map(
     existingList
       .filter((c) => c.origem === "cadastro")
@@ -1900,7 +1892,12 @@ export async function importCandidatos(
  * Oficiais do telão (origem=cadastro) só recebem foto se ainda estiver vazia.
  */
 export async function applyCandidatoFotos(
-  items: Array<{ numero: string; cargo: string; foto_url: string }>
+  items: Array<{
+    numero: string;
+    cargo: string;
+    foto_url: string;
+    id?: string;
+  }>
 ): Promise<{
   updated: number;
   skippedCadastroFoto: number;
@@ -1930,24 +1927,22 @@ export async function applyCandidatoFotos(
     return { updated, skippedCadastroFoto, notFound };
   }
 
-  const { data: current, error: listError } = await supabase
-    .from("candidatos")
-    .select("id, numero, cargo, origem, foto_url");
-  if (listError) throw new Error(listError.message);
+  const current = await fetchAllSupabaseRows<{
+    id: string;
+    numero: string;
+    cargo: string;
+    origem?: string | null;
+    foto_url?: string | null;
+  }>(supabase, "candidatos", "id, numero, cargo, origem, foto_url");
   const byKey = new Map(
-    (
-      (current ?? []) as Array<{
-        id: string;
-        numero: string;
-        cargo: string;
-        origem?: string | null;
-        foto_url?: string | null;
-      }>
-    ).map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
+    current.map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
   );
+  const byId = new Map(current.map((c) => [c.id, c] as const));
 
   for (const item of items) {
-    const row = byKey.get(cadastroKey(item.cargo, item.numero));
+    const row =
+      (item.id ? byId.get(item.id) : undefined) ??
+      byKey.get(cadastroKey(item.cargo, item.numero));
     if (!row) {
       notFound += 1;
       continue;
@@ -2000,19 +1995,14 @@ export async function applyCandidatoSq(
     return { updated: 0, notFound: 0 };
   }
 
-  const { data: current, error: listError } = await supabase
-    .from("candidatos")
-    .select("id, numero, cargo, sq_candidato");
-  if (listError) throw new Error(listError.message);
+  const current = await fetchAllSupabaseRows<{
+    id: string;
+    numero: string;
+    cargo: string;
+    sq_candidato?: string | null;
+  }>(supabase, "candidatos", "id, numero, cargo, sq_candidato");
   const byKey = new Map(
-    (
-      (current ?? []) as Array<{
-        id: string;
-        numero: string;
-        cargo: string;
-        sq_candidato?: string | null;
-      }>
-    ).map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
+    current.map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
   );
 
   for (const item of items) {

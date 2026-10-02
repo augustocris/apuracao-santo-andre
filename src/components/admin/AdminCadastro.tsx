@@ -5,9 +5,9 @@ import {
   useEffect,
   useMemo,
   useState,
+  type ChangeEvent,
   type FormEvent,
 } from "react";
-import { flushSync } from "react-dom";
 import {
   Archive,
   Check,
@@ -62,7 +62,7 @@ import {
   describeUrnaZipError,
   emptyUrnaFotoProgress,
   formatUrnaFotoProgress,
-  yieldToUi,
+  takeInputFiles,
   type UrnaFotoProgress,
   type UrnaFotoResult,
 } from "@/lib/urna-fotos";
@@ -138,6 +138,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   const [allCandidatos, setAllCandidatos] = useState<Candidato[]>([]);
   const [pinFotoBusyId, setPinFotoBusyId] = useState<string | null>(null);
   const [linkBusy, setLinkBusy] = useState(false);
+  const [fotoWarn, setFotoWarn] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -354,16 +355,41 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
     }
   }
 
-  async function handleUrnaFotos(files: FileList | File[] | null) {
-    const list = files ? Array.from(files) : [];
-    if (list.length === 0) return;
-    flushSync(() => {
-      setFotoBusy(true);
-      setError(null);
-      setMessage(null);
-      setFotoProgress(emptyUrnaFotoProgress());
-    });
-    await yieldToUi();
+  function handleZipFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const picked = takeInputFiles(e.target);
+    const file = picked[0] ?? null;
+    if (!file) {
+      setFotoWarn("Nenhum arquivo");
+      return;
+    }
+    setFotoWarn(null);
+    setFotoBusy(true);
+    setError(null);
+    setMessage(null);
+    setFotoProgress(emptyUrnaFotoProgress());
+    void handleUrnaFotos([file]);
+  }
+
+  function handleFolderFilesChange(e: ChangeEvent<HTMLInputElement>) {
+    const picked = takeInputFiles(e.target);
+    if (picked.length === 0) {
+      setFotoWarn("Nenhum arquivo");
+      return;
+    }
+    setFotoWarn(null);
+    setFotoBusy(true);
+    setError(null);
+    setMessage(null);
+    setFotoProgress(emptyUrnaFotoProgress());
+    void handleUrnaFotos(picked);
+  }
+
+  async function handleUrnaFotos(list: File[]) {
+    if (list.length === 0) {
+      setFotoWarn("Nenhum arquivo");
+      setFotoBusy(false);
+      return;
+    }
     try {
       const zipFiles = list.filter((f) =>
         /\.zip$/i.test(f.name) || f.type === "application/zip"
@@ -647,6 +673,79 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
           );
         })}
       </div>
+
+      {tab === "candidatos" && (
+        <div
+          id="enviar-zip-urna"
+          className="space-y-3 rounded-xl border border-[#FFDE00]/40 bg-slate-900/70 p-4"
+        >
+          <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-[#FFDE00]">
+            <Archive className="size-4" />
+            Enviar ZIP de fotos de urna
+          </h3>
+          <p className="text-sm text-slate-300">
+            Escolha o{" "}
+            <code className="text-[#FFDE00]">foto_cand2026_SP_div.zip</code>{" "}
+            neste campo — não use Vincular. O ZIP abre no navegador (
+            <code className="text-[#FFDE00]">FSP2500002530091_div.jpg</code>).
+          </p>
+          <label
+            htmlFor="urna-zip-file"
+            className="block text-sm font-semibold text-white"
+          >
+            Arquivo ZIP
+          </label>
+          <input
+            id="urna-zip-file"
+            name="urna-zip-file"
+            data-testid="urna-zip-input"
+            type="file"
+            accept=".zip,application/zip"
+            className="block w-full cursor-pointer rounded-lg border border-[#FFDE00]/50 bg-slate-950 px-3 py-2 text-sm text-white file:mr-3 file:rounded-md file:border-0 file:bg-[#00ADEF] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-[#001a3a] hover:file:bg-[#33c0f3]"
+            onChange={handleZipFileChange}
+          />
+          <label
+            htmlFor="urna-folder-files"
+            className="block text-xs font-medium text-slate-400"
+          >
+            Ou pasta de imagens
+          </label>
+          <input
+            id="urna-folder-files"
+            name="urna-folder-files"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            className="block w-full cursor-pointer rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-xs text-slate-200"
+            {...{ webkitdirectory: "", directory: "" }}
+            onChange={handleFolderFilesChange}
+          />
+          {fotoWarn && (
+            <p
+              role="status"
+              className="rounded-lg border border-amber-400/50 bg-amber-950/50 px-3 py-2 text-sm font-semibold text-amber-100"
+            >
+              {fotoWarn}
+            </p>
+          )}
+          {fotoProgress && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="rounded-lg border border-[#FFDE00]/50 bg-[#FFDE00]/15 px-3 py-2 text-sm font-bold text-[#FFDE00]"
+            >
+              {fotoBusy ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="size-4 shrink-0 animate-spin" />
+                  {formatUrnaFotoProgress(fotoProgress)}
+                </span>
+              ) : (
+                formatUrnaFotoProgress(fotoProgress)
+              )}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-3 md:grid-cols-2">
         <form
@@ -961,87 +1060,6 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               </p>
             )}
           </form>
-
-          <div className="space-y-3 rounded-xl border border-[#FFDE00]/25 bg-slate-900/50 p-4">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
-              <Archive className="size-4 text-[#FFDE00]" />
-              Enviar ZIP de fotos de urna
-            </h3>
-            <p className="text-sm text-slate-300">
-              Arquivos tipo{" "}
-              <code className="text-[#FFDE00]">FSP2500002530091_div.jpg</code>{" "}
-              (SP) e{" "}
-              <code className="text-[#FFDE00]">FBR…_div.jpg</code>{" "}
-              (Brasil/Presidente) casam com{" "}
-              <code className="text-[#FFDE00]">SQ_CANDIDATO</code> — o matcher
-              extrai os 13 dígitos e compara como texto. Também vale pasta no
-              ZIP. Número de urna{" "}
-              <code className="text-[#FFDE00]">NR_CANDIDATO</code> só se for
-              único. O ZIP é aberto no navegador: só os JPGs que casam (~2,5 mil
-              do ZIP de 26 mil) sobem em lotes para o bucket{" "}
-              <code className="text-[#00ADEF]">candidatos</code>. Subir o{" "}
-              <code className="text-slate-200">.zip</code> inteiro no Storage
-              não vale — Vincular não lê ZIP.
-            </p>
-            <p className="text-xs text-slate-500">
-              Oficiais do telão: a foto de cadastro só é preenchida se estiver
-              vazia. Sem Storage configurado a URL não é gravada.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg bg-[#00ADEF] px-3 text-sm font-semibold text-[#001a3a] hover:bg-[#33c0f3]">
-                {fotoBusy ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Archive className="size-4" />
-                )}
-                Enviar ZIP de fotos de urna
-                <input
-                  type="file"
-                  accept=".zip,application/zip"
-                  className="hidden"
-                  disabled={fotoBusy || chapadaBusy}
-                  onChange={(e) => {
-                    const files = e.target.files;
-                    e.target.value = "";
-                    void handleUrnaFotos(files);
-                  }}
-                />
-              </label>
-              <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-white/20 px-3 text-sm font-medium text-white hover:bg-white/5">
-                <Images className="size-4" />
-                Pasta de imagens
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  multiple
-                  className="hidden"
-                  disabled={fotoBusy || chapadaBusy}
-                  {...{ webkitdirectory: "", directory: "" }}
-                  onChange={(e) => {
-                    const files = e.target.files;
-                    e.target.value = "";
-                    void handleUrnaFotos(files);
-                  }}
-                />
-              </label>
-            </div>
-            {fotoProgress && (
-              <p
-                role="status"
-                aria-live="polite"
-                className="rounded-lg border border-[#FFDE00]/40 bg-[#FFDE00]/10 px-3 py-2 text-sm font-semibold text-[#FFDE00]"
-              >
-                {fotoBusy ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="size-4 shrink-0 animate-spin" />
-                    {formatUrnaFotoProgress(fotoProgress)}
-                  </span>
-                ) : (
-                  formatUrnaFotoProgress(fotoProgress)
-                )}
-              </p>
-            )}
-          </div>
 
           <div className="space-y-3 rounded-xl border border-white/10 bg-slate-900/50 p-4">
             <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">

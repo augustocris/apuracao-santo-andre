@@ -86,6 +86,16 @@ export function emptyUrnaFotoProgress(): UrnaFotoProgress {
   };
 }
 
+/** Copia os File e zera o input — FileList é live e some se `value = ""` antes. */
+export function takeInputFiles(input: {
+  files: FileList | null;
+  value: string;
+}): File[] {
+  const list = input.files ? Array.from(input.files) : [];
+  input.value = "";
+  return list;
+}
+
 export function yieldToUi(): Promise<void> {
   return new Promise((resolve) => {
     const done = () => resolve();

@@ -2,8 +2,7 @@ import {
   getSupabase,
   hasSupabaseEnv,
 } from "@/lib/supabase";
-import { Unzip, UnzipInflate, UnzipPassThrough } from "fflate";
-import type { UnzipFile } from "fflate";
+import JSZip from "jszip";
 import { prepareCandidatePhoto } from "@/lib/candidato-foto";
 import { applyCandidatoFotos, applyCandidatoSq, listCandidatos } from "@/lib/data";
 import type { ChapadaRow } from "@/lib/chapada";
@@ -14,8 +13,10 @@ import { isFeaturedCandidato } from "@/lib/cargos";
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif)$/i;
 const ZIP_EXT = /\.zip$/i;
 const CONCURRENCY = 4;
-const URL_FLUSH = 40;
+const URL_FLUSH = 8;
+const SCAN_CHUNK = 80;
 const MAX_ZIP_BYTES = 512 * 1024 * 1024;
+export const TSE_ZIP_ENTRY_HINT = 26331;
 
 export interface UrnaFotoTarget {
   numero: string;
@@ -51,6 +52,9 @@ export interface UrnaFotoProgress {
   ambiguous: number;
   failed: number;
   scanned?: number;
+  matched?: number;
+  phase?: "reading" | "uploading" | "done";
+  status?: string;
 }
 
 export interface UrnaFotoResult {
@@ -59,8 +63,66 @@ export interface UrnaFotoResult {
   unmatched: number;
   ambiguous: number;
   failed: number;
+  scanned: number;
+  matched: number;
+  sqInCatalog: number;
   errors: string[];
   storageConfigured: boolean;
+}
+
+export function emptyUrnaFotoProgress(): UrnaFotoProgress {
+  return {
+    done: 0,
+    total: TSE_ZIP_ENTRY_HINT,
+    uploaded: 0,
+    skippedCadastro: 0,
+    unmatched: 0,
+    ambiguous: 0,
+    failed: 0,
+    scanned: 0,
+    matched: 0,
+    phase: "reading",
+    status: "Lendo ZIP…",
+  };
+}
+
+export function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => resolve();
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => setTimeout(done, 0));
+    } else {
+      setTimeout(done, 0);
+    }
+  });
+}
+
+export function describeUrnaZipError(err: unknown): string {
+  if (err instanceof RangeError) {
+    return `Memória esgotada ao ler o ZIP (${err.message}). Feche outras abas e tente de novo.`;
+  }
+  if (!(err instanceof Error)) {
+    return "Falha ao enviar fotos de urna.";
+  }
+  const m = err.message;
+  if (/allocat|out of memory|oom|heap|maximum call/i.test(m)) {
+    return `Memória esgotada ao ler o ZIP (${m}). Feche outras abas e tente de novo.`;
+  }
+  if (/timeout|timed out|aborted/i.test(m)) {
+    return `Tempo esgotado (${m}). Tente de novo; o envio é em lotes.`;
+  }
+  if (/not a zip|isn't a zip|corromp|invalid zip|end of central|can't find end of central/i.test(m)) {
+    return `Isso não parece um ZIP válido (${m}). Use foto_cand2026_SP_div.zip.`;
+  }
+  return m;
+}
+
+function countSqInIndex(index: UrnaFotoIndex): number {
+  const seen = new Set<string>();
+  for (const row of index.bySq.values()) {
+    seen.add(`${row.cargo}::${row.numero}`);
+  }
+  return seen.size;
 }
 
 function digitString(value: string): string {
@@ -271,71 +333,24 @@ function mimeFromName(name: string): string {
   return "image/jpeg";
 }
 
-function concatBytes(chunks: Uint8Array[]): Uint8Array {
-  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
+async function loadJsZip(file: File): Promise<JSZip> {
+  if (file.size === 0) {
+    throw new Error("O arquivo ZIP está vazio.");
   }
-  return out;
-}
-
-function inflateUnzipFile(file: UnzipFile): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    const chunks: Uint8Array[] = [];
-    file.ondata = (err, data, final) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      chunks.push(data);
-      if (final) resolve(concatBytes(chunks));
-    };
-    try {
-      file.start();
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
-
-async function forEachZipFile(
-  file: File,
-  onFile: (entry: UnzipFile) => void
-): Promise<void> {
   if (file.size > MAX_ZIP_BYTES) {
     throw new Error(
       "ZIP grande demais para processar no navegador (máx. 512 MB). O arquivo do TSE de SP (~26 mil JPGs) deve caber; se não, use Pasta de imagens."
     );
   }
-  const uz = new Unzip();
-  uz.register(UnzipInflate);
-  uz.register(UnzipPassThrough);
-  uz.onfile = onFile;
-
   try {
-    const stream = typeof file.stream === "function" ? file.stream() : null;
-    if (stream) {
-      const reader = stream.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          uz.push(new Uint8Array(), true);
-          break;
-        }
-        uz.push(value);
-      }
-      return;
-    }
-    uz.push(new Uint8Array(await file.arrayBuffer()), true);
+    return await JSZip.loadAsync(file, { checkCRC32: false });
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith("ZIP grande")) throw err;
-    throw new Error(
-      "Não foi possível ler o ZIP. Confira se o arquivo não está corrompido e se as fotos estão em JPG/PNG."
-    );
+    throw new Error(describeUrnaZipError(err));
   }
+}
+
+function zipEntryNames(zip: JSZip): string[] {
+  return Object.keys(zip.files);
 }
 
 export function shouldInflateUrnaZipEntry(
@@ -358,50 +373,45 @@ export async function inspectUrnaZip(
   skippedExisting: number;
   names: string[];
 }> {
+  const zip = await loadJsZip(file);
   let scanned = 0;
   let matched = 0;
   let unmatched = 0;
   let skippedExisting = 0;
   const names: string[] = [];
-  await forEachZipFile(file, (entry) => {
-    if (!isUrnaImagePath(entry.name)) return;
+  for (const name of zipEntryNames(zip)) {
+    const entry = zip.files[name];
+    if (!entry || entry.dir || !isUrnaImagePath(name)) continue;
     scanned += 1;
-    names.push(entry.name);
-    const match = matchUrnaFotoFilename(entry.name, index);
-    if (!match || "ambiguous" in match) {
+    names.push(name);
+    const hit = matchUrnaFotoFilename(name, index);
+    if (!hit || "ambiguous" in hit) {
       unmatched += 1;
-      return;
+      continue;
     }
-    if (match.target.foto_url?.trim()) {
+    if (hit.target.foto_url?.trim()) {
       skippedExisting += 1;
-      return;
+      continue;
     }
     matched += 1;
-  });
+  }
   return { scanned, matched, unmatched, skippedExisting, names };
 }
 
 export async function listImagesFromZip(file: File): Promise<UrnaImageEntry[]> {
+  const zip = await loadJsZip(file);
   const entries: UrnaImageEntry[] = [];
-  const pending: Promise<void>[] = [];
-  await forEachZipFile(file, (entry) => {
-    if (!isUrnaImagePath(entry.name)) return;
-    pending.push(
-      inflateUnzipFile(entry)
-        .then((bytes) => {
-          if (bytes.byteLength === 0) return;
-          entries.push({
-            name: entry.name,
-            bytes,
-            type: mimeFromName(entry.name),
-          });
-        })
-        .catch(() => {
-          /* skip corrupt entry */
-        })
-    );
-  });
-  await Promise.all(pending);
+  for (const name of zipEntryNames(zip)) {
+    const entry = zip.files[name];
+    if (!entry || entry.dir || !isUrnaImagePath(name)) continue;
+    const bytes = await entry.async("uint8array");
+    if (bytes.byteLength === 0) continue;
+    entries.push({
+      name,
+      bytes,
+      type: mimeFromName(name),
+    });
+  }
   return entries;
 }
 
@@ -504,7 +514,14 @@ export async function processUrnaFotos(
     }
     onProgress?.({ ...progress });
     return {
-      ...progress,
+      uploaded: progress.uploaded,
+      skippedCadastro: progress.skippedCadastro,
+      unmatched: progress.unmatched,
+      ambiguous: progress.ambiguous,
+      failed: progress.failed,
+      scanned: progress.done,
+      matched: progress.done - progress.unmatched - progress.ambiguous,
+      sqInCatalog: countSqInIndex(index),
       errors: [
         "Storage não configurado. Defina as variáveis do Supabase e rode a migration 003 (bucket candidatos). A URL da foto só é gravada depois que o upload funciona.",
       ],
@@ -600,14 +617,17 @@ export async function processUrnaFotos(
     unmatched: progress.unmatched,
     ambiguous: progress.ambiguous,
     failed: progress.failed,
+    scanned: progress.done,
+    matched: progress.done - progress.unmatched - progress.ambiguous,
+    sqInCatalog: countSqInIndex(index),
     errors,
     storageConfigured: true,
   };
 }
 
 /**
- * Enviar ZIP no navegador: lê o central directory, infla só quem casa com
- * SQ_CANDIDATO e ainda não tem foto_url, sobe em lotes. Não descompacta 26k.
+ * Enviar ZIP no navegador (JSZip): yield a cada lote para a aba não congelar,
+ * infla só quem casa com SQ_CANDIDATO e ainda não tem foto_url, sobe em lotes.
  */
 export async function processUrnaZipFile(
   file: File,
@@ -616,21 +636,31 @@ export async function processUrnaZipFile(
 ): Promise<UrnaFotoResult> {
   const storageConfigured = hasSupabaseEnv();
   const errors: string[] = [];
+  const sqInCatalog = countSqInIndex(index);
   const progress: UrnaFotoProgress = {
-    done: 0,
-    total: 0,
-    uploaded: 0,
-    skippedCadastro: 0,
-    unmatched: 0,
-    ambiguous: 0,
-    failed: 0,
-    scanned: 0,
+    ...emptyUrnaFotoProgress(),
+    status: "Lendo ZIP…",
+    phase: "reading",
   };
+  onProgress?.({ ...progress });
+  await yieldToUi();
 
-  const pendingInflate: Promise<void>[] = [];
-  const ready: UrnaImageEntry[] = [];
+  const zip = await loadJsZip(file);
+  const names = zipEntryNames(zip);
+  progress.total = Math.max(names.length, 1);
+  progress.status = `Lidos 0 de ~${progress.total}`;
+  onProgress?.({ ...progress });
+  await yieldToUi();
+
+  type PendingUpload = {
+    name: string;
+    target: UrnaFotoTarget;
+    bytes: Uint8Array;
+    type: string;
+  };
   const pendingUrls: Array<{ numero: string; cargo: string; foto_url: string }> =
     [];
+  const uploadQueue: PendingUpload[] = [];
 
   async function flushUrls() {
     if (pendingUrls.length === 0) return;
@@ -659,110 +689,132 @@ export async function processUrnaZipFile(
     if (sqItems.length > 0) {
       await applyCandidatoSq(sqItems);
     }
+  }
+
+  async function flushUploads() {
+    if (uploadQueue.length === 0) return;
+    const batch = uploadQueue.splice(0, uploadQueue.length);
+    progress.phase = "uploading";
+    progress.status = `Enviada(s) ${progress.uploaded} · falhas ${progress.failed}`;
     onProgress?.({ ...progress });
-  }
-
-  async function uploadReady() {
-    while (ready.length > 0) {
-      const batch = ready.splice(0, CONCURRENCY);
-      await Promise.all(
-        batch.map(async (entry) => {
-          const match = matchUrnaFotoFilename(entry.name, index);
-          if (!match || "ambiguous" in match) return;
-          if (shouldSkipExistingFoto(match.target)) {
-            progress.skippedCadastro += 1;
-            return;
-          }
-          if (!storageConfigured) return;
-          try {
-            const url = await uploadBytesToStorage(
-              entry.bytes,
-              entry.name,
-              entry.type,
-              {
-                numero: match.target.numero,
-                cargo: match.target.cargo,
-                sq: match.target.sq_candidato,
-              }
-            );
-            pendingUrls.push({
-              numero: match.target.numero,
-              cargo: match.target.cargo,
-              foto_url: url,
-            });
-            match.target.foto_url = url;
-          } catch (err) {
-            progress.failed += 1;
-            if (errors.length < 12) {
-              const msg = err instanceof Error ? err.message : "Falha no upload.";
-              errors.push(`${entry.name}: ${msg}`);
+    await Promise.all(
+      batch.map(async (entry) => {
+        if (shouldSkipExistingFoto(entry.target) || shouldSkipCadastroFoto(entry.target)) {
+          progress.skippedCadastro += 1;
+          return;
+        }
+        try {
+          const url = await uploadBytesToStorage(
+            entry.bytes,
+            entry.name,
+            entry.type,
+            {
+              numero: entry.target.numero,
+              cargo: entry.target.cargo,
+              sq: entry.target.sq_candidato,
             }
-          }
-        })
-      );
-      if (pendingUrls.length >= URL_FLUSH) await flushUrls();
-      onProgress?.({ ...progress });
-    }
-  }
-
-  await forEachZipFile(file, (entry) => {
-    if (!isUrnaImagePath(entry.name)) return;
-    progress.done += 1;
-    progress.scanned = progress.done;
-    progress.total = progress.done;
-    const match = matchUrnaFotoFilename(entry.name, index);
-    if (!match) {
-      progress.unmatched += 1;
-      onProgress?.({ ...progress });
-      return;
-    }
-    if ("ambiguous" in match) {
-      progress.ambiguous += 1;
-      onProgress?.({ ...progress });
-      return;
-    }
-    if (shouldSkipCadastroFoto(match.target) || shouldSkipExistingFoto(match.target)) {
-      progress.skippedCadastro += 1;
-      onProgress?.({ ...progress });
-      return;
-    }
-    if (!storageConfigured) {
-      onProgress?.({ ...progress });
-      return;
-    }
-    pendingInflate.push(
-      inflateUnzipFile(entry)
-        .then((bytes) => {
-          if (bytes.byteLength === 0) return;
-          ready.push({
-            name: entry.name,
-            bytes,
-            type: mimeFromName(entry.name),
+          );
+          pendingUrls.push({
+            numero: entry.target.numero,
+            cargo: entry.target.cargo,
+            foto_url: url,
           });
-        })
-        .catch((err) => {
+          entry.target.foto_url = url;
+        } catch (err) {
           progress.failed += 1;
           if (errors.length < 12) {
-            const msg = err instanceof Error ? err.message : "Falha ao extrair.";
+            const msg = describeUrnaZipError(err);
             errors.push(`${entry.name}: ${msg}`);
           }
-        })
+        }
+      })
     );
+    if (pendingUrls.length >= URL_FLUSH) await flushUrls();
+    progress.status = `Enviada(s) ${progress.uploaded + pendingUrls.length} · falhas ${progress.failed}`;
     onProgress?.({ ...progress });
-  });
+    await yieldToUi();
+  }
 
-  await Promise.all(pendingInflate);
+  for (let i = 0; i < names.length; i += 1) {
+    const name = names[i];
+    const entry = zip.files[name];
+    if (!entry || entry.dir || !isUrnaImagePath(name)) {
+      if ((i + 1) % SCAN_CHUNK === 0) {
+        progress.status = `Lidos ${progress.scanned ?? 0} de ~${progress.total}`;
+        onProgress?.({ ...progress });
+        await yieldToUi();
+      }
+      continue;
+    }
+    progress.done += 1;
+    progress.scanned = progress.done;
+    const match = matchUrnaFotoFilename(name, index);
+    if (!match) {
+      progress.unmatched += 1;
+    } else if ("ambiguous" in match) {
+      progress.ambiguous += 1;
+    } else if (
+      shouldSkipCadastroFoto(match.target) ||
+      shouldSkipExistingFoto(match.target)
+    ) {
+      progress.skippedCadastro += 1;
+      progress.matched = (progress.matched ?? 0) + 1;
+    } else {
+      progress.matched = (progress.matched ?? 0) + 1;
+      if (storageConfigured) {
+        try {
+          const bytes = await entry.async("uint8array");
+          if (bytes.byteLength > 0) {
+            uploadQueue.push({
+              name,
+              target: match.target,
+              bytes,
+              type: mimeFromName(name),
+            });
+          }
+        } catch (err) {
+          progress.failed += 1;
+          if (errors.length < 12) {
+            errors.push(`${name}: ${describeUrnaZipError(err)}`);
+          }
+        }
+      }
+    }
+
+    if ((progress.scanned ?? 0) % SCAN_CHUNK === 0) {
+      progress.phase = "reading";
+      progress.status = `Lidos ${progress.scanned} de ~${progress.total}`;
+      onProgress?.({ ...progress });
+      await yieldToUi();
+    }
+    if (uploadQueue.length >= CONCURRENCY) {
+      await flushUploads();
+    }
+  }
+
+  await flushUploads();
+  await flushUrls();
+
   if (!storageConfigured) {
     return {
-      ...progress,
+      uploaded: 0,
+      skippedCadastro: progress.skippedCadastro,
+      unmatched: progress.unmatched,
+      ambiguous: progress.ambiguous,
+      failed: progress.failed,
+      scanned: progress.scanned ?? progress.done,
+      matched: progress.matched ?? 0,
+      sqInCatalog,
       errors: [
         "Storage não configurado. Defina as variáveis do Supabase e rode a migration 003 (bucket candidatos). A URL da foto só é gravada depois que o upload funciona.",
       ],
       storageConfigured: false,
     };
   }
-  await uploadReady();
-  await flushUrls();
+
+  progress.phase = "done";
+  progress.status = `Enviada(s) ${progress.uploaded} · falhas ${progress.failed}`;
+  onProgress?.({ ...progress });
 
   return {
     uploaded: progress.uploaded,
@@ -770,6 +822,9 @@ export async function processUrnaZipFile(
     unmatched: progress.unmatched,
     ambiguous: progress.ambiguous,
     failed: progress.failed,
+    scanned: progress.scanned ?? progress.done,
+    matched: progress.matched ?? 0,
+    sqInCatalog,
     errors,
     storageConfigured: true,
   };
@@ -1083,12 +1138,31 @@ export async function indexFromDatabase(): Promise<UrnaFotoIndex> {
 }
 
 export function summarizeUrnaFotos(result: UrnaFotoResult): string {
+  if (result.scanned > 0 && result.matched === 0) {
+    return `Vistos ${result.scanned} arquivo(s) no ZIP · 0 casaram com SQ_CANDIDATO (catálogo tem ${result.sqInCatalog} com SQ). Importe o CSV do TSE e tente de novo.`;
+  }
   const bits = [
     `${result.uploaded} foto(s) gravada(s)`,
+    result.scanned ? `${result.scanned} lido(s)` : "",
+    result.matched ? `${result.matched} com SQ` : "",
     result.unmatched ? `${result.unmatched} sem candidato` : "",
     result.ambiguous ? `${result.ambiguous} número ambíguo` : "",
     result.skippedCadastro ? `${result.skippedCadastro} com foto mantida` : "",
     result.failed ? `${result.failed} falha(s)` : "",
   ].filter(Boolean);
   return `Fotos de urna: ${bits.join(" · ")}.`;
+}
+
+export function formatUrnaFotoProgress(p: UrnaFotoProgress): string {
+  if (p.phase === "uploading" || (p.uploaded > 0 || p.failed > 0)) {
+    const lidos =
+      p.scanned != null
+        ? `Lidos ${p.scanned} de ~${p.total || TSE_ZIP_ENTRY_HINT}`
+        : p.status || "Lendo ZIP…";
+    return `${lidos} · Enviada(s) ${p.uploaded} · falhas ${p.failed}`;
+  }
+  if ((p.scanned ?? 0) > 0) {
+    return `Lidos ${p.scanned} de ~${p.total || TSE_ZIP_ENTRY_HINT}`;
+  }
+  return p.status || "Lendo ZIP…";
 }

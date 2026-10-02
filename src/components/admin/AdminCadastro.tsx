@@ -7,6 +7,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   Archive,
   Check,
@@ -58,6 +59,10 @@ import {
   processUrnaZipFile,
   summarizeUrnaFotos,
   summarizeVincular,
+  describeUrnaZipError,
+  emptyUrnaFotoProgress,
+  formatUrnaFotoProgress,
+  yieldToUi,
   type UrnaFotoProgress,
   type UrnaFotoResult,
 } from "@/lib/urna-fotos";
@@ -352,18 +357,13 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   async function handleUrnaFotos(files: FileList | File[] | null) {
     const list = files ? Array.from(files) : [];
     if (list.length === 0) return;
-    setFotoBusy(true);
-    setError(null);
-    setMessage(null);
-    setFotoProgress({
-      done: 0,
-      total: 0,
-      uploaded: 0,
-      skippedCadastro: 0,
-      unmatched: 0,
-      ambiguous: 0,
-      failed: 0,
+    flushSync(() => {
+      setFotoBusy(true);
+      setError(null);
+      setMessage(null);
+      setFotoProgress(emptyUrnaFotoProgress());
     });
+    await yieldToUi();
     try {
       const zipFiles = list.filter((f) =>
         /\.zip$/i.test(f.name) || f.type === "application/zip"
@@ -401,6 +401,9 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
           unmatched: acc.unmatched + r.unmatched,
           ambiguous: acc.ambiguous + r.ambiguous,
           failed: acc.failed + r.failed,
+          scanned: acc.scanned + r.scanned,
+          matched: acc.matched + r.matched,
+          sqInCatalog: Math.max(acc.sqInCatalog, r.sqInCatalog),
           errors: [...acc.errors, ...r.errors].slice(0, 12),
           storageConfigured: acc.storageConfigured && r.storageConfigured,
         }),
@@ -410,30 +413,38 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
           unmatched: 0,
           ambiguous: 0,
           failed: 0,
+          scanned: 0,
+          matched: 0,
+          sqInCatalog: 0,
           errors: [] as string[],
           storageConfigured: true,
         }
       );
-      if (
-        results.length === 0 ||
-        (merged.uploaded === 0 &&
-          merged.unmatched === 0 &&
-          merged.skippedCadastro === 0 &&
-          merged.failed === 0)
-      ) {
+      if (results.length === 0 || merged.scanned === 0) {
         throw new Error(
           "Nenhuma foto JPG/PNG encontrada no ZIP. Confira se o arquivo é o foto_cand2026_SP_div.zip com FSP{13 dígitos}_div.jpg."
         );
       }
-      setMessage(summarizeUrnaFotos(merged));
-      if (merged.errors.length > 0) {
-        setError(merged.errors.join(" "));
+      const summary = summarizeUrnaFotos(merged);
+      if (merged.matched === 0) {
+        setError(summary);
+        setMessage(null);
+      } else {
+        setMessage(summary);
+        if (merged.errors.length > 0) {
+          setError(merged.errors.join(" "));
+        }
       }
       await reload();
       onConfigSaved?.();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Falha ao enviar fotos de urna."
+      const text = describeUrnaZipError(err);
+      setError(text);
+      setMessage(null);
+      setFotoProgress((prev) =>
+        prev
+          ? { ...prev, phase: "done", status: text }
+          : { ...emptyUrnaFotoProgress(), phase: "done", status: text }
       );
     } finally {
       setFotoBusy(false);
@@ -1014,12 +1025,20 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                 />
               </label>
             </div>
-            {fotoBusy && fotoProgress && (
-              <p className="text-xs text-slate-400">
-                Lidos {fotoProgress.scanned ?? fotoProgress.done} no ZIP ·{" "}
-                {fotoProgress.uploaded} enviada(s) · {fotoProgress.unmatched} sem
-                SQ
-                {fotoProgress.failed ? ` · ${fotoProgress.failed} falha(s)` : ""}
+            {fotoProgress && (
+              <p
+                role="status"
+                aria-live="polite"
+                className="rounded-lg border border-[#FFDE00]/40 bg-[#FFDE00]/10 px-3 py-2 text-sm font-semibold text-[#FFDE00]"
+              >
+                {fotoBusy ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="size-4 shrink-0 animate-spin" />
+                    {formatUrnaFotoProgress(fotoProgress)}
+                  </span>
+                ) : (
+                  formatUrnaFotoProgress(fotoProgress)
+                )}
               </p>
             )}
           </div>

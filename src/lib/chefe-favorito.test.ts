@@ -12,7 +12,9 @@ import {
   CHEFE_PINNED_GOVERNADORES,
   CHEFE_PINNED_PRESIDENTES,
   sortChefeFavoritesFirst,
+  CHEFE_MOBILE_SEARCH_CAP,
   filterChefeRowsByQuery,
+  matchesChefeQuery,
   mobileChefeCargoRows,
   orderChefeMobileCargos,
   toggleChefeColumnSort,
@@ -739,7 +741,7 @@ describe("mobile chefe cargo filter", () => {
       candidato: {
         id: `de-${i}`,
         numero: String(10000 + i),
-        nome: `Cand ${i}`,
+        nome: i === 13 ? "Carla Zampieri" : `Cand ${i}`,
         cargo: "Deputado Estadual",
         foto_url: null,
         origem: "catalogo" as const,
@@ -751,12 +753,161 @@ describe("mobile chefe cargo filter", () => {
     assert.ok(listed.slice(1).every((r) => r.candidato.id !== "de-12"));
     assert.equal(listed[1].candidato.id, "de-0");
     assert.equal(listed[10].candidato.id, "de-9");
+    assert.ok(!listed.some((r) => r.candidato.nome === "Carla Zampieri"));
     const byName = filterChefeRowsByQuery(listed, "Cand 3");
     assert.equal(byName.length, 1);
     assert.equal(byName[0].candidato.id, "de-3");
     const byNum = filterChefeRowsByQuery(listed, "10000");
     assert.equal(byNum[0].candidato.id, "de-0");
     assert.equal(filterChefeRowsByQuery(listed, "zzz").length, 0);
+  });
+
+  it("searches the full cargo catalog, including names outside top 10", () => {
+    const rows = Array.from({ length: 14 }, (_, i) => ({
+      votos: 14 - i,
+      percentual: 0,
+      cargo: "Deputado Estadual",
+      candidato: {
+        id: `de-${i}`,
+        numero: String(10000 + i),
+        nome: i === 13 ? "Carla Zampieri" : `Cand ${i}`,
+        cargo: "Deputado Estadual",
+        foto_url: null,
+        origem: "catalogo" as const,
+      },
+    }));
+    const empty = mobileChefeCargoRows(rows, new Set(), 10, "");
+    assert.equal(empty.length, 10);
+    assert.ok(!empty.some((r) => r.candidato.nome === "Carla Zampieri"));
+
+    const carla = mobileChefeCargoRows(rows, new Set(), 10, "Carla");
+    assert.equal(carla.length, 1);
+    assert.equal(carla[0].candidato.id, "de-13");
+    assert.equal(carla[0].candidato.nome, "Carla Zampieri");
+
+    const byNum = mobileChefeCargoRows(rows, new Set(), 10, "10013");
+    assert.equal(byNum.length, 1);
+    assert.equal(byNum[0].candidato.id, "de-13");
+    assert.equal(mobileChefeCargoRows(rows, new Set(), 10, "zzz").length, 0);
+  });
+
+  it("matches names without accents and stays scoped to the cargo", () => {
+    const estadual = [
+      {
+        votos: 3,
+        percentual: 0,
+        cargo: "Deputado Estadual",
+        candidato: {
+          id: "de-andre",
+          numero: "12345",
+          nome: "ANDRÉ DO PRADO",
+          cargo: "Deputado Estadual",
+          foto_url: null,
+          origem: "catalogo" as const,
+        },
+      },
+      {
+        votos: 1,
+        percentual: 0,
+        cargo: "Deputado Estadual",
+        candidato: {
+          id: "de-carla",
+          numero: "22222",
+          nome: "Carla Zampieri",
+          cargo: "Deputado Estadual",
+          foto_url: null,
+          origem: "catalogo" as const,
+        },
+      },
+    ];
+    const federal = [
+      {
+        votos: 8,
+        percentual: 0,
+        cargo: "Deputado Federal",
+        candidato: {
+          id: "df-andre",
+          numero: "1313",
+          nome: "ANDRÉ JANONES",
+          cargo: "Deputado Federal",
+          foto_url: null,
+          origem: "catalogo" as const,
+        },
+      },
+    ];
+    const senador = [
+      {
+        votos: 99,
+        percentual: 0,
+        cargo: "Senador",
+        candidato: {
+          id: "se-andre",
+          numero: "456",
+          nome: "ANDRÉ DO PRADO",
+          cargo: "Senador",
+          foto_url: null,
+          origem: "catalogo" as const,
+        },
+      },
+    ];
+
+    assert.equal(matchesChefeQuery(federal[0], "Andr"), true);
+    assert.equal(matchesChefeQuery(federal[0], "ANDRE"), true);
+    assert.equal(matchesChefeQuery(estadual[1], "Carla"), true);
+
+    const andrEstadual = mobileChefeCargoRows(estadual, new Set(), 10, "Andr");
+    assert.equal(andrEstadual.length, 1);
+    assert.equal(andrEstadual[0].candidato.id, "de-andre");
+
+    const andrFederal = mobileChefeCargoRows(federal, new Set(), 10, "Andr");
+    assert.equal(andrFederal.length, 1);
+    assert.equal(andrFederal[0].candidato.id, "df-andre");
+
+    const emptySenador = mobileChefeCargoRows(senador, new Set(), 10, "");
+    assert.equal(emptySenador.length, 1);
+    assert.equal(emptySenador[0].candidato.id, "se-andre");
+
+    const carlaEstadual = mobileChefeCargoRows(estadual, new Set(), 10, "Carla");
+    assert.ok(carlaEstadual.every((r) => r.cargo === "Deputado Estadual"));
+    assert.equal(carlaEstadual.length, 1);
+
+    const groups = [
+      {
+        cargo: "Deputado Federal",
+        totalVotos: 8,
+        rankings: [{ votos: 8, percentual: 0, candidato: federal[0].candidato }],
+      },
+      {
+        cargo: "Senador",
+        totalVotos: 99,
+        rankings: [{ votos: 99, percentual: 0, candidato: senador[0].candidato }],
+      },
+    ];
+    const desktopFederal = cargoRowsForChefe(groups, "Deputado Federal", "Andr");
+    assert.equal(desktopFederal.length, 1);
+    assert.equal(desktopFederal[0].candidato.id, "df-andre");
+    assert.equal(cargoRowsForChefe(groups, "Senador", "Andr").length, 1);
+    assert.equal(cargoRowsForChefe(groups, "Deputado Federal", "Carla").length, 0);
+  });
+
+  it("caps search results at 50 and keeps PIN favorites first", () => {
+    const rows = Array.from({ length: 60 }, (_, i) => ({
+      votos: 60 - i,
+      percentual: 0,
+      cargo: "Deputado Federal",
+      candidato: {
+        id: `df-${i}`,
+        numero: String(20000 + i),
+        nome: `Cand ${i}`,
+        cargo: "Deputado Federal",
+        foto_url: null,
+        origem: "catalogo" as const,
+      },
+    }));
+    const hits = mobileChefeCargoRows(rows, new Set(["df-55"]), 10, "Cand");
+    assert.equal(hits.length, CHEFE_MOBILE_SEARCH_CAP);
+    assert.equal(hits[0].candidato.id, "df-55");
+    assert.ok(hits.slice(1).every((r) => r.candidato.id !== "df-55"));
   });
 });
 

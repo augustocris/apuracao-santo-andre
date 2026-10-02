@@ -24,7 +24,6 @@ import {
   chefeMiniaturaFallback,
   isChefeFavoritoId,
   isSyntheticPinnedId,
-  filterChefeRowsByQuery,
   mobileChefeCargoRows,
   orderChefeMobileCargos,
   pinChefeHighlights,
@@ -375,14 +374,16 @@ function MobileCargoBlock({
   savingIds: ReadonlySet<string>;
   onToggle: (candidato: Candidato) => void;
 }) {
-  const filtered = filterChefeRowsByQuery(rows, query);
+  const searching = Boolean(query.trim());
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
       <h2 className="px-3 pt-2.5 text-base font-bold text-slate-900">
         {titulo}
       </h2>
       <p className="px-3 text-xs text-slate-500">
-        Favoritos deste PIN + 10 mais votados
+        {searching
+          ? "Resultados no catálogo deste cargo"
+          : "Favoritos deste PIN + 10 mais votados"}
       </p>
       <label className="relative block px-3 pb-2 pt-1.5">
         <span className="sr-only">Buscar em {titulo}</span>
@@ -396,13 +397,13 @@ function MobileCargoBlock({
           autoComplete="off"
         />
       </label>
-      {filtered.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="px-3 py-5 text-sm text-slate-500">
-          {query.trim() ? "Nenhum resultado" : "Catálogo vazio neste cargo"}
+          {searching ? "Nenhum resultado" : "Catálogo vazio neste cargo"}
         </p>
       ) : (
         <ul className="divide-y divide-slate-100">
-          {filtered.map((row, index) => (
+          {rows.map((row, index) => (
             <CargoRow
               key={`${row.candidato.id}-${row.cargo}`}
               row={row}
@@ -591,10 +592,12 @@ export function ChefeRanking() {
       titulo: tituloByCargo[cargo],
       rows: mobileChefeCargoRows(
         cargoRowsForChefe(groups, cargo),
-        favoritoIds
+        favoritoIds,
+        undefined,
+        mobileQueries[cargo]
       ),
     }));
-  }, [groups, favoritoIds, mobileCargo]);
+  }, [groups, favoritoIds, mobileCargo, mobileQueries]);
 
   async function handleUnlock(e: FormEvent) {
     e.preventDefault();

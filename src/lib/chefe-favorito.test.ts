@@ -8,9 +8,11 @@ import {
   leftoverAfterPair,
   overlayChefeFavoritos,
   pinChefeHighlights,
+  chefePinFotoStatusFromCandidatos,
   CHEFE_PINNED_GOVERNADORES,
   CHEFE_PINNED_PRESIDENTES,
   sortChefeFavoritesFirst,
+  toggleChefeColumnSort,
 } from "./chefe-ranking";
 import { percentualNoCargo } from "./utils";
 import {
@@ -528,6 +530,57 @@ describe("pinChefeHighlights", () => {
   });
 });
 
+describe("chefePinFotoStatus", () => {
+  it("reports foto_url of the four pins without inventing images", () => {
+    const status = chefePinFotoStatusFromCandidatos([
+      {
+        id: "g10",
+        numero: "10",
+        nome: "Tarcísio de Freitas",
+        cargo: "Governador",
+        foto_url: "https://cdn.example/tarcisio.jpg",
+        sq_candidato: "1",
+        origem: "cadastro",
+      },
+      {
+        id: "g13",
+        numero: "13",
+        nome: "Fernando Haddad",
+        cargo: "Governador",
+        foto_url: null,
+        sq_candidato: "2",
+        origem: "catalogo",
+      },
+      {
+        id: "p13",
+        numero: "13",
+        nome: "LULA",
+        cargo: "Presidente",
+        foto_url: null,
+        origem: "catalogo",
+      },
+      {
+        id: "p22",
+        numero: "22",
+        nome: "FLÁVIO BOLSONARO",
+        cargo: "Presidente",
+        foto_url: null,
+        origem: "catalogo",
+      },
+    ]);
+    assert.equal(status.length, 4);
+    const tarcisio = status.find((p) => p.specLabel === "Tarcísio");
+    const haddad = status.find((p) => p.specLabel === "Fernando Haddad");
+    const lula = status.find((p) => p.specLabel === "Lula");
+    const flavio = status.find((p) => p.specLabel === "Flávio");
+    assert.equal(tarcisio?.foto_url, "https://cdn.example/tarcisio.jpg");
+    assert.equal(haddad?.foto_url, null);
+    assert.equal(lula?.nome, "LULA");
+    assert.equal(flavio?.nome, "FLÁVIO BOLSONARO");
+    assert.equal(haddad?.found, true);
+  });
+});
+
 describe("sortChefeFavoritesFirst", () => {
   it("keeps PIN favorites on top without hiding the rest", () => {
     const rows = cargoRowsForChefe(
@@ -584,6 +637,70 @@ describe("sortChefeFavoritesFirst", () => {
     const rest = leftoverAfterPair(rows, sorted.slice(0, 2), new Set(["de-fav"]));
     assert.equal(rest.length, 1);
     assert.equal(rest[0].candidato.id, "de-2");
+  });
+
+  it("lists catalog rows with 0 votes before any BU", () => {
+    const rows = cargoRowsForChefe(
+      [
+        {
+          cargo: "Deputado Federal",
+          totalVotos: 0,
+          rankings: [
+            {
+              votos: 0,
+              percentual: 0,
+              candidato: {
+                id: "df-cat",
+                numero: "1001",
+                nome: "Keila Giselle",
+                cargo: "Deputado Federal",
+                foto_url: null,
+                origem: "catalogo",
+              },
+            },
+            {
+              votos: 0,
+              percentual: 0,
+              candidato: {
+                id: "df-bu",
+                numero: "2211",
+                nome: "Candidato 2211",
+                cargo: "Deputado Federal",
+                foto_url: null,
+                origem: "bu",
+              },
+            },
+          ],
+        },
+      ],
+      "Deputado Federal"
+    );
+    const listed = sortChefeFavoritesFirst(rows, new Set());
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].candidato.id, "df-cat");
+    const named = sortChefeFavoritesFirst(rows, new Set(), {
+      key: "nome",
+      dir: "asc",
+    });
+    assert.equal(named[0].candidato.nome, "Keila Giselle");
+  });
+
+  it("toggles Nome A↔Z and Votos desc↔asc", () => {
+    const fromVotes = toggleChefeColumnSort(
+      { key: "votos", dir: "desc" },
+      "nome"
+    );
+    assert.deepEqual(fromVotes, { key: "nome", dir: "asc" });
+    assert.deepEqual(toggleChefeColumnSort(fromVotes, "nome"), {
+      key: "nome",
+      dir: "desc",
+    });
+    const backVotes = toggleChefeColumnSort(fromVotes, "votos");
+    assert.deepEqual(backVotes, { key: "votos", dir: "desc" });
+    assert.deepEqual(toggleChefeColumnSort(backVotes, "votos"), {
+      key: "votos",
+      dir: "asc",
+    });
   });
 });
 

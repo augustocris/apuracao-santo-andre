@@ -1946,6 +1946,28 @@ export async function applyCandidatoFotos(
   return { updated, skippedCadastroFoto, notFound };
 }
 
+/** Só grava foto_url — não muda origem (catálogo/Presidente continua catálogo). */
+export async function patchCandidatoFoto(
+  id: string,
+  foto_url: string | null
+): Promise<Candidato> {
+  const url = foto_url?.trim() || null;
+  const supabase = getSupabase();
+  if (!supabase) {
+    const updated = updateMockCandidato(id, { foto_url: url });
+    if (!updated) throw new Error("Candidato não encontrado.");
+    return updated;
+  }
+  const { data, error } = await supabase
+    .from("candidatos")
+    .update({ foto_url: url })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw supabaseWriteError("Falha ao gravar foto", error.message);
+  return normalizeCandidato(data as Candidato);
+}
+
 export function dataModeLabel(): "supabase" | "mock" {
   return hasSupabaseEnv() ? "supabase" : "mock";
 }

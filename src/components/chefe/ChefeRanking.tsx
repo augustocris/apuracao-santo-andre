@@ -2,11 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Loader2, Lock, LogOut, Search, Star, Trophy } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Loader2,
+  Lock,
+  LogOut,
+  Search,
+  Star,
+  Trophy,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CHEFE_SESSION_ID_KEY, CHEFE_UNLOCK_KEY } from "@/lib/cargos";
 import {
+  CHEFE_COLUMN_SORT_DEFAULT,
   CHEFE_PINNED_GOVERNADORES,
   CHEFE_PINNED_PRESIDENTES,
   cargoRowsForChefe,
@@ -16,7 +26,10 @@ import {
   isSyntheticPinnedId,
   pinChefeHighlights,
   sortChefeFavoritesFirst,
+  toggleChefeColumnSort,
+  type ChefeColumnSort,
   type ChefeRankingFlatRow,
+  type ChefeSortKey,
 } from "@/lib/chefe-ranking";
 import {
   fetchDashboard,
@@ -26,6 +39,7 @@ import {
   subscribeDashboard,
   unlockChefeByPin,
 } from "@/lib/data";
+import { linkStoredUrnaFotos } from "@/lib/urna-fotos";
 import type { Candidato, Chefe, DashboardSnapshot } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
 
@@ -50,11 +64,18 @@ const COLUNAS = [
 ] as const;
 
 type ColunaQuery = Record<(typeof COLUNAS)[number]["cargo"], string>;
+type ColunaSort = Record<(typeof COLUNAS)[number]["cargo"], ChefeColumnSort>;
 
 const EMPTY_COL_QUERY: ColunaQuery = {
   "Deputado Estadual": "",
   "Deputado Federal": "",
   Senador: "",
+};
+
+const DEFAULT_COL_SORT: ColunaSort = {
+  "Deputado Estadual": CHEFE_COLUMN_SORT_DEFAULT,
+  "Deputado Federal": CHEFE_COLUMN_SORT_DEFAULT,
+  Senador: CHEFE_COLUMN_SORT_DEFAULT,
 };
 
 function ChefeFoto({
@@ -66,6 +87,9 @@ function ChefeFoto({
 }) {
   const [failed, setFailed] = useState(false);
   const src = candidato.foto_url?.trim() || "";
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
   const showImg = Boolean(src) && !failed;
   const fallback = chefeMiniaturaFallback(candidato.nome, candidato.numero);
 
@@ -224,11 +248,44 @@ function CargoRow({
   );
 }
 
+function SortHeader({
+  label,
+  active,
+  dir,
+  onClick,
+  align = "left",
+}: {
+  label: string;
+  active: boolean;
+  dir: "asc" | "desc";
+  onClick: () => void;
+  align?: "left" | "right";
+}) {
+  const Icon = dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        align === "right" && "ml-auto",
+        active ? "text-teal-800" : "text-slate-400 hover:text-slate-600"
+      )}
+      aria-pressed={active}
+    >
+      {label}
+      {active && <Icon className="size-2.5" aria-hidden />}
+    </button>
+  );
+}
+
 function CargoColumn({
   titulo,
   rows,
   query,
   onQuery,
+  sort,
+  onSortKey,
   favoritoIds,
   savingIds,
   onToggle,
@@ -237,6 +294,8 @@ function CargoColumn({
   rows: ChefeRankingFlatRow[];
   query: string;
   onQuery: (value: string) => void;
+  sort: ChefeColumnSort;
+  onSortKey: (key: ChefeSortKey) => void;
   favoritoIds: ReadonlySet<string>;
   savingIds: ReadonlySet<string>;
   onToggle: (candidato: Candidato) => void;
@@ -246,7 +305,7 @@ function CargoColumn({
       <h2 className="shrink-0 px-2 pt-1.5 text-[13px] font-bold text-slate-900">
         {titulo}
       </h2>
-      <label className="relative shrink-0 px-2 pb-1.5 pt-1">
+      <label className="relative shrink-0 px-2 pb-1 pt-1">
         <span className="sr-only">Buscar em {titulo}</span>
         <Search className="pointer-events-none absolute left-4 top-1/2 size-3 -translate-y-1/2 text-slate-400" />
         <Input
@@ -256,9 +315,24 @@ function CargoColumn({
           className="h-7 pl-7 text-xs"
         />
       </label>
+      <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-2 pb-1">
+        <SortHeader
+          label="Nome"
+          active={sort.key === "nome"}
+          dir={sort.dir}
+          onClick={() => onSortKey("nome")}
+        />
+        <SortHeader
+          label="Votos"
+          active={sort.key === "votos"}
+          dir={sort.dir}
+          onClick={() => onSortKey("votos")}
+          align="right"
+        />
+      </div>
       {rows.length === 0 ? (
         <p className="px-2 py-4 text-xs text-slate-500">
-          {query.trim() ? "Nenhum resultado" : "Nenhum voto ainda"}
+          {query.trim() ? "Nenhum resultado" : "Catálogo vazio neste cargo"}
         </p>
       ) : (
         <ul className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
@@ -312,6 +386,7 @@ export function ChefeRanking() {
   const [pinBusy, setPinBusy] = useState(false);
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
   const [colQueries, setColQueries] = useState<ColunaQuery>(EMPTY_COL_QUERY);
+  const [colSorts, setColSorts] = useState<ColunaSort>(DEFAULT_COL_SORT);
   const [favoritoIds, setFavoritoIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -359,7 +434,33 @@ export function ChefeRanking() {
         fetchDashboard("todos"),
         listChefeFavoritoIds(chefe.id),
       ]);
-      setSnapshot(data);
+      const pinsNeedFoto = data.rankingGeralByCargo.some((g) =>
+        g.rankings.some(
+          (r) =>
+            !r.candidato.foto_url?.trim() &&
+            ((g.cargo === "Governador" &&
+              ["10", "13"].includes(r.candidato.numero)) ||
+              (g.cargo === "Presidente" &&
+                /lula|flavio/i.test(
+                  r.candidato.nome.normalize("NFD").replace(/\p{M}/gu, "")
+                )))
+        )
+      );
+      if (pinsNeedFoto) {
+        try {
+          const linked = await linkStoredUrnaFotos();
+          if (linked.linked > 0) {
+            const refreshed = await fetchDashboard("todos");
+            setSnapshot(refreshed);
+          } else {
+            setSnapshot(data);
+          }
+        } catch {
+          setSnapshot(data);
+        }
+      } else {
+        setSnapshot(data);
+      }
       setFavoritoIds(new Set(ids));
       setError(null);
     } catch (err) {
@@ -404,10 +505,11 @@ export function ChefeRanking() {
         ...col,
         rows: sortChefeFavoritesFirst(
           cargoRowsForChefe(groups, col.cargo, colQueries[col.cargo]),
-          favoritoIds
+          favoritoIds,
+          colSorts[col.cargo]
         ),
       })),
-    [groups, colQueries, favoritoIds]
+    [groups, colQueries, colSorts, favoritoIds]
   );
 
   async function handleUnlock(e: FormEvent) {
@@ -439,6 +541,7 @@ export function ChefeRanking() {
     setFavoritoIds(new Set());
     setSnapshot(EMPTY);
     setColQueries(EMPTY_COL_QUERY);
+    setColSorts(DEFAULT_COL_SORT);
   }
 
   async function toggleFavorito(candidato: Candidato) {
@@ -602,6 +705,13 @@ export function ChefeRanking() {
             query={colQueries[col.cargo]}
             onQuery={(value) =>
               setColQueries((prev) => ({ ...prev, [col.cargo]: value }))
+            }
+            sort={colSorts[col.cargo]}
+            onSortKey={(key) =>
+              setColSorts((prev) => ({
+                ...prev,
+                [col.cargo]: toggleChefeColumnSort(prev[col.cargo], key),
+              }))
             }
             favoritoIds={favoritoIds}
             savingIds={savingIds}

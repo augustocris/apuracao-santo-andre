@@ -1,4 +1,4 @@
-import type { CargoRanking, RankingRow } from "@/lib/types";
+import type { Candidato, CargoRanking, RankingRow } from "@/lib/types";
 import { percentualNoCargo } from "@/lib/utils";
 
 export type ChefeSortKey = "votos" | "nome";
@@ -298,22 +298,58 @@ export function pickHighlightPair(
   return ranked.slice(0, limit);
 }
 
-/** Favoritos deste PIN no topo; depois o restante por votos. */
+export type ChefeColumnSort = {
+  key: ChefeSortKey;
+  dir: "asc" | "desc";
+};
+
+export const CHEFE_COLUMN_SORT_DEFAULT: ChefeColumnSort = {
+  key: "votos",
+  dir: "desc",
+};
+
+/** Catálogo/cadastro entra mesmo com 0 voto. BU só se já tiver voto (ou favorito). */
+export function isChefeCatalogRow(row: ChefeRankingFlatRow): boolean {
+  return row.candidato.origem !== "bu";
+}
+
+export function toggleChefeColumnSort(
+  current: ChefeColumnSort,
+  key: ChefeSortKey
+): ChefeColumnSort {
+  if (current.key === key) {
+    return { key, dir: current.dir === "asc" ? "desc" : "asc" };
+  }
+  return { key, dir: key === "nome" ? "asc" : "desc" };
+}
+
+/**
+ * Favoritos deste PIN no topo; depois o sort da coluna.
+ * Catálogo/cadastro aparece com 0 voto — busca e estrela funcionam antes do BU.
+ */
 export function sortChefeFavoritesFirst(
   rows: ChefeRankingFlatRow[],
-  favoritoIds?: ReadonlySet<string> | null
+  favoritoIds?: ReadonlySet<string> | null,
+  sort: ChefeColumnSort = CHEFE_COLUMN_SORT_DEFAULT
 ): ChefeRankingFlatRow[] {
   const ids = favoritoIds ?? new Set<string>();
   const visible = rows.filter(
-    (r) => r.votos > 0 || isChefeFavoritoId(r.candidato.id, ids)
+    (r) =>
+      r.votos > 0 ||
+      isChefeFavoritoId(r.candidato.id, ids) ||
+      isChefeCatalogRow(r)
   );
   return [...visible].sort((a, b) => {
     const af = isChefeFavoritoId(a.candidato.id, ids) ? 0 : 1;
     const bf = isChefeFavoritoId(b.candidato.id, ids) ? 0 : 1;
+    if (af !== bf) return af - bf;
+    if (sort.key === "nome") {
+      const byName = a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR");
+      return sort.dir === "asc" ? byName : -byName;
+    }
+    const byVotes = sort.dir === "desc" ? b.votos - a.votos : a.votos - b.votos;
     return (
-      af - bf ||
-      b.votos - a.votos ||
-      a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
+      byVotes || a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
     );
   });
 }
@@ -328,6 +364,66 @@ export function leftoverAfterPair(
     rows.filter((r) => !used.has(r.candidato.id)),
     favoritoIds
   );
+}
+
+export type ChefePinFotoStatus = {
+  specLabel: string;
+  cargo: string;
+  numero: string;
+  nome: string;
+  id: string | null;
+  foto_url: string | null;
+  sq_candidato: string | null;
+  found: boolean;
+  synthetic: boolean;
+};
+
+function pinStatusFromRow(
+  spec: ChefePinSpec,
+  row: ChefeRankingFlatRow
+): ChefePinFotoStatus {
+  const synthetic = isSyntheticPinnedId(row.candidato.id);
+  return {
+    specLabel: spec.label,
+    cargo: spec.cargo,
+    numero: row.candidato.numero,
+    nome: row.candidato.nome,
+    id: synthetic ? null : row.candidato.id,
+    foto_url: row.candidato.foto_url?.trim() || null,
+    sq_candidato: row.candidato.sq_candidato?.replace(/\D/g, "") || null,
+    found: !synthetic,
+    synthetic,
+  };
+}
+
+/** Situação de foto dos 4 pins (Tarcísio, Haddad, Lula, Flávio). */
+export function chefePinFotoStatus(
+  groups: CargoRanking[]
+): ChefePinFotoStatus[] {
+  const specs = [...CHEFE_PINNED_GOVERNADORES, ...CHEFE_PINNED_PRESIDENTES];
+  return specs.map((spec) => {
+    const row =
+      findPinnedRow(cargoRowsForChefe(groups, spec.cargo), spec) ??
+      syntheticPinnedRow(spec);
+    return pinStatusFromRow(spec, row);
+  });
+}
+
+export function chefePinFotoStatusFromCandidatos(
+  candidatos: Candidato[]
+): ChefePinFotoStatus[] {
+  const byCargo = new Map<string, CargoRanking>();
+  for (const c of candidatos) {
+    const cargo = c.cargo;
+    const g = byCargo.get(cargo) ?? { cargo, totalVotos: 0, rankings: [] };
+    g.rankings.push({
+      votos: 0,
+      percentual: 0,
+      candidato: c,
+    });
+    byCargo.set(cargo, g);
+  }
+  return chefePinFotoStatus(Array.from(byCargo.values()));
 }
 
 /** Iniciais do nome, ou o número se o nome for placeholder / vazio. */

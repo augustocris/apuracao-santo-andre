@@ -54,10 +54,12 @@ import {
   listImagesFromFiles,
   listImagesFromZip,
   mergeUrnaFotoIndexes,
+  linkStoredUrnaFotos,
   processUrnaFotos,
   summarizeUrnaFotos,
   type UrnaFotoProgress,
 } from "@/lib/urna-fotos";
+import { chefePinFotoStatusFromCandidatos } from "@/lib/chefe-ranking";
 import {
   applyZonasExpectativa,
   createChefe,
@@ -67,6 +69,7 @@ import {
   importCandidatos,
   listCandidatos,
   listChefes,
+  patchCandidatoFoto,
   removeCandidato,
   saveRelatorioCargos,
   saveSecoesEsperadas,
@@ -125,16 +128,21 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
   const [fotoProgress, setFotoProgress] = useState<UrnaFotoProgress | null>(
     null
   );
+  const [allCandidatos, setAllCandidatos] = useState<Candidato[]>([]);
+  const [pinFotoBusyId, setPinFotoBusyId] = useState<string | null>(null);
+  const [linkBusy, setLinkBusy] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [cands, cfg, acessos] = await Promise.all([
+      const [cands, catalogo, cfg, acessos] = await Promise.all([
         listCandidatos({ activeRaceOnly: true }),
+        listCandidatos({ featuredOnly: false, activeRaceOnly: false }),
         getConfig(),
         listChefes(),
       ]);
       setCandidatos(cands);
+      setAllCandidatos(catalogo);
       setConfig(cfg);
       setChefes(acessos);
       setWhatsappSuporte(cfg.whatsapp_suporte?.trim() || "");
@@ -382,6 +390,60 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       );
     } finally {
       setFotoBusy(false);
+    }
+  }
+
+  const pinFotos = useMemo(
+    () => chefePinFotoStatusFromCandidatos(allCandidatos),
+    [allCandidatos]
+  );
+
+  async function handlePinFotoFile(id: string, numero: string, file: File | null) {
+    if (!file) return;
+    setPinFotoBusyId(id);
+    setError(null);
+    setMessage(null);
+    try {
+      const url = await uploadCandidatoFoto(file, {
+        candidatoId: id,
+        numero,
+      });
+      await patchCandidatoFoto(id, url);
+      setMessage("Foto do destaque gravada.");
+      await reload();
+      onConfigSaved?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha no upload da foto.");
+    } finally {
+      setPinFotoBusyId(null);
+    }
+  }
+
+  async function handleLinkStorageFotos() {
+    setLinkBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await linkStoredUrnaFotos();
+      if (!result.storageConfigured) {
+        setMessage("Storage não configurado — envie o ZIP ou um arquivo por destaque.");
+      } else if (result.linked > 0) {
+        setMessage(
+          `${result.linked} foto(s) do Storage vinculadas pelo SQ_CANDIDATO.`
+        );
+      } else {
+        setMessage(
+          `Nenhuma foto nova no Storage (${result.checked} arquivo(s) vistos). Envie o ZIP ou um arquivo.`
+        );
+      }
+      await reload();
+      onConfigSaved?.();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Falha ao vincular fotos do Storage."
+      );
+    } finally {
+      setLinkBusy(false);
     }
   }
 
@@ -914,6 +976,94 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
                 {fotoProgress.failed ? ` · ${fotoProgress.failed} falha(s)` : ""}
               </p>
             )}
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-white/10 bg-slate-900/50 p-4">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-300">
+              <ImagePlus className="size-4 text-[#FFDE00]" />
+              Fotos dos destaques do /chefe
+            </h3>
+            <p className="text-sm text-slate-300">
+              Tarcísio (10), Haddad (13), Lula e Flávio. Sem inventar imagem —
+              se o Storage já tem arquivo com o{" "}
+              <code className="text-[#FFDE00]">SQ_CANDIDATO</code>, vincule. Senão,
+              envie o ZIP acima ou um arquivo aqui. Só grava{" "}
+              <code className="text-slate-200">foto_url</code> (não vira oficial
+              do telão).
+            </p>
+            <ul className="divide-y divide-white/10 overflow-hidden rounded-lg border border-white/10">
+              {pinFotos.map((pin) => (
+                <li
+                  key={`${pin.cargo}-${pin.specLabel}`}
+                  className="flex items-center gap-3 px-3 py-2"
+                >
+                  <div className="size-10 shrink-0 overflow-hidden rounded-md border border-white/10 bg-[#001a3a]">
+                    {pin.foto_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={pin.foto_url}
+                        alt=""
+                        className="size-full object-cover object-top"
+                      />
+                    ) : (
+                      <div className="flex size-full items-center justify-center text-[10px] font-bold text-white/60">
+                        {pin.numero || "—"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {pin.nome}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {pin.cargo}
+                      {pin.numero ? ` · Nº ${pin.numero}` : ""}
+                      {pin.foto_url
+                        ? " · foto ok"
+                        : pin.found
+                          ? " · sem foto_url"
+                          : " · fora do catálogo"}
+                    </p>
+                  </div>
+                  {pin.id ? (
+                    <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-white/20 px-2 text-[11px] font-medium text-white hover:bg-white/5">
+                      {pinFotoBusyId === pin.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        "Arquivo"
+                      )}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        disabled={pinFotoBusyId != null || busy}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] ?? null;
+                          e.target.value = "";
+                          void handlePinFotoFile(pin.id!, pin.numero, file);
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <span className="text-[11px] text-slate-500">Importe o CSV</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 border-white/20 text-white"
+              disabled={linkBusy || fotoBusy}
+              onClick={() => void handleLinkStorageFotos()}
+            >
+              {linkBusy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Images className="size-4" />
+              )}
+              Vincular fotos já no Storage
+            </Button>
           </div>
 
         <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">

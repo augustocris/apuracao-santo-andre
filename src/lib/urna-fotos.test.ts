@@ -8,6 +8,7 @@ import {
   isUrnaImagePath,
   listImagesFromZip,
   matchUrnaFotoFilename,
+  planStorageFotoLinks,
   urnaFotoIdKeys,
 } from "./urna-fotos";
 
@@ -151,6 +152,30 @@ describe("zip listing", () => {
       "foto_cand2026_BR_div/FBR250000555555_div.jpg",
       "foto_cand2026_SP_div/FSP250002530091_div.jpg",
     ]);
+  });
+});
+
+describe("planStorageFotoLinks", () => {
+  it("links storage files to catalog rows missing foto_url by SQ", () => {
+    const planned = planStorageFotoLinks(
+      [
+        "urna/FBR250000555555_div.jpg",
+        "urna/FSP250002530091_div.jpg",
+        "urna/ignorado.txt",
+      ],
+      index
+    );
+    assert.equal(planned.length, 2);
+    assert.ok(
+      planned.some((p) => p.cargo === "Presidente" && p.numero === "13")
+    );
+    assert.ok(
+      planned.some((p) => p.cargo === "Deputado Federal" && p.numero === "2739")
+    );
+    assert.equal(
+      planned.some((p) => p.cargo === "Governador" && p.numero === "13"),
+      false
+    );
   });
 });
 

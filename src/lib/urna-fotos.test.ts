@@ -5,7 +5,9 @@ import { applyCandidatoFotos } from "./data";
 import { getMockCandidatos } from "./mock-store";
 import {
   buildUrnaFotoIndex,
+  describeUrnaZipError,
   extractSqFromUrnaFilename,
+  formatUrnaFotoProgress,
   inspectUrnaZip,
   isUrnaImagePath,
   listImagesFromZip,
@@ -14,6 +16,7 @@ import {
   shouldInflateUrnaZipEntry,
   sqDigitStringsEqual,
   storageZipOnlyHint,
+  summarizeUrnaFotos,
   summarizeVincular,
   urnaFotoIdKeys,
 } from "./urna-fotos";
@@ -236,6 +239,79 @@ describe("zip stream inspect (no inflate of unmatched)", () => {
     assert.equal(info.unmatched, 1);
     assert.equal(shouldInflateUrnaZipEntry("FSP2500002530091_div.jpg", index), true);
     assert.equal(shouldInflateUrnaZipEntry("FSP2500002530092_div.jpg", index), false);
+  });
+});
+
+describe("zip UI status and errors", () => {
+  it("starts with Lendo ZIP… and then Lidos N de ~total", () => {
+    assert.equal(
+      formatUrnaFotoProgress({
+        done: 0,
+        total: 26331,
+        uploaded: 0,
+        skippedCadastro: 0,
+        unmatched: 0,
+        ambiguous: 0,
+        failed: 0,
+        scanned: 0,
+        phase: "reading",
+        status: "Lendo ZIP…",
+      }),
+      "Lendo ZIP…"
+    );
+    assert.equal(
+      formatUrnaFotoProgress({
+        done: 400,
+        total: 26331,
+        uploaded: 0,
+        skippedCadastro: 0,
+        unmatched: 400,
+        ambiguous: 0,
+        failed: 0,
+        scanned: 400,
+        phase: "reading",
+      }),
+      "Lidos 400 de ~26331"
+    );
+    assert.match(
+      formatUrnaFotoProgress({
+        done: 800,
+        total: 26331,
+        uploaded: 12,
+        skippedCadastro: 0,
+        unmatched: 700,
+        ambiguous: 0,
+        failed: 1,
+        scanned: 800,
+        phase: "uploading",
+      }),
+      /Enviada\(s\) 12 · falhas 1/
+    );
+  });
+
+  it("maps OOM / not-a-zip to a visible banner", () => {
+    assert.match(describeUrnaZipError(new RangeError("Invalid array length")), /Memória esgotada/);
+    assert.match(
+      describeUrnaZipError(new Error("Can't find end of central directory")),
+      /não parece um ZIP/
+    );
+  });
+
+  it("says files seen vs SQ matched when catalog misses", () => {
+    const msg = summarizeUrnaFotos({
+      uploaded: 0,
+      skippedCadastro: 0,
+      unmatched: 26331,
+      ambiguous: 0,
+      failed: 0,
+      scanned: 26331,
+      matched: 0,
+      sqInCatalog: 0,
+      errors: [],
+      storageConfigured: true,
+    });
+    assert.match(msg, /Vistos 26331/);
+    assert.match(msg, /0 casaram com SQ_CANDIDATO/);
   });
 });
 

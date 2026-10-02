@@ -52,12 +52,14 @@ import {
   indexFromChapadaRows,
   indexFromDatabase,
   listImagesFromFiles,
-  listImagesFromZip,
   mergeUrnaFotoIndexes,
   linkStoredUrnaFotos,
   processUrnaFotos,
+  processUrnaZipFile,
   summarizeUrnaFotos,
+  summarizeVincular,
   type UrnaFotoProgress,
+  type UrnaFotoResult,
 } from "@/lib/urna-fotos";
 import { chefePinFotoStatusFromCandidatos } from "@/lib/chefe-ranking";
 import {
@@ -369,22 +371,63 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       const imageFiles = list.filter((f) =>
         /\.(jpe?g|png|webp|gif)$/i.test(f.name)
       );
-      const entries = [
-        ...(await Promise.all(zipFiles.map((z) => listImagesFromZip(z)))).flat(),
-        ...(await listImagesFromFiles(imageFiles)),
-      ];
-      if (entries.length === 0) {
+      if (zipFiles.length === 0 && imageFiles.length === 0) {
         throw new Error(
-          "Nenhuma foto JPG/PNG encontrada no ZIP ou na pasta. Nomeie os arquivos como FSP25000…_div.jpg ou FBR25000…_div.jpg (casam com SQ_CANDIDATO)."
+          "Nenhuma foto JPG/PNG encontrada no ZIP ou na pasta. Nomeie os arquivos como FSP2500002530091_div.jpg ou FBR…_div.jpg (casam com SQ_CANDIDATO)."
         );
       }
       const fromCsv = indexFromChapadaRows(lastChapadaRows);
       const fromDb = await indexFromDatabase();
       const index = mergeUrnaFotoIndexes(fromCsv, fromDb);
-      const result = await processUrnaFotos(entries, index, setFotoProgress);
-      setMessage(summarizeUrnaFotos(result));
-      if (result.errors.length > 0) {
-        setError(result.errors.join(" "));
+      const results: UrnaFotoResult[] = [];
+      for (const zip of zipFiles) {
+        results.push(await processUrnaZipFile(zip, index, setFotoProgress));
+      }
+      if (imageFiles.length > 0) {
+        const entries = await listImagesFromFiles(imageFiles);
+        if (entries.length === 0 && zipFiles.length === 0) {
+          throw new Error(
+            "Nenhuma foto JPG/PNG encontrada. Nomeie os arquivos como FSP2500002530091_div.jpg ou FBR…_div.jpg (casam com SQ_CANDIDATO)."
+          );
+        }
+        if (entries.length > 0) {
+          results.push(await processUrnaFotos(entries, index, setFotoProgress));
+        }
+      }
+      const merged: UrnaFotoResult = results.reduce(
+        (acc, r) => ({
+          uploaded: acc.uploaded + r.uploaded,
+          skippedCadastro: acc.skippedCadastro + r.skippedCadastro,
+          unmatched: acc.unmatched + r.unmatched,
+          ambiguous: acc.ambiguous + r.ambiguous,
+          failed: acc.failed + r.failed,
+          errors: [...acc.errors, ...r.errors].slice(0, 12),
+          storageConfigured: acc.storageConfigured && r.storageConfigured,
+        }),
+        {
+          uploaded: 0,
+          skippedCadastro: 0,
+          unmatched: 0,
+          ambiguous: 0,
+          failed: 0,
+          errors: [] as string[],
+          storageConfigured: true,
+        }
+      );
+      if (
+        results.length === 0 ||
+        (merged.uploaded === 0 &&
+          merged.unmatched === 0 &&
+          merged.skippedCadastro === 0 &&
+          merged.failed === 0)
+      ) {
+        throw new Error(
+          "Nenhuma foto JPG/PNG encontrada no ZIP. Confira se o arquivo é o foto_cand2026_SP_div.zip com FSP{13 dígitos}_div.jpg."
+        );
+      }
+      setMessage(summarizeUrnaFotos(merged));
+      if (merged.errors.length > 0) {
+        setError(merged.errors.join(" "));
       }
       await reload();
       onConfigSaved?.();
@@ -436,22 +479,7 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
       if (!result.storageConfigured) {
         setMessage("Storage não configurado — envie o ZIP ou um arquivo por destaque.");
       } else {
-        const bits = [
-          `Vistos ${result.listed} arquivo(s) no Storage`,
-          `${result.linked} URL(s) gravada(s) no catálogo`,
-        ];
-        if (result.skippedCadastro) {
-          bits.push(`${result.skippedCadastro} oficial(is) com foto mantida`);
-        }
-        if (result.unmatched) {
-          bits.push(`${result.unmatched} arquivo(s) sem SQ no catálogo`);
-        }
-        if (result.listed === 0) {
-          bits.push("bucket vazio ou listagem sem permissão");
-        } else if (result.linked === 0) {
-          bits.push("SQ já está no banco — confira se o arquivo é FSP{sq}_div.jpg / FBR{sq}_div.jpg");
-        }
-        setMessage(`${bits.join(" · ")}.`);
+        setMessage(summarizeVincular(result));
       }
       await reload();
       onConfigSaved?.();
@@ -930,19 +958,19 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
             </h3>
             <p className="text-sm text-slate-300">
               Arquivos tipo{" "}
-              <code className="text-[#FFDE00]">FSP25000…_div.jpg</code> (SP) e{" "}
-              <code className="text-[#FFDE00]">FBR25000…_div.jpg</code>{" "}
+              <code className="text-[#FFDE00]">FSP2500002530091_div.jpg</code>{" "}
+              (SP) e{" "}
+              <code className="text-[#FFDE00]">FBR…_div.jpg</code>{" "}
               (Brasil/Presidente) casam com{" "}
               <code className="text-[#FFDE00]">SQ_CANDIDATO</code> — o matcher
-              extrai a sequência de dígitos. Também vale{" "}
-              <code className="text-slate-200">25000…_div.jpg</code>,{" "}
-              <code className="text-slate-200">FSP25000….jpg</code> e{" "}
-              <code className="text-slate-200">FBR25000….jpg</code> (.jpeg/.png,
-              maiúsculas ou minúsculas, subpastas no ZIP). Número de urna{" "}
+              extrai os 13 dígitos e compara como texto. Também vale pasta no
+              ZIP. Número de urna{" "}
               <code className="text-[#FFDE00]">NR_CANDIDATO</code> só se for
-              único. O ZIP é aberto no navegador e as fotos sobem em lotes para
-              o bucket <code className="text-[#00ADEF]">candidatos</code> — não
-              envie o ZIP inteiro para a API.
+              único. O ZIP é aberto no navegador: só os JPGs que casam (~2,5 mil
+              do ZIP de 26 mil) sobem em lotes para o bucket{" "}
+              <code className="text-[#00ADEF]">candidatos</code>. Subir o{" "}
+              <code className="text-slate-200">.zip</code> inteiro no Storage
+              não vale — Vincular não lê ZIP.
             </p>
             <p className="text-xs text-slate-500">
               Oficiais do telão: a foto de cadastro só é preenchida se estiver
@@ -988,8 +1016,9 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
             </div>
             {fotoBusy && fotoProgress && (
               <p className="text-xs text-slate-400">
-                Processando {fotoProgress.done}/{fotoProgress.total} ·{" "}
-                {fotoProgress.uploaded} enviada(s)
+                Lidos {fotoProgress.scanned ?? fotoProgress.done} no ZIP ·{" "}
+                {fotoProgress.uploaded} enviada(s) · {fotoProgress.unmatched} sem
+                SQ
                 {fotoProgress.failed ? ` · ${fotoProgress.failed} falha(s)` : ""}
               </p>
             )}
@@ -1001,11 +1030,14 @@ export function AdminCadastro({ onConfigSaved }: AdminCadastroProps) {
               Fotos dos destaques do /chefe
             </h3>
             <p className="text-sm text-slate-300">
-              Tarcísio (10), Haddad (13), Lula e Flávio. Sem inventar URL. Se o
-              ZIP já foi enviado, reimporte o CSV do TSE (grava{" "}
-              <code className="text-[#FFDE00]">SQ_CANDIDATO</code>, mesmo número
-              do Excel na coluna G) e clique em vincular — não reenvie o ZIP.
-              Oficiais do telão com foto não são sobrescritos.
+              Tarcísio (10), Haddad (13), Lula e Flávio. Sem inventar URL.
+              Vincular só vale se o bucket já tiver JPGs{" "}
+              <code className="text-[#FFDE00]">FSP{"{sq}"}_div.jpg</code>. Se o
+              Storage tiver só o{" "}
+              <code className="text-slate-200">foto_cand2026_SP_div.zip</code>,
+              use <strong className="text-slate-200">Enviar ZIP</strong> acima
+              (não o ZIP no bucket). Oficiais do telão com foto não são
+              sobrescritos.
             </p>
             <ul className="divide-y divide-white/10 overflow-hidden rounded-lg border border-white/10">
               {pinFotos.map((pin) => (

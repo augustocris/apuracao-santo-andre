@@ -117,7 +117,7 @@ WhatsApp da central: campo `whatsapp_suporte` em `apuracao_config`, editável no
 Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. **Público, sem PIN.**
 
 - Progress: **enviadas / faltam** (vs `secoes_esperadas` do cadastro)
-- Cards compactos: texto à esquerda, **foto proporcional à direita** (altura do card, 3:4, `object-contain`; sem foto → número). Nome em até 2 linhas (não corta no meio).
+- Cards compactos: texto à esquerda, **foto proporcional à direita** (altura do card, 3:4, `object-contain`; sem foto → número). Nome em até 2 linhas. **Votos e % cabem inteiros** no miolo (não cortam no fundo do card).
 - Marcos Dep. Estadual/Federal: confete só quando o voto **cruza** o limiar ao vivo; marcos já celebrados ficam em `sessionStorage` (não repetem ao reabrir o telão)
 - Supabase Realtime when configured; otherwise polling every ~4s
 

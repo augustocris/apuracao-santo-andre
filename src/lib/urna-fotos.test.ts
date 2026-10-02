@@ -5,10 +5,16 @@ import { applyCandidatoFotos } from "./data";
 import { getMockCandidatos } from "./mock-store";
 import {
   buildUrnaFotoIndex,
+  extractSqFromUrnaFilename,
+  inspectUrnaZip,
   isUrnaImagePath,
   listImagesFromZip,
   matchUrnaFotoFilename,
   planStorageFotoLinks,
+  shouldInflateUrnaZipEntry,
+  sqDigitStringsEqual,
+  storageZipOnlyHint,
+  summarizeVincular,
   urnaFotoIdKeys,
 } from "./urna-fotos";
 
@@ -24,6 +30,13 @@ const index = buildUrnaFotoIndex([
     numero: "2739",
     cargo: "Deputado Federal",
     sq_candidato: "250002530091",
+    origem: "catalogo",
+    foto_url: null,
+  },
+  {
+    numero: "45123",
+    cargo: "Deputado Estadual",
+    sq_candidato: "2500002530091",
     origem: "catalogo",
     foto_url: null,
   },
@@ -58,6 +71,26 @@ describe("urna photo filename matching", () => {
     const nested = matchUrnaFotoFilename("fotos/urna/250000555555.JPEG", index);
     assert.ok(nested && "target" in nested);
     assert.equal(nested.target.cargo, "Presidente");
+  });
+
+  it("extracts SQ from FSP/FBR + 13 digits + _div.jpg (optional folder)", () => {
+    const names = [
+      "FSP2500002530091_div.jpg",
+      "FBR2500002530091_div.jpg",
+      "foto_cand2026_SP_div/FSP2500002530091_div.jpg",
+      "fotos\\FSP2500002530091_div.JPG",
+    ];
+    for (const name of names) {
+      assert.equal(extractSqFromUrnaFilename(name), "2500002530091", name);
+    }
+    assert.equal(extractSqFromUrnaFilename("FSP250002530091_div.jpg"), "250002530091");
+    assert.ok(sqDigitStringsEqual("2500002530091", "2500002530091"));
+    assert.ok(sqDigitStringsEqual("02500002530091", "2500002530091"));
+    const hit = matchUrnaFotoFilename("FSP2500002530091_div.jpg", index);
+    assert.ok(hit && "target" in hit);
+    assert.equal(hit.via, "sq");
+    assert.equal(hit.target.numero, "45123");
+    assert.equal(hit.target.sq_candidato, "2500002530091");
   });
 
   it("matches TSE FSP{sq}_div photos (any case, subfolders)", () => {
@@ -180,6 +213,65 @@ describe("planStorageFotoLinks", () => {
     assert.equal(
       planned.some((p) => p.cargo === "Governador" && p.numero === "13"),
       false
+    );
+  });
+});
+
+describe("zip stream inspect (no inflate of unmatched)", () => {
+  it("counts FSP matches without requiring every jpg in RAM", async () => {
+    const zipped = zipSync({
+      "FSP2500002530091_div.jpg": new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+      "FSP2500002530092_div.jpg": new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+      "foto_cand2026_SP_div/FSP250002530091_div.jpg": new Uint8Array([
+        0xff, 0xd8, 0xff, 0xd9,
+      ]),
+      "readme.txt": new Uint8Array([1, 2, 3]),
+    });
+    const file = new File([zipped], "foto_cand2026_SP_div.zip", {
+      type: "application/zip",
+    });
+    const info = await inspectUrnaZip(file, index);
+    assert.equal(info.scanned, 3);
+    assert.equal(info.matched, 2);
+    assert.equal(info.unmatched, 1);
+    assert.equal(shouldInflateUrnaZipEntry("FSP2500002530091_div.jpg", index), true);
+    assert.equal(shouldInflateUrnaZipEntry("FSP2500002530092_div.jpg", index), false);
+  });
+});
+
+describe("vincular banner and zip-in-bucket", () => {
+  it("uses Vistos N · vinculadas M and warns when bucket is a ZIP", () => {
+    const hint = storageZipOnlyHint({
+      listed: 2,
+      imagePaths: ["urna/resto.jpg"],
+      zipPaths: ["foto_cand2026_SP_div.zip"],
+      otherPaths: [],
+    });
+    assert.ok(hint);
+    assert.match(hint ?? "", /ZIP no bucket não vale/);
+    const msg = summarizeVincular({
+      linked: 1,
+      listed: 2,
+      unmatched: 0,
+      skippedCadastro: 0,
+      sqFilled: 0,
+      checked: 2,
+      imageCount: 1,
+      zipCount: 1,
+      zipPaths: ["foto_cand2026_SP_div.zip"],
+      zipOnlyHint: hint,
+      storageConfigured: true,
+    });
+    assert.match(msg, /^Vistos 2 · vinculadas 1/);
+    assert.match(msg, /ZIP no bucket não vale/);
+    assert.equal(
+      storageZipOnlyHint({
+        listed: 26331,
+        imagePaths: Array.from({ length: 30 }, (_, i) => `urna/${i}.jpg`),
+        zipPaths: [],
+        otherPaths: [],
+      }),
+      null
     );
   });
 });

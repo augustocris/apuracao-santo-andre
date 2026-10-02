@@ -134,6 +134,39 @@ export function tseCell(value: string): string {
   return t;
 }
 
+/**
+ * SQ_CANDIDATO from TSE / Excel: text, number, 250000252653.0, or 2.50000252653E+11.
+ * Never keep leftover letters (E+) concatenated onto the digits.
+ */
+export function normalizeSqCandidato(raw: unknown): string | null {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    return String(Math.round(raw));
+  }
+  if (typeof raw === "bigint") {
+    const n = raw.toString().replace(/^-/, "");
+    return n || null;
+  }
+  const text = tseCell(String(raw));
+  if (!text) return null;
+  const sci = text.match(/^([+-]?\d+(?:[.,]\d+)?)[eE]([+-]?\d+)$/);
+  if (sci) {
+    const n = Number(text.replace(",", "."));
+    if (Number.isFinite(n) && n > 0) return String(Math.round(n));
+  }
+  const dotted = text.replace(",", ".");
+  if (/^\d+\.0+$/.test(dotted)) return dotted.replace(/\.0+$/, "");
+  const digits = text.replace(/\D/g, "");
+  return digits || null;
+}
+
+function sqFromRecord(rec: Record<string, string>): string | null {
+  return normalizeSqCandidato(
+    rec.SQ_CANDIDATO || rec.SQCANDIDATO || rec.SQ || ""
+  );
+}
+
 function stripAccentsUpper(value: string): string {
   return tseCell(value)
     .normalize("NFD")
@@ -332,7 +365,7 @@ function parseNamedRow(
     return null;
   }
 
-  const sq = tseCell(rec.SQ_CANDIDATO || "").replace(/\D/g, "");
+  const sq = sqFromRecord(rec);
   const row: ChapadaRow = { numero: validated.numero, nome, cargo };
   if (sq) row.sq_candidato = sq;
   if (apto) row.apto = true;
@@ -421,9 +454,8 @@ export function parseChapadaPayload(text: string): ParseChapadaResult {
           skipped
         );
         if (parsed) {
-          const sq = String(rec.sq_candidato ?? rec.SQ_CANDIDATO ?? "").replace(
-            /\D/g,
-            ""
+          const sq = normalizeSqCandidato(
+            rec.sq_candidato ?? rec.SQ_CANDIDATO ?? rec.SQ ?? rec.SQCANDIDATO
           );
           if (sq) parsed.sq_candidato = sq;
           rows.push(parsed);

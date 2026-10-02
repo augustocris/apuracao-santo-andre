@@ -45,6 +45,7 @@ import {
   normalizeSecao,
   normalizeZona,
 } from "@/lib/parser/bu-qr";
+import { normalizeSqCandidato } from "@/lib/chapada";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
 import { percentualNoCargo } from "@/lib/utils";
 import type {
@@ -1715,7 +1716,12 @@ export async function importCandidatos(
     sq_candidato?: string | null;
   }>,
   opts?: { origem?: "catalogo" | "cadastro" }
-): Promise<{ upserted: number; skippedCadastro: number; duplicates: number }> {
+): Promise<{
+  upserted: number;
+  skippedCadastro: number;
+  duplicates: number;
+  sqPersisted: boolean;
+}> {
   const origem = opts?.origem ?? "catalogo";
   const collected: ImportRow[] = [];
 
@@ -1727,7 +1733,7 @@ export async function importCandidatos(
       : normalizeChapadaNumero(r.numero);
     const nome = r.nome.trim();
     if (!numero || !nome || !cargo) continue;
-    const sq = (r.sq_candidato ?? "").replace(/\D/g, "") || null;
+    const sq = normalizeSqCandidato(r.sq_candidato);
     collected.push({
       numero,
       nome,
@@ -1769,8 +1775,20 @@ export async function importCandidatos(
       }
       toUpsert.push(row);
     }
+    const existingByKey = new Map(
+      existing.map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
+    );
+    for (const row of toUpsert) {
+      const prev = existingByKey.get(cadastroKey(row.cargo, row.numero));
+      if (prev?.foto_url && !row.foto_url) row.foto_url = prev.foto_url;
+    }
     upsertMockCandidatos(toUpsert);
-    return { upserted: toUpsert.length, skippedCadastro, duplicates };
+    return {
+      upserted: toUpsert.length,
+      skippedCadastro,
+      duplicates,
+      sqPersisted: hasSq,
+    };
   }
 
   const selectCols = hasSq
@@ -1838,16 +1856,22 @@ export async function importCandidatos(
   }
 
   if (toUpsert.length === 0) {
-    return { upserted: 0, skippedCadastro, duplicates };
+    return { upserted: 0, skippedCadastro, duplicates, sqPersisted: hasSq };
   }
+
+  const existingByKey = new Map(
+    existingList.map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
+  );
 
   const payloadMap = new Map<string, Record<string, unknown>>();
   for (const row of toUpsert) {
+    const prev = existingByKey.get(cadastroKey(row.cargo, row.numero));
+    const foto = row.foto_url || prev?.foto_url || null;
     const rec: Record<string, unknown> = {
       numero: row.numero,
       nome: row.nome,
       cargo: row.cargo,
-      foto_url: row.foto_url,
+      foto_url: foto,
     };
     if (hasOrigem) rec.origem = row.origem;
     if (hasSq && row.sq_candidato) rec.sq_candidato = row.sq_candidato;
@@ -1868,7 +1892,7 @@ export async function importCandidatos(
     upserted += count ?? slice.length;
   }
 
-  return { upserted, skippedCadastro, duplicates };
+  return { upserted, skippedCadastro, duplicates, sqPersisted: hasSq };
 }
 
 /**
@@ -1944,6 +1968,74 @@ export async function applyCandidatoFotos(
   }
 
   return { updated, skippedCadastroFoto, notFound };
+}
+
+/** Grava sq_candidato vazio → valor do CSV. Não apaga SQ já preenchido. */
+export async function applyCandidatoSq(
+  items: Array<{ numero: string; cargo: string; sq_candidato: string }>
+): Promise<{ updated: number; notFound: number }> {
+  let updated = 0;
+  let notFound = 0;
+  const supabase = getSupabase();
+
+  if (!supabase) {
+    const existing = getMockCandidatos();
+    for (const item of items) {
+      const sq = normalizeSqCandidato(item.sq_candidato);
+      if (!sq) continue;
+      const key = cadastroKey(item.cargo, item.numero);
+      const row = existing.find((c) => cadastroKey(c.cargo, c.numero) === key);
+      if (!row) {
+        notFound += 1;
+        continue;
+      }
+      if (row.sq_candidato) continue;
+      row.sq_candidato = sq;
+      updated += 1;
+    }
+    return { updated, notFound };
+  }
+
+  if (!(await candidatosHasSqColumn())) {
+    return { updated: 0, notFound: 0 };
+  }
+
+  const { data: current, error: listError } = await supabase
+    .from("candidatos")
+    .select("id, numero, cargo, sq_candidato");
+  if (listError) throw new Error(listError.message);
+  const byKey = new Map(
+    (
+      (current ?? []) as Array<{
+        id: string;
+        numero: string;
+        cargo: string;
+        sq_candidato?: string | null;
+      }>
+    ).map((c) => [cadastroKey(c.cargo, c.numero), c] as const)
+  );
+
+  for (const item of items) {
+    const sq = normalizeSqCandidato(item.sq_candidato);
+    if (!sq) continue;
+    const row = byKey.get(cadastroKey(item.cargo, item.numero));
+    if (!row) {
+      notFound += 1;
+      continue;
+    }
+    if (row.sq_candidato) continue;
+    const { error } = await supabase
+      .from("candidatos")
+      .update({ sq_candidato: sq })
+      .eq("id", row.id);
+    if (error) {
+      throw supabaseWriteError("Falha ao gravar SQ_CANDIDATO", error.message);
+    }
+    row.sq_candidato = sq;
+    updated += 1;
+  }
+
+  return { updated, notFound };
 }
 
 /** Só grava foto_url — não muda origem (catálogo/Presidente continua catálogo). */

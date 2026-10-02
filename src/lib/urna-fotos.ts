@@ -428,6 +428,111 @@ export async function processUrnaFotos(
   };
 }
 
+export function planStorageFotoLinks(
+  objectPaths: string[],
+  index: UrnaFotoIndex
+): Array<{ numero: string; cargo: string; path: string; id?: string }> {
+  const planned: Array<{
+    numero: string;
+    cargo: string;
+    path: string;
+    id?: string;
+  }> = [];
+  const seen = new Set<string>();
+  for (const path of objectPaths) {
+    const match = matchUrnaFotoFilename(path, index);
+    if (!match || "ambiguous" in match) continue;
+    if (match.target.foto_url?.trim()) continue;
+    const key = `${match.target.cargo}::${match.target.numero}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    planned.push({
+      numero: match.target.numero,
+      cargo: match.target.cargo,
+      path,
+      id: match.target.id,
+    });
+  }
+  return planned;
+}
+
+async function listStoragePrefix(prefix: string): Promise<string[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const paths: string[] = [];
+  const pageSize = 100;
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase.storage.from(BUCKET).list(prefix, {
+      limit: pageSize,
+      offset,
+      sortBy: { column: "name", order: "asc" },
+    });
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    for (const item of data) {
+      const full = prefix ? `${prefix}/${item.name}` : item.name;
+      const isFolder = !item.id || item.metadata == null;
+      if (isFolder) {
+        paths.push(...(await listStoragePrefix(full)));
+      } else if (isUrnaImagePath(full)) {
+        paths.push(full);
+      }
+    }
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+  return paths;
+}
+
+export async function listStorageFotoPaths(): Promise<string[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  return listStoragePrefix("");
+}
+
+/**
+ * Se o bucket já tem FSP/FBR{SQ}_div e o candidato tem sq_candidato sem
+ * foto_url, grava a URL pública. Não inventa imagem.
+ */
+export async function linkStoredUrnaFotos(): Promise<{
+  linked: number;
+  checked: number;
+  storageConfigured: boolean;
+}> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { linked: 0, checked: 0, storageConfigured: false };
+  }
+  const [paths, index] = await Promise.all([
+    listStorageFotoPaths(),
+    indexFromDatabase(),
+  ]);
+  const planned = planStorageFotoLinks(paths, index);
+  if (planned.length === 0) {
+    return { linked: 0, checked: paths.length, storageConfigured: true };
+  }
+  const items: Array<{ numero: string; cargo: string; foto_url: string }> = [];
+  for (const row of planned) {
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(row.path);
+    if (!data?.publicUrl) continue;
+    items.push({
+      numero: row.numero,
+      cargo: row.cargo,
+      foto_url: data.publicUrl,
+    });
+  }
+  if (items.length === 0) {
+    return { linked: 0, checked: paths.length, storageConfigured: true };
+  }
+  const applied = await applyCandidatoFotos(items);
+  return {
+    linked: applied.updated,
+    checked: paths.length,
+    storageConfigured: true,
+  };
+}
+
 export async function indexFromDatabase(): Promise<UrnaFotoIndex> {
   const list: Candidato[] = await listCandidatos({
     featuredOnly: false,

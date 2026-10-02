@@ -12,6 +12,8 @@ import {
   CHEFE_PINNED_GOVERNADORES,
   CHEFE_PINNED_PRESIDENTES,
   sortChefeFavoritesFirst,
+  mobileChefeCargoRows,
+  orderChefeMobileCargos,
   toggleChefeColumnSort,
 } from "./chefe-ranking";
 import { percentualNoCargo } from "./utils";
@@ -701,6 +703,53 @@ describe("sortChefeFavoritesFirst", () => {
       key: "votos",
       dir: "asc",
     });
+  });
+});
+
+describe("mobile chefe cargo filter", () => {
+  it("puts the selected cargo first, then Estadual → Federal → Senador", () => {
+    assert.deepEqual(orderChefeMobileCargos("todos"), [
+      "Deputado Estadual",
+      "Deputado Federal",
+      "Senador",
+    ]);
+    assert.deepEqual(orderChefeMobileCargos("Deputado Estadual"), [
+      "Deputado Estadual",
+      "Deputado Federal",
+      "Senador",
+    ]);
+    assert.deepEqual(orderChefeMobileCargos("Deputado Federal"), [
+      "Deputado Federal",
+      "Deputado Estadual",
+      "Senador",
+    ]);
+    assert.deepEqual(orderChefeMobileCargos("Senador"), [
+      "Senador",
+      "Deputado Estadual",
+      "Deputado Federal",
+    ]);
+  });
+
+  it("lists PIN favorites then top 10 by votes without repeating", () => {
+    const rows = Array.from({ length: 14 }, (_, i) => ({
+      votos: 14 - i,
+      percentual: 0,
+      cargo: "Deputado Estadual",
+      candidato: {
+        id: `de-${i}`,
+        numero: String(10000 + i),
+        nome: `Cand ${i}`,
+        cargo: "Deputado Estadual",
+        foto_url: null,
+        origem: "catalogo" as const,
+      },
+    }));
+    const listed = mobileChefeCargoRows(rows, new Set(["de-12"]));
+    assert.equal(listed[0].candidato.id, "de-12");
+    assert.equal(listed.length, 11);
+    assert.ok(listed.slice(1).every((r) => r.candidato.id !== "de-12"));
+    assert.equal(listed[1].candidato.id, "de-0");
+    assert.equal(listed[10].candidato.id, "de-9");
   });
 });
 

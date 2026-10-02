@@ -24,10 +24,13 @@ import {
   chefeMiniaturaFallback,
   isChefeFavoritoId,
   isSyntheticPinnedId,
+  mobileChefeCargoRows,
+  orderChefeMobileCargos,
   pinChefeHighlights,
   sortChefeFavoritesFirst,
   toggleChefeColumnSort,
   type ChefeColumnSort,
+  type ChefeMobileCargoFilter,
   type ChefeRankingFlatRow,
   type ChefeSortKey,
 } from "@/lib/chefe-ranking";
@@ -83,7 +86,7 @@ function ChefeFoto({
   size = "sm",
 }: {
   candidato: Candidato;
-  size?: "xs" | "sm";
+  size?: "xs" | "sm" | "lg";
 }) {
   const [failed, setFailed] = useState(false);
   const src = candidato.foto_url?.trim() || "";
@@ -97,9 +100,11 @@ function ChefeFoto({
     <span
       className={cn(
         "inline-flex shrink-0 items-center justify-center overflow-hidden bg-teal-100 font-bold leading-none text-teal-900",
-        size === "xs"
-          ? "size-6 rounded-md text-[9px]"
-          : "size-8 rounded-full text-[10px] md:size-9"
+        size === "lg"
+          ? "size-12 rounded-lg text-xs md:size-6 md:rounded-md md:text-[9px]"
+          : size === "xs"
+            ? "size-6 rounded-md text-[9px]"
+            : "size-10 rounded-full text-[11px] md:size-8 md:text-[10px]"
       )}
       title={candidato.nome}
     >
@@ -171,13 +176,13 @@ function HighlightChip({
 }) {
   const synthetic = isSyntheticPinnedId(row.candidato.id);
   return (
-    <article className="flex h-8 min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-slate-200 bg-white px-1.5 md:h-9 md:gap-2 md:px-2">
-      <ChefeFoto candidato={row.candidato} size="xs" />
+    <article className="flex min-h-[4.5rem] min-w-0 items-center gap-2 overflow-hidden rounded-lg border border-slate-200 bg-white px-2 py-2 md:h-9 md:min-h-0 md:gap-2 md:rounded-md md:px-2 md:py-0">
+      <ChefeFoto candidato={row.candidato} size="lg" />
       <div className="min-w-0 flex-1 leading-tight">
-        <p className="truncate text-[11px] font-semibold text-slate-900 md:text-xs">
+        <p className="truncate text-[15px] font-semibold text-slate-900 md:text-[11px]">
           {row.candidato.nome}
         </p>
-        <p className="truncate text-[10px] tabular-nums text-slate-500">
+        <p className="truncate text-xs tabular-nums text-slate-500 md:text-[10px]">
           {row.candidato.numero ? `Nº ${row.candidato.numero} · ` : ""}
           {formatVotes(row.votos)}
           <span className="ml-1 text-slate-400">
@@ -214,27 +219,27 @@ function CargoRow({
   return (
     <li
       className={cn(
-        "flex items-center gap-1.5 px-2 py-1 md:px-2.5",
+        "flex items-center gap-2 px-3 py-2.5 md:gap-1.5 md:px-2.5 md:py-1",
         favorito && "bg-amber-50/80"
       )}
     >
-      <span className="w-4 shrink-0 text-center text-[10px] tabular-nums text-slate-400">
+      <span className="w-5 shrink-0 text-center text-xs tabular-nums text-slate-400 md:w-4 md:text-[10px]">
         {index + 1}
       </span>
       <ChefeFoto candidato={row.candidato} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium leading-tight text-slate-900">
+        <p className="truncate text-[15px] font-medium leading-tight text-slate-900 md:text-[13px]">
           {row.candidato.nome}
         </p>
-        <p className="text-[10px] tabular-nums text-slate-500">
+        <p className="text-xs tabular-nums text-slate-500 md:text-[10px]">
           Nº {row.candidato.numero}
         </p>
       </div>
       <div className="shrink-0 text-right">
-        <p className="text-[13px] font-bold tabular-nums leading-tight text-teal-800">
+        <p className="text-[15px] font-bold tabular-nums leading-tight text-teal-800 md:text-[13px]">
           {formatVotes(row.votos)}
         </p>
-        <p className="text-[10px] tabular-nums text-slate-400">
+        <p className="text-xs tabular-nums text-slate-400 md:text-[10px]">
           {formatPercent(row.percentual)}
         </p>
       </div>
@@ -352,6 +357,49 @@ function CargoColumn({
   );
 }
 
+function MobileCargoBlock({
+  titulo,
+  rows,
+  favoritoIds,
+  savingIds,
+  onToggle,
+}: {
+  titulo: string;
+  rows: ChefeRankingFlatRow[];
+  favoritoIds: ReadonlySet<string>;
+  savingIds: ReadonlySet<string>;
+  onToggle: (candidato: Candidato) => void;
+}) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white">
+      <h2 className="px-3 pt-2.5 text-base font-bold text-slate-900">
+        {titulo}
+      </h2>
+      <p className="px-3 pb-1.5 text-xs text-slate-500">
+        Favoritos deste PIN + 10 mais votados
+      </p>
+      {rows.length === 0 ? (
+        <p className="px-3 py-5 text-sm text-slate-500">
+          Catálogo vazio neste cargo
+        </p>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {rows.map((row, index) => (
+            <CargoRow
+              key={`${row.candidato.id}-${row.cargo}`}
+              row={row}
+              index={index}
+              favorito={isChefeFavoritoId(row.candidato.id, favoritoIds)}
+              busy={savingIds.has(row.candidato.id)}
+              onToggle={onToggle}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function readChefeId(): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -392,6 +440,8 @@ export function ChefeRanking() {
   const [error, setError] = useState<string | null>(null);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [hour, setHour] = useState(() => new Date().getHours());
+  const [mobileCargo, setMobileCargo] =
+    useState<ChefeMobileCargoFilter>("todos");
 
   const unlocked = chefe != null;
 
@@ -512,6 +562,20 @@ export function ChefeRanking() {
     [groups, colQueries, colSorts, favoritoIds]
   );
 
+  const mobileColunas = useMemo(() => {
+    const tituloByCargo = Object.fromEntries(
+      COLUNAS.map((c) => [c.cargo, c.titulo])
+    ) as Record<(typeof COLUNAS)[number]["cargo"], string>;
+    return orderChefeMobileCargos(mobileCargo).map((cargo) => ({
+      cargo,
+      titulo: tituloByCargo[cargo],
+      rows: mobileChefeCargoRows(
+        cargoRowsForChefe(groups, cargo),
+        favoritoIds
+      ),
+    }));
+  }, [groups, favoritoIds, mobileCargo]);
+
   async function handleUnlock(e: FormEvent) {
     e.preventDefault();
     setPinBusy(true);
@@ -627,8 +691,8 @@ export function ChefeRanking() {
   const saudacao = chefeGreeting(hour, chefe.nome);
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col px-3 py-1.5 md:overflow-hidden md:px-4 md:py-2">
-      <header className="flex h-8 shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[13px] leading-none">
+    <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-3 py-2 md:h-full md:overflow-hidden md:px-4 md:py-2">
+      <header className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[15px] leading-tight md:h-8 md:min-h-0 md:flex-nowrap md:overflow-hidden md:whitespace-nowrap md:text-[13px] md:leading-none">
         <Trophy className="size-3.5 shrink-0 text-teal-800" aria-hidden />
         <span className="font-semibold text-teal-800">Chefe</span>
         <span className="text-slate-300" aria-hidden>
@@ -674,7 +738,7 @@ export function ChefeRanking() {
 
       <section
         aria-label="Governador e Presidente"
-        className="grid shrink-0 grid-cols-2 gap-1 md:grid-cols-4 md:gap-1.5"
+        className="mt-1.5 grid shrink-0 grid-cols-2 gap-2 md:mt-0 md:grid-cols-4 md:gap-1.5"
       >
         {govPins.map((row) => (
           <HighlightChip
@@ -696,7 +760,52 @@ export function ChefeRanking() {
         ))}
       </section>
 
-      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-1 gap-2 md:grid-cols-3 md:overflow-hidden">
+      <div
+        className="mt-2 flex flex-wrap gap-1.5 md:hidden"
+        role="tablist"
+        aria-label="Ordem dos cargos"
+      >
+        {(
+          [
+            { id: "todos" as const, label: "Todos" },
+            ...COLUNAS.map((c) => ({
+              id: c.cargo as ChefeMobileCargoFilter,
+              label: c.titulo,
+            })),
+          ]
+        ).map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            role="tab"
+            aria-selected={mobileCargo === opt.id}
+            className={cn(
+              "h-10 rounded-lg px-3 text-sm font-semibold",
+              mobileCargo === opt.id
+                ? "bg-teal-700 text-white"
+                : "border border-slate-200 bg-white text-slate-700"
+            )}
+            onClick={() => setMobileCargo(opt.id)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-2 flex flex-col gap-3 md:hidden">
+        {mobileColunas.map((col) => (
+          <MobileCargoBlock
+            key={col.cargo}
+            titulo={col.titulo}
+            rows={col.rows}
+            favoritoIds={favoritoIds}
+            savingIds={savingIds}
+            onToggle={toggleFavorito}
+          />
+        ))}
+      </div>
+
+      <div className="mt-1.5 hidden min-h-0 flex-1 grid-cols-3 gap-2 overflow-hidden md:grid">
         {colunas.map((col) => (
           <CargoColumn
             key={col.cargo}

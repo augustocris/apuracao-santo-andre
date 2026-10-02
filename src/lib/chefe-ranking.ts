@@ -354,6 +354,63 @@ export function sortChefeFavoritesFirst(
   });
 }
 
+export const CHEFE_MOBILE_CARGOS = [
+  "Deputado Estadual",
+  "Deputado Federal",
+  "Senador",
+] as const;
+
+export type ChefeMobileCargo = (typeof CHEFE_MOBILE_CARGOS)[number];
+export type ChefeMobileCargoFilter = "todos" | ChefeMobileCargo;
+
+export const CHEFE_MOBILE_TOP_N = 10;
+
+/**
+ * Cargo selecionado primeiro; os outros na ordem Estadual → Federal → Senador.
+ * "Todos" = ordem padrão.
+ */
+export function orderChefeMobileCargos(
+  selected: ChefeMobileCargoFilter
+): ChefeMobileCargo[] {
+  const base = [...CHEFE_MOBILE_CARGOS];
+  if (selected === "todos") return base;
+  return [selected, ...base.filter((c) => c !== selected)];
+}
+
+/**
+ * Mobile: favoritos deste PIN (neste cargo) + top N por votos, sem repetir.
+ */
+export function mobileChefeCargoRows(
+  rows: ChefeRankingFlatRow[],
+  favoritoIds?: ReadonlySet<string> | null,
+  topN = CHEFE_MOBILE_TOP_N
+): ChefeRankingFlatRow[] {
+  const ids = favoritoIds ?? new Set<string>();
+  const visible = rows.filter(
+    (r) =>
+      r.votos > 0 ||
+      isChefeFavoritoId(r.candidato.id, ids) ||
+      isChefeCatalogRow(r)
+  );
+  const favorites = visible
+    .filter((r) => isChefeFavoritoId(r.candidato.id, ids))
+    .sort(
+      (a, b) =>
+        b.votos - a.votos ||
+        a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
+    );
+  const used = new Set(favorites.map((r) => r.candidato.id));
+  const top = visible
+    .filter((r) => !used.has(r.candidato.id))
+    .sort(
+      (a, b) =>
+        b.votos - a.votos ||
+        a.candidato.nome.localeCompare(b.candidato.nome, "pt-BR")
+    )
+    .slice(0, Math.max(0, topN));
+  return [...favorites, ...top];
+}
+
 export function leftoverAfterPair(
   rows: ChefeRankingFlatRow[],
   pair: ChefeRankingFlatRow[],

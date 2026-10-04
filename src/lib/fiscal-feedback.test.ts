@@ -7,6 +7,7 @@ import {
   hasWhatsappSuporte,
   isNetworkError,
   SUCCESS_CLEAR_MS,
+  waitingNextQrLabel,
   waitingSecondQrLabel,
   whatsappHref,
   whatsappLabel,
@@ -37,6 +38,14 @@ describe("fiscal feedback copy", () => {
     assert.equal(
       waitingSecondQrLabel("001", "0477"),
       "Falta o 2º QR · zona 001 seção 0477"
+    );
+    assert.equal(
+      waitingNextQrLabel("001", "0477", 3),
+      "Falta o 3º QR · zona 001 seção 0477"
+    );
+    assert.equal(
+      waitingNextQrLabel("383", "0401", 4),
+      "Falta o 4º QR · zona 383 seção 0401"
     );
   });
 

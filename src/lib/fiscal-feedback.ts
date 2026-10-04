@@ -61,10 +61,19 @@ export function hasWhatsappSuporte(value: string | null | undefined): boolean {
   return whatsappDigits(value).length >= 10;
 }
 
-export function waitingSecondQrLabel(zona: string, secao: string): string {
+export function waitingNextQrLabel(
+  zona: string,
+  secao: string,
+  nextIndex = 2
+): string {
   const z = zona?.trim() || "—";
   const s = secao?.trim() || "—";
-  return `Falta o 2º QR · zona ${z} seção ${s}`;
+  const n = Math.max(2, Math.floor(nextIndex) || 2);
+  return `Falta o ${n}º QR · zona ${z} seção ${s}`;
+}
+
+export function waitingSecondQrLabel(zona: string, secao: string): string {
+  return waitingNextQrLabel(zona, secao, 2);
 }
 
 export function incompleteQrFeedback(index: number, total: number): FiscalFeedback {

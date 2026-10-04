@@ -23,7 +23,7 @@ import {
   parseFeedback,
   qrMismatchFeedback,
   SUCCESS_CLEAR_MS,
-  waitingSecondQrLabel,
+  waitingNextQrLabel,
   zonaForaFeedback,
   type FiscalFeedback,
 } from "@/lib/fiscal-feedback";
@@ -32,6 +32,7 @@ import {
   BuParseError,
   describeQrProgress,
   isQrSetComplete,
+  nextMissingQrIndex,
   parseBuQrText,
   parseFiscalQrChunk,
   peekZonaSecao,
@@ -430,7 +431,11 @@ export function FiscalApp() {
               role="status"
               className="text-base font-bold leading-snug text-teal-900"
             >
-              {waitingSecondQrLabel(fragments[0].zona, fragments[0].secao)}
+              {waitingNextQrLabel(
+                fragments[0].zona,
+                fragments[0].secao,
+                nextMissingQrIndex(fragments)
+              )}
             </p>
           ) : null}
           <BuScanner

@@ -17,6 +17,7 @@ import {
   looksBinaryPayload,
   inheritQrZonaSecao,
   isQrSetComplete,
+  nextMissingQrIndex,
   mergeParsedBus,
   normalizeCandidateNumero,
   normalizeSecao,
@@ -592,6 +593,60 @@ describe("multi-QR merge", () => {
     const fp = parseUrnaFingerprint("HASH:DEADBEEF IDUE:123 NR_UE:123");
     assert.equal(fp.hash, "DEADBEEF");
     assert.equal(fp.urnaId, "123");
+  });
+
+  it("reads 4-QR banners (01/04, 02 / 04, 1 de 4, SEQL, ORQR)", () => {
+    assert.deepEqual(parseQrbuMeta("SEQL:01/04 ORQR:1 ZONA:383 SECA:0401"), {
+      index: 1,
+      total: 4,
+    });
+    assert.deepEqual(parseQrbuMeta("---------- 02 / 04 ----------"), {
+      index: 2,
+      total: 4,
+    });
+    assert.deepEqual(parseQrbuMeta("03/04 CARG:6 4545:11"), {
+      index: 3,
+      total: 4,
+    });
+    assert.deepEqual(parseQrbuMeta("4 de 4 ORQR:4"), { index: 4, total: 4 });
+    assert.deepEqual(parseQrbuMeta("1 de 4 ZONA:383 SECA:0401"), {
+      index: 1,
+      total: 4,
+    });
+  });
+
+  it("does not ingest a 4-QR set until all four parts arrive; HASH may differ", () => {
+    const p1 = parseFiscalQrChunk(
+      "SEQL:01/04 HASH:AAAA IDUE:77 ZONA:383 SECA:0401 CARG:1 13:10",
+      []
+    );
+    const p2 = parseFiscalQrChunk(
+      "---------- 02 / 04 ---------- SEQL:02/04 HASH:BBBB IDUE:77 CARG:1 17:8",
+      [p1]
+    );
+    const p3 = parseFiscalQrChunk(
+      "SEQL:03/04 ORQR:3 HASH:CCCC IDUE:77 CARG:6 4545:11",
+      [p1, p2]
+    );
+    assert.equal(isQrSetComplete([p1]), false);
+    assert.equal(isQrSetComplete([p1, p2]), false);
+    assert.equal(isQrSetComplete([p1, p2, p3]), false);
+    assert.equal(nextMissingQrIndex([p1]), 2);
+    assert.equal(nextMissingQrIndex([p1, p2]), 3);
+    assert.equal(nextMissingQrIndex([p1, p2, p3]), 4);
+    assert.throws(() => assertQrSetReadyToIngest([p1, p2, p3]), /3 de 4|próximo QR/i);
+
+    const p4 = parseFiscalQrChunk(
+      "SEQL:04/04 ORQR:4 HASH:DDDD IDUE:77 CARG:3 10:55",
+      [p1, p2, p3]
+    );
+    assert.equal(p4.zona, "383");
+    assert.equal(p4.secao, "0401");
+    assert.equal(p4.qrTotal, 4);
+    const merged = assertQrSetReadyToIngest([p1, p2, p3, p4]);
+    assert.ok(merged.votes.some((v) => v.numero === "13"));
+    assert.ok(merged.votes.some((v) => v.numero === "4545"));
+    assert.ok(merged.votes.some((v) => v.numero === "10"));
   });
 });
 

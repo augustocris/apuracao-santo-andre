@@ -20,12 +20,19 @@ export type CameraStartAttempt = {
   videoConstraints?: MediaTrackConstraints;
 };
 
+/** Android-only: ask for more pixels so dense TSE QRs stay sharp. Never `min`. */
+export const ANDROID_IDEAL_VIDEO: MediaTrackConstraints = {
+  facingMode: { ideal: "environment" },
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
+};
+
 /**
- * First try is always `{ facingMode: "environment" }` — no min, no 1920.
- * Same first shot on Android and iPhone. Fallbacks only if that getUserMedia fails.
+ * First cameraIdOrConfig is always `{ facingMode: "environment" }` — no min.
+ * Android may add ideal 1920 in videoConstraints; iPhone stays facingMode-only.
  */
-export function cameraStartAttempts(_appleTouch: boolean): CameraStartAttempt[] {
-  return [
+export function cameraStartAttempts(appleTouch: boolean): CameraStartAttempt[] {
+  const iosOrFallback: CameraStartAttempt[] = [
     { cameraIdOrConfig: { facingMode: "environment" } },
     {
       cameraIdOrConfig: { facingMode: "environment" },
@@ -36,6 +43,30 @@ export function cameraStartAttempts(_appleTouch: boolean): CameraStartAttempt[] 
       videoConstraints: {},
     },
   ];
+  if (appleTouch) return iosOrFallback;
+  return [
+    {
+      cameraIdOrConfig: { facingMode: "environment" },
+      videoConstraints: ANDROID_IDEAL_VIDEO,
+    },
+    ...iosOrFallback,
+  ];
+}
+
+/** ~92% of the live viewfinder — dense thermal TSE QRs need almost the full frame. */
+export function qrboxForDenseTse(
+  viewfinderWidth: number,
+  viewfinderHeight: number
+): { width: number; height: number } {
+  const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+  if (!Number.isFinite(minEdge) || minEdge < 50) {
+    return { width: 280, height: 280 };
+  }
+  const size = Math.max(280, Math.floor(minEdge * 0.92));
+  return {
+    width: Math.min(size, viewfinderWidth),
+    height: Math.min(size, viewfinderHeight),
+  };
 }
 
 /** @deprecated use cameraStartAttempts — kept for tests that check the first getUserMedia. */
@@ -43,18 +74,77 @@ export function cameraConstraintLadder(appleTouch: boolean): MediaTrackConstrain
   return cameraStartAttempts(appleTouch).map((a) => a.videoConstraints ?? a.cameraIdOrConfig);
 }
 
-export function liveScanConfig(appleTouch: boolean): {
+/** Dense TSE BUs need frequent frames. Keep it the same on Android and iPhone. */
+export const LIVE_SCAN_FPS = 20;
+
+export function liveScanConfig(_appleTouch?: boolean): {
   fps: number;
   disableFlip: true;
 } {
   return {
-    fps: appleTouch ? 8 : 12,
+    fps: LIVE_SCAN_FPS,
     disableFlip: true,
   };
 }
 
-export function useBarcodeDetector(appleTouch: boolean): boolean {
-  return !appleTouch;
+/**
+ * Native BarcodeDetector misses dense TSE QR codes on Android Chrome.
+ * Always use ZXing via html5-qrcode.
+ */
+export function useBarcodeDetector(_appleTouch?: boolean): boolean {
+  return false;
+}
+
+const SCANNER_HIDE_CLASSES = ["hidden", "invisible", "sr-only"] as const;
+
+/** Min live viewfinder so html5-qrcode does not start a 0×0 canvas. */
+export const SCANNER_MIN_EDGE = 160;
+
+/**
+ * html5-qrcode reads clientWidth/clientHeight when the video starts playing.
+ * display:none / 0×0 → canvas 0×0 → foreverScan never decodes.
+ */
+export function revealLiveScannerElement(el: HTMLElement | null): void {
+  if (!el) return;
+  el.hidden = false;
+  el.removeAttribute("hidden");
+  el.classList.remove(...SCANNER_HIDE_CLASSES);
+  el.style.display = "block";
+  el.style.visibility = "visible";
+  el.style.opacity = "1";
+  el.style.width = "100%";
+  el.style.minHeight = "min(70vh, 520px)";
+  el.style.height = "min(70vh, 520px)";
+}
+
+export function hasScannerSurface(
+  el: { clientWidth: number; clientHeight: number } | null,
+  min = SCANNER_MIN_EDGE
+): boolean {
+  if (!el) return false;
+  return el.clientWidth >= min && el.clientHeight >= min;
+}
+
+export function waitForScannerSurface(
+  el: HTMLElement | null,
+  timeoutMs = 1600
+): Promise<boolean> {
+  if (hasScannerSurface(el)) return Promise.resolve(true);
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (hasScannerSurface(el) || Date.now() - started > timeoutMs) {
+        resolve(hasScannerSurface(el));
+        return;
+      }
+      if (typeof requestAnimationFrame === "undefined") {
+        setTimeout(tick, 16);
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
 }
 
 export type CameraErrorKind =

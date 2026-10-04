@@ -47,6 +47,7 @@ import {
 } from "@/lib/parser/bu-qr";
 import { normalizeSqCandidato } from "@/lib/chapada";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
+import { pinMatchesAdmin } from "@/lib/admin-pin";
 import { percentualNoCargo } from "@/lib/utils";
 import type {
   ApuracaoConfig,
@@ -659,6 +660,12 @@ export async function unlockChefeByPin(pin: string): Promise<Chefe | null> {
     pin: fallback,
     created_at: new Date().toISOString(),
   };
+}
+
+/** Só o PIN do Cristiano (`apuracao_config.chefe_pin` ou andre2026). Sem tabela chefes. */
+export async function unlockAdminByPin(pin: string): Promise<boolean> {
+  const cfg = await getConfig();
+  return pinMatchesAdmin(pin, cfg.chefe_pin);
 }
 
 export async function listValidChefePins(): Promise<string[]> {

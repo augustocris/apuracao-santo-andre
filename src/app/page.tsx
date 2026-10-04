@@ -46,7 +46,7 @@ export default function HomePage() {
             <Settings2 className="mb-3 size-8 text-teal-800" />
             <h2 className="text-xl font-bold text-slate-900">Admin</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Cadastro, BUs pendentes e Digitar BU.
+              Cadastro, BUs pendentes e Digitar BU. PIN do Cristiano.
             </p>
           </Link>
           <Link

@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 import { ManualBuForm, type ManualBuSubmit } from "@/components/fiscal/ManualBuForm";
 import { ConfirmTransmitModal } from "@/components/fiscal/ConfirmTransmitModal";
-import { PinGate } from "@/components/admin/PinGate";
 import {
   padSecao,
   padZona,
@@ -108,11 +107,7 @@ export function AdminDigitarBu() {
   }
 
   return (
-    <PinGate
-      title="Digitar BU na central"
-      description="Mesmo PIN do /chefe. Só para fotos do WhatsApp que o QR não leu. Não é o link público do fiscal."
-    >
-      <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4 md:p-5">
+    <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4 md:p-5">
         <div>
           <h2 className="text-lg font-bold text-white">Digitar BU</h2>
           <p className="text-sm text-slate-400">
@@ -162,7 +157,6 @@ export function AdminDigitarBu() {
             />
           </div>
         )}
-      </div>
-    </PinGate>
+    </div>
   );
 }

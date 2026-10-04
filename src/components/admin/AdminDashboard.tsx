@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ClipboardList,
   ExternalLink,
+  LogOut,
   Settings2,
   TriangleAlert,
 } from "lucide-react";
@@ -11,6 +12,7 @@ import Link from "next/link";
 import { AdminCadastro } from "@/components/admin/AdminCadastro";
 import { AdminDigitarBu } from "@/components/admin/AdminDigitarBu";
 import { AdminPendentes } from "@/components/admin/AdminPendentes";
+import { useAdminLock } from "@/components/admin/PinGate";
 import { Button } from "@/components/ui/button";
 import { fetchDashboard, subscribeDashboard } from "@/lib/data";
 import type { DashboardSnapshot } from "@/lib/types";
@@ -33,6 +35,7 @@ const EMPTY: DashboardSnapshot = {
 type AdminView = "cadastro" | "pendentes" | "digitar";
 
 export function AdminDashboard() {
+  const lockAdmin = useAdminLock();
   const [view, setView] = useState<AdminView>("cadastro");
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +163,15 @@ export function AdminDashboard() {
           >
             Acesso chefe
           </Link>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 border-white/25 bg-white/5 text-white hover:bg-white/10"
+            onClick={lockAdmin}
+          >
+            <LogOut className="size-4" />
+            Sair
+          </Button>
         </div>
       </header>
 

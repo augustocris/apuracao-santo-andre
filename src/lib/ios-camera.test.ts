@@ -4,6 +4,7 @@ import {
   cameraConstraintLadder,
   cameraErrorKind,
   cameraStartAttempts,
+  forceScannerSurface,
   GESTURE_CAMERA_CONSTRAINTS,
   isAppleTouchDevice,
   hasScannerSurface,
@@ -11,6 +12,7 @@ import {
   LIVE_SCAN_FPS,
   qrboxForDenseTse,
   shouldAcceptLiveDecode,
+  sizeLiveVideoToContainer,
   requestCameraFromUserGesture,
   revealLiveScannerElement,
   useBarcodeDetector,
@@ -80,7 +82,7 @@ describe("iPhone / Safari camera helpers", () => {
     assert.equal(useBarcodeDetector(false), false);
   });
 
-  it("accepts the first live decode as soon as the session is live", () => {
+  it("accepts the first live decode even before sessionLive / ignoreUntil", () => {
     assert.equal(
       shouldAcceptLiveDecode({
         handled: false,
@@ -99,7 +101,7 @@ describe("iPhone / Safari camera helpers", () => {
         ignoreUntil: 0,
         now: 1_000,
       }),
-      false
+      true
     );
     assert.equal(
       shouldAcceptLiveDecode({
@@ -119,13 +121,18 @@ describe("iPhone / Safari camera helpers", () => {
     assert.ok(LIVE_SCAN_FPS >= 18);
   });
 
-  it("qrbox covers ~90% of the viewfinder for dense TSE", () => {
+  it("qrbox covers ~90% of the viewfinder and never exceeds it", () => {
     const box = qrboxForDenseTse(400, 300);
-    assert.equal(box.width, Math.max(280, Math.floor(300 * 0.92)));
+    assert.equal(box.width, Math.floor(300 * 0.9));
     assert.equal(box.height, box.width);
-    assert.ok(box.width / 300 >= 0.9);
+    assert.ok(box.width <= 300);
+    assert.ok(box.width / 300 >= 0.89);
     const tall = qrboxForDenseTse(720, 1280);
-    assert.ok(tall.width / 720 >= 0.9);
+    assert.ok(tall.width / 720 >= 0.89);
+    assert.ok(tall.width <= 720);
+    assert.ok(tall.height <= 1280);
+    const tiny = qrboxForDenseTse(40, 80);
+    assert.ok(tiny.width <= 40 || tiny.width === 280);
   });
 
   it("reveals a hidden scanner so html5-qrcode can measure a real box", () => {
@@ -151,6 +158,36 @@ describe("iPhone / Safari camera helpers", () => {
     assert.ok(el.classList.removed.includes("hidden"));
     assert.equal(hasScannerSurface({ clientWidth: 0, clientHeight: 0 }), false);
     assert.equal(hasScannerSurface({ clientWidth: 320, clientHeight: 240 }), true);
+  });
+
+  it("forces a pixel box when the scanner is still 0×0", () => {
+    const el = {
+      hidden: true,
+      classList: {
+        removed: [] as string[],
+        remove(...names: string[]) {
+          this.removed.push(...names);
+        },
+      },
+      style: {} as Record<string, string>,
+      removeAttribute(name: string) {
+        if (name === "hidden") this.hidden = false;
+      },
+      clientWidth: 0,
+      clientHeight: 0,
+      offsetWidth: 0,
+      offsetHeight: 0,
+      parentElement: { clientWidth: 360 },
+      querySelectorAll() {
+        return [];
+      },
+    };
+    const sized = forceScannerSurface(el as unknown as HTMLElement);
+    assert.equal(sized, false);
+    assert.match(el.style.width, /px/);
+    assert.match(el.style.height, /px/);
+    assert.ok(Number.parseInt(el.style.width, 10) >= 320);
+    sizeLiveVideoToContainer(el as unknown as HTMLElement);
   });
 
   it("gesture getUserMedia is facingMode environment with no min/1920/aspectRatio", () => {

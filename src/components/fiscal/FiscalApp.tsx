@@ -29,6 +29,7 @@ import {
   SUCCESS_CLEAR_MS,
   unreadWhatsappPhotosFeedback,
   heldContinuationFeedback,
+  heldPartFeedback,
   qr1HeldNoZonaFeedback,
   waitingNextQrLabel,
   wrongBuFeedback,
@@ -301,7 +302,7 @@ export function FiscalApp() {
                 ? heldContinuationFeedback(progress.index, progress.total)
                 : noZona
                   ? qr1HeldNoZonaFeedback(progress.index, progress.total)
-                  : qrReadFeedback(progress.index, progress.total)
+                  : heldPartFeedback(progress.index, progress.total)
           );
           setConfirmOpen(false);
           return;
@@ -403,7 +404,7 @@ export function FiscalApp() {
                     result.qrIndex ?? progress.index,
                     result.qrTotal ?? progress.total
                   )
-                : qrReadFeedback(
+                : heldPartFeedback(
                     result.qrIndex ?? progress.index,
                     result.qrTotal ?? progress.total
                   )
@@ -427,6 +428,33 @@ export function FiscalApp() {
         const cause =
           err instanceof Error ? err.message : "Falha ao processar o BU.";
         const meta = parseQrbuMeta(raw);
+        if (/Nenhum voto de candidato encontrado no QR/i.test(cause)) {
+          try {
+            const held = parseFiscalQrChunk(raw, fragmentsRef.current);
+            const previous = fragmentsRef.current;
+            const nextFragments = backfillQrSet(
+              held.qrIndex
+                ? [...previous.filter((p) => p.qrIndex !== held.qrIndex), held]
+                : [...previous, held]
+            );
+            fragmentsRef.current = nextFragments;
+            writeQrSession(nextFragments);
+            setFragments(nextFragments);
+            const progress = describeQrProgress(nextFragments);
+            setFeedback(
+              heldPartFeedback(
+                held.qrIndex ?? progress.index,
+                held.qrTotal ?? progress.total
+              )
+            );
+          } catch {
+            setFeedback(
+              heldPartFeedback(meta?.index ?? 1, Math.max(meta?.total ?? 2, 2))
+            );
+          }
+          setScanNonce((n) => n + 1);
+          return;
+        }
         if (
           /Zona não encontrada|Zona não veio|Zona ou seção ausente|Zona\/seção ausentes/i.test(
             cause

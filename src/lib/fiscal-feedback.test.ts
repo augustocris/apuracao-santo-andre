@@ -9,6 +9,7 @@ import {
   SUCCESS_CLEAR_MS,
   leftoverUrnaFeedback,
   heldContinuationFeedback,
+  heldPartFeedback,
   qr1HeldNoZonaFeedback,
   qrReadFeedback,
   unreadWhatsappPhotosFeedback,
@@ -64,6 +65,10 @@ describe("fiscal feedback copy", () => {
     const held = heldContinuationFeedback(2, 2);
     assert.equal(held.title, "QR 2 lido — filme o QR 1");
     assert.match(held.nextStep, /2º QR de 2/i);
+    const part = heldPartFeedback(1, 2);
+    assert.equal(part.title, "QR 1 lido — filme o QR 2");
+    assert.equal(part.kind, "incomplete_qr");
+    assert.doesNotMatch(part.nextStep, /Nenhum voto/i);
     const noZona = qr1HeldNoZonaFeedback(1, 2);
     assert.equal(noZona.kind, "incomplete_qr");
     assert.match(noZona.title, /QR 1 lido/);

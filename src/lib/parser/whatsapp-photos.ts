@@ -3,6 +3,7 @@ import {
   MAX_QR_PARTS,
   backfillQrSet,
   isQrSetComplete,
+  markHeaderOnlyAsOpenSet,
   parseBuQrText,
   sameQrPayload,
 } from "@/lib/parser/bu-qr";
@@ -29,7 +30,7 @@ export function parseWhatsappPhotoQr(raw: string): ParsedBu {
   if (!hasBu) {
     throw new Error("QR sem dados de BU.");
   }
-  return parsed;
+  return markHeaderOnlyAsOpenSet(parsed);
 }
 
 export type WhatsappPhotoBatch = {

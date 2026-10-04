@@ -545,6 +545,41 @@ export class SameQrRepeatError extends BuParseError {
   }
 }
 
+/** Camera decoded junk (table, glare). Must not flash a red parse error. */
+export class IgnoreNonBuFrameError extends BuParseError {
+  constructor() {
+    super("Frame sem BU.");
+    this.name = "IgnoreNonBuFrameError";
+  }
+}
+
+/** True only for a TSE BU payload — not a random camera false-positive. */
+export function looksLikeTseBuQr(raw: string): boolean {
+  const text = normalizePrintedBuText(decodeBuPayloadStrategies(String(raw ?? "")));
+  if (!text.trim() || looksBinaryPayload(text)) return false;
+  if (parseUrnaFingerprint(text).urnaId) return true;
+  const peek = peekZonaSecao(text);
+  if (peek.zona && peek.secao) return true;
+  if (/\b(SEQL|ORQR|QRBU|IDUE|NR_?UE)\s*:/i.test(text)) return true;
+  if (/-{2,}[^\n]*\d+\s*\/\s*\d+/.test(text)) return true;
+  const slash = text.match(/\b0*(\d{1,2})\s*\/\s*0*(\d{1,2})\b/);
+  if (slash) {
+    const index = Number.parseInt(slash[1], 10);
+    const total = Number.parseInt(slash[2], 10);
+    if (
+      Number.isFinite(index) &&
+      Number.isFinite(total) &&
+      index >= 1 &&
+      total >= 2 &&
+      total <= MAX_QR_PARTS &&
+      index <= total
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function parseComparecimento(text: string): number | null {
   const m = String(text).match(/\bCOMP\s*:\s*(\d+)/i);
   if (!m) return null;
@@ -1032,6 +1067,10 @@ function assertSameOpenUrna(open: ParsedBu, incoming: ParsedBu): void {
  * A continuation (02/04) without an open set is held — not “BU errada”.
  */
 export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): ParsedBu {
+  if (!looksLikeTseBuQr(raw)) {
+    throw new IgnoreNonBuFrameError();
+  }
+
   const awaitingMore =
     previousParts.length > 0 && !isQrSetComplete(previousParts);
 
@@ -1040,10 +1079,13 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
   }
 
   const meta = parseQrbuMeta(decodeBuPayloadStrategies(raw));
-  const continuation = awaitingMore || isContinuationSequence(meta);
+  const continuation =
+    awaitingMore ||
+    isContinuationSequence(meta) ||
+    Boolean(meta && meta.index > 1);
   const parsed = parseBuQrText(raw, {
-    allowMissingZonaSecao: continuation,
-    allowEmptyVotes: continuation,
+    allowMissingZonaSecao: true,
+    allowEmptyVotes: continuation || !parsedHasZonaHint(meta),
   });
 
   if (awaitingMore) {
@@ -1055,16 +1097,25 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
     return inheritQrSetMeta(inheritQrZonaSecao(parsed, open), previousParts);
   }
 
-  if (isContinuationSequence(meta) && (!parsed.zona || !parsed.secao)) {
+  if (
+    (!parsed.zona || !parsed.secao) &&
+    (isContinuationSequence(meta) ||
+      (parsed.qrIndex != null && parsed.qrIndex > 1) ||
+      Boolean(parsed.urnaId && meta && meta.index > 1))
+  ) {
     return inheritQrSetMeta(parsed, []);
   }
 
   if (!parsed.zona || !parsed.secao) {
     throw new BuParseError(
-      "Zona ou seção ausente neste QR. Filme o QR de cima (1º), o que traz zona e seção."
+      "Filme o QR de cima (1º), o que traz zona e seção."
     );
   }
   return parsed;
+}
+
+function parsedHasZonaHint(meta: { index: number; total: number } | null): boolean {
+  return !meta || meta.index === 1;
 }
 
 /** Sample BU text for demos / paste fallback testing (cargos estaduais). */

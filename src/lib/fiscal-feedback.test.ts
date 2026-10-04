@@ -8,6 +8,7 @@ import {
   isNetworkError,
   SUCCESS_CLEAR_MS,
   leftoverUrnaFeedback,
+  heldContinuationFeedback,
   qrReadFeedback,
   unreadWhatsappPhotosFeedback,
   waitingFirstQrLabel,
@@ -57,8 +58,11 @@ describe("fiscal feedback copy", () => {
       "Falta o 1º QR · zona 383 seção 0401"
     );
     const first = waitingFirstQrLabel();
-    assert.equal(first.title, "Falta o 1º QR");
+    assert.equal(first.title, "QR 2 lido — filme o QR 1");
     assert.match(first.nextStep, /1º|de cima/i);
+    const held = heldContinuationFeedback(2, 2);
+    assert.equal(held.title, "QR 2 lido — filme o QR 1");
+    assert.match(held.nextStep, /2º QR de 2/i);
     const read = qrReadFeedback(1, 4);
     assert.equal(read.title, "QR lido 1/4");
     assert.match(read.nextStep, /2º QR/i);

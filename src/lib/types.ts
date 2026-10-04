@@ -52,6 +52,8 @@ export interface BoletimUrna {
   raw_text: string | null;
   fiscal_nome: string | null;
   created_at: string;
+  /** TSE IDUE / NR_UE — two machines in the same seção are different urnas. */
+  urna_id?: string | null;
 }
 
 export interface ZonaConfigRow {
@@ -201,5 +203,7 @@ export interface TransmitBuCompletoPayload {
   secao: string;
   rawText: string;
   fiscalNome?: string;
+  /** TSE IDUE — required to allow a second BU in the same seção. */
+  urnaId?: string | null;
   votes: TransmitBuCompletoVote[];
 }

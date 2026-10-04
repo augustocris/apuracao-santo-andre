@@ -23,6 +23,10 @@ import {
   upsertMockLocais,
 } from "@/lib/mock-store";
 import { duplicateUrnaMessage } from "@/lib/fiscal-feedback";
+import {
+  extractUrnaIdFromRaw,
+  sameUrnaAlreadyIngested,
+} from "@/lib/urna-identity";
 import { ZONA_FORA_DA_CIDADE, isZonaAllowed } from "@/lib/zona-allowlist";
 import {
   CARGO_INDEFINIDO,
@@ -1241,28 +1245,58 @@ export async function findLocal(
   return data as LocalVotacao | null;
 }
 
-/** Pre-check: already transmitted for this zona+seção. */
+/** Pre-check: already transmitted for this urna (zona + seção + IDUE). */
 export async function urnaJaCadastrada(
   zona: string,
-  secao: string
+  secao: string,
+  urnaId?: string | null
 ): Promise<boolean> {
   const z = padZona(zona);
   const s = padSecao(secao);
+  const id = (urnaId ?? "").trim();
   const supabase = getSupabase();
 
   if (!supabase) {
-    return getMockBoletins().some((b) => b.zona === z && b.secao === s);
+    return sameUrnaAlreadyIngested(getMockBoletins(), z, s, id || null);
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("boletins_urna")
-    .select("id")
+    .select("id, urna_id")
     .eq("zona", z)
     .eq("secao", s)
-    .limit(1);
+    .limit(20);
 
-  if (error) throw new Error(error.message);
-  return (data?.length ?? 0) > 0;
+  if (id) {
+    query = query.eq("urna_id", id);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    if (/urna_id/i.test(error.message)) {
+      const fallback = await supabase
+        .from("boletins_urna")
+        .select("id")
+        .eq("zona", z)
+        .eq("secao", s)
+        .limit(1);
+      if (fallback.error) throw new Error(fallback.error.message);
+      return id ? false : (fallback.data?.length ?? 0) > 0;
+    }
+    throw new Error(error.message);
+  }
+  if (id) return (data?.length ?? 0) > 0;
+  return sameUrnaAlreadyIngested(
+    (data ?? []).map((row) => ({
+      zona: z,
+      secao: s,
+      urna_id: "urna_id" in row ? String((row as { urna_id?: string }).urna_id ?? "") : "",
+    })),
+    z,
+    s,
+    null
+  );
 }
 
 export async function assertZonaPermitida(zona: string): Promise<void> {
@@ -1391,11 +1425,14 @@ async function ingestBuCompletoClient(
 
   await assertZonaPermitida(zona);
 
-  if (await urnaJaCadastrada(zona, secao)) {
+  const urnaId =
+    payload.urnaId?.trim() || extractUrnaIdFromRaw(payload.rawText);
+
+  if (await urnaJaCadastrada(zona, secao, urnaId)) {
     return {
       ok: false,
       duplicate: true,
-      message: duplicateUrnaMessage(zona, secao),
+      message: duplicateUrnaMessage(zona, secao, urnaId),
     };
   }
 
@@ -1446,6 +1483,7 @@ async function ingestBuCompletoClient(
     boletimRows.push({
       zona,
       secao,
+      urna_id: urnaId,
       candidato_id: cand.id,
       quantidade_votos: v.quantidade,
       raw_text: payload.rawText,
@@ -1465,7 +1503,7 @@ async function ingestBuCompletoClient(
       return {
         ok: false,
         duplicate: true,
-        message: duplicateUrnaMessage(zona, secao),
+        message: duplicateUrnaMessage(zona, secao, urnaId),
       };
     }
     throw new Error(error.message);
@@ -1484,20 +1522,21 @@ export async function transmitBuCompleto(
   }
   await assertZonaPermitida(zona);
 
+  const urnaId =
+    payload.urnaId?.trim() || extractUrnaIdFromRaw(payload.rawText);
   const supabase = getSupabase();
   if (!supabase) {
-    if (
-      getMockBoletins().some((b) => b.zona === zona && b.secao === secao)
-    ) {
+    if (sameUrnaAlreadyIngested(getMockBoletins(), zona, secao, urnaId)) {
       return {
         ok: false,
         duplicate: true,
-        message: duplicateUrnaMessage(zona, secao),
+        message: duplicateUrnaMessage(zona, secao, urnaId),
       };
     }
     const boletimRows: Array<{
       zona: string;
       secao: string;
+      urna_id?: string | null;
       candidato_id: string;
       quantidade_votos: number;
       raw_text: string | null;
@@ -1531,6 +1570,7 @@ export async function transmitBuCompleto(
       boletimRows.push({
         zona,
         secao,
+        urna_id: urnaId,
         candidato_id: id,
         quantidade_votos: v.quantidade,
         raw_text: payload.rawText,
@@ -1542,7 +1582,7 @@ export async function transmitBuCompleto(
       return {
         ok: false,
         duplicate: true,
-        message: duplicateUrnaMessage(zona, secao),
+        message: duplicateUrnaMessage(zona, secao, urnaId),
       };
     }
     return { ok: true };
@@ -1554,6 +1594,7 @@ export async function transmitBuCompleto(
       p_secao: secao,
       p_raw_text: payload.rawText,
       p_fiscal_nome: payload.fiscalNome ?? null,
+      p_urna_id: urnaId,
       p_votes: votes.map((v) => ({
         numero: v.numero,
         nome: v.nome,
@@ -1572,7 +1613,7 @@ export async function transmitBuCompleto(
         return {
           ok: false,
           duplicate: true,
-          message: duplicateUrnaMessage(zona, secao),
+          message: duplicateUrnaMessage(zona, secao, urnaId),
         };
       }
       if (parsed.ok) return { ok: true };

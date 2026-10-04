@@ -14,6 +14,7 @@ import {
   DEFAULT_RELATORIO_CARGOS,
 } from "@/lib/cargos";
 import { SANTO_ANDRE_ZONAS_FALLBACK } from "@/lib/zona-allowlist";
+import { sameUrnaAlreadyIngested } from "@/lib/urna-identity";
 
 /**
  * Seed demo data only for local demos.
@@ -625,14 +626,16 @@ export function insertMockBoletins(
     quantidade_votos: number;
     raw_text: string | null;
     fiscal_nome: string | null;
+    urna_id?: string | null;
   }>
 ): { ok: true } | { ok: false; duplicate: true } {
   const zona = rows[0]?.zona;
   const secao = rows[0]?.secao;
+  const urnaId = rows[0]?.urna_id ?? null;
   if (
     zona &&
     secao &&
-    mockBoletins.some((b) => b.zona === zona && b.secao === secao)
+    sameUrnaAlreadyIngested(mockBoletins, zona, secao, urnaId)
   ) {
     return { ok: false, duplicate: true };
   }

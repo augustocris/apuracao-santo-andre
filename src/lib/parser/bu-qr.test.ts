@@ -27,6 +27,8 @@ import {
   parseFiscalQrChunk,
   parseQrbuMeta,
   SameQrRepeatError,
+  IgnoreNonBuFrameError,
+  looksLikeTseBuQr,
   WrongBuError,
   backfillQrSet,
   extractBuVotes,
@@ -651,6 +653,32 @@ describe("multi-QR merge", () => {
     assert.ok(merged.votes.some((v) => v.numero === "10"));
   });
 
+  it("holds QR 2 of 2 (02 / 02, no zona) — never Zona não encontrada", () => {
+    const raw =
+      "---------- 02 / 02 ---------- IDUE:1760649 CARG:1 17:8";
+    assert.equal(looksLikeTseBuQr(raw), true);
+    assert.deepEqual(parseQrbuMeta(raw), { index: 2, total: 2 });
+    const p2 = parseFiscalQrChunk(raw, []);
+    assert.equal(p2.qrIndex, 2);
+    assert.equal(p2.qrTotal, 2);
+    assert.equal(p2.zona, "");
+    assert.equal(p2.urnaId, "1760649");
+    assert.equal(nextMissingQrIndex([p2]), 1);
+    assert.doesNotMatch(
+      JSON.stringify(p2),
+      /Zona não encontrada|allowlist/i
+    );
+
+    const p1 = parseFiscalQrChunk(
+      "---------- 01 / 02 ---------- IDUE:1760649 ZONA:383 SECA:0001 CARG:1 13:10",
+      [p2]
+    );
+    const merged = assertQrSetReadyToIngest(backfillQrSet([p2, p1]));
+    assert.equal(merged.zona, "383");
+    assert.equal(merged.secao, "0001");
+    assert.equal(merged.urnaId, "1760649");
+  });
+
   it("holds QR 2 first (no zona) and asks for QR 1 — not BU errada", () => {
     const p2 = parseFiscalQrChunk(
       "---------- 02 / 04 ---------- SEQL:02/04 HASH:BBBB IDUE:77 CARG:1 17:8",
@@ -671,6 +699,25 @@ describe("multi-QR merge", () => {
     assert.equal(filled[0].zona, "383");
     assert.equal(filled[0].secao, "0401");
     assert.equal(nextMissingQrIndex(filled), 3);
+  });
+
+  it("ignores garbage frames and does not throw Zona não encontrada", () => {
+    assert.equal(looksLikeTseBuQr("table wood grain"), false);
+    assert.equal(looksLikeTseBuQr(""), false);
+    assert.throws(
+      () => parseFiscalQrChunk("random camera noise 123", []),
+      (err: unknown) => {
+        assert.ok(err instanceof IgnoreNonBuFrameError);
+        assert.doesNotMatch(String((err as Error).message), /Zona não encontrada/i);
+        return true;
+      }
+    );
+    const held = parseFiscalQrChunk(
+      "SEQL:02/04 ORQR:2 IDUE:77 CARG:6 4545:11",
+      []
+    );
+    assert.equal(held.qrIndex, 2);
+    assert.equal(held.zona, "");
   });
 
   it("says BU errada only when IDUE differs from the open set", () => {

@@ -68,12 +68,12 @@ export function AdminPendentes({ standalone = false }: { standalone?: boolean })
       const merged = assertQrSetReadyToIngest([parsed]);
       await assertZonaPermitida(merged.zona);
 
-      if (await urnaJaCadastrada(merged.zona, merged.secao)) {
+      if (await urnaJaCadastrada(merged.zona, merged.secao, merged.urnaId)) {
         await updateBuPendenteErro(
           item.id,
-          duplicateUrnaMessage(merged.zona, merged.secao)
+          duplicateUrnaMessage(merged.zona, merged.secao, merged.urnaId)
         );
-        setError(duplicateUrnaMessage(merged.zona, merged.secao));
+        setError(duplicateUrnaMessage(merged.zona, merged.secao, merged.urnaId));
         await reload();
         return;
       }
@@ -110,6 +110,7 @@ export function AdminPendentes({ standalone = false }: { standalone?: boolean })
       const result = await transmitBuCompleto({
         zona: confirm.parsed.zona,
         secao: confirm.parsed.secao,
+        urnaId: confirm.parsed.urnaId ?? null,
         rawText: confirm.parsed.rawText,
         votes: [
           ...confirm.featured.map((r) => ({

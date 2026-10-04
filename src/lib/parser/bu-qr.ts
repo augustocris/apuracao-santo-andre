@@ -730,7 +730,10 @@ export function parseQrbuMeta(
   if (orqr) {
     const index = Number.parseInt(orqr[1], 10);
     if (Number.isFinite(index) && index >= 1) {
-      return index > 1 ? { index, total: Math.max(index, 2) } : { index: 1, total: 1 };
+      // ORQR:1 alone is not a complete 1-of-1 set — SEQL / 01/04 carries total.
+      return index > 1
+        ? { index, total: Math.max(index, 2) }
+        : { index: 1, total: 1 };
     }
   }
 
@@ -779,7 +782,15 @@ export function inheritQrZonaSecao(part: ParsedBu, from: ParsedBu): ParsedBu {
     ...part,
     zona: part.zona || from.zona,
     secao: part.secao || from.secao,
+    urnaId: part.urnaId || from.urnaId,
   };
+}
+
+/** When QR 2+ arrived first, copy zona/seção/IDUE onto the held parts. */
+export function backfillQrSet(parts: ParsedBu[]): ParsedBu[] {
+  const donor = parts.find((p) => p.zona && p.secao) ?? parts.find((p) => p.urnaId);
+  if (!donor) return parts;
+  return parts.map((p) => inheritQrSetMeta(inheritQrZonaSecao(p, donor), parts));
 }
 
 /** Later QRs often only have ORQR:n — keep the set size from SEQL / 01/04. */
@@ -987,19 +998,45 @@ export function parseBuQrText(
   };
 }
 
+export class WrongBuError extends BuParseError {
+  constructor(debug?: string) {
+    super("Este QR é de outra urna.", debug);
+    this.name = "WrongBuError";
+  }
+}
+
+function assertSameOpenUrna(open: ParsedBu, incoming: ParsedBu): void {
+  const debug = formatQrPairDebug(open, incoming);
+  if (open.urnaId && incoming.urnaId && open.urnaId !== incoming.urnaId) {
+    throw new WrongBuError(debug);
+  }
+  if (
+    open.zona &&
+    open.secao &&
+    incoming.zona &&
+    incoming.secao &&
+    (incoming.zona !== open.zona || incoming.secao !== open.secao) &&
+    !open.urnaId &&
+    !incoming.urnaId
+  ) {
+    throw new BuParseError(
+      "Zona ou seção diferente do QR já filmado. Filme o 1º QR desta urna.",
+      debug
+    );
+  }
+}
+
 /**
- * Live fiscal path: first QR requires zona+seção; later parts (SEQL/ORQR/N de M) do not.
- * Bind on IDUE / NR_UE / zona+seção. HASH is per-QR — never required to match.
+ * Live fiscal path: first QR usually has zona+seção; later parts (SEQL/ORQR/N de M) do not.
+ * Bind on IDUE / NR_UE. HASH is per-QR — never required to match.
+ * A continuation (02/04) without an open set is held — not “BU errada”.
  */
 export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): ParsedBu {
   const awaitingMore =
     previousParts.length > 0 && !isQrSetComplete(previousParts);
 
-  if (awaitingMore) {
-    const repeat = previousParts.find((part) => sameQrPayload(part.rawText, raw));
-    if (repeat) {
-      throw new SameQrRepeatError();
-    }
+  if (previousParts.some((part) => sameQrPayload(part.rawText, raw))) {
+    throw new SameQrRepeatError();
   }
 
   const meta = parseQrbuMeta(decodeBuPayloadStrategies(raw));
@@ -1010,24 +1047,21 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
   });
 
   if (awaitingMore) {
-    const first = previousParts[0];
-    const debug = formatQrPairDebug(first, parsed);
-    if (first.urnaId && parsed.urnaId && first.urnaId !== parsed.urnaId) {
-      throw new BuParseError("Este QR é de outra urna.", debug);
-    }
-    if (
-      parsed.zona &&
-      parsed.secao &&
-      (parsed.zona !== first.zona || parsed.secao !== first.secao)
-    ) {
-      throw new BuParseError("Este QR é de outra urna.", debug);
-    }
-    return inheritQrSetMeta(inheritQrZonaSecao(parsed, first), previousParts);
+    const open =
+      previousParts.find((p) => p.urnaId) ??
+      previousParts.find((p) => p.zona && p.secao) ??
+      previousParts[0];
+    assertSameOpenUrna(open, parsed);
+    return inheritQrSetMeta(inheritQrZonaSecao(parsed, open), previousParts);
+  }
+
+  if (isContinuationSequence(meta) && (!parsed.zona || !parsed.secao)) {
+    return inheritQrSetMeta(parsed, []);
   }
 
   if (!parsed.zona || !parsed.secao) {
     throw new BuParseError(
-      "Zona ou seção ausente neste QR. Filme o QR que traz zona e seção."
+      "Zona ou seção ausente neste QR. Filme o QR de cima (1º), o que traz zona e seção."
     );
   }
   return parsed;

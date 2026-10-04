@@ -27,6 +27,8 @@ import {
   parseFiscalQrChunk,
   parseQrbuMeta,
   SameQrRepeatError,
+  WrongBuError,
+  backfillQrSet,
   extractBuVotes,
   sameQrPayload,
   formatQrPairDebug,
@@ -647,6 +649,47 @@ describe("multi-QR merge", () => {
     assert.ok(merged.votes.some((v) => v.numero === "13"));
     assert.ok(merged.votes.some((v) => v.numero === "4545"));
     assert.ok(merged.votes.some((v) => v.numero === "10"));
+  });
+
+  it("holds QR 2 first (no zona) and asks for QR 1 — not BU errada", () => {
+    const p2 = parseFiscalQrChunk(
+      "---------- 02 / 04 ---------- SEQL:02/04 HASH:BBBB IDUE:77 CARG:1 17:8",
+      []
+    );
+    assert.equal(p2.qrIndex, 2);
+    assert.equal(p2.qrTotal, 4);
+    assert.equal(p2.zona, "");
+    assert.equal(isQrSetComplete([p2]), false);
+    assert.equal(nextMissingQrIndex([p2]), 1);
+
+    const p1 = parseFiscalQrChunk(
+      "SEQL:01/04 HASH:AAAA IDUE:77 ZONA:383 SECA:0401 CARG:1 13:10",
+      [p2]
+    );
+    assert.equal(p1.zona, "383");
+    const filled = backfillQrSet([p2, p1]);
+    assert.equal(filled[0].zona, "383");
+    assert.equal(filled[0].secao, "0401");
+    assert.equal(nextMissingQrIndex(filled), 3);
+  });
+
+  it("says BU errada only when IDUE differs from the open set", () => {
+    const p1 = parseFiscalQrChunk(
+      "SEQL:01/04 HASH:AAAA IDUE:11 ZONA:383 SECA:0401 CARG:1 13:10",
+      []
+    );
+    assert.throws(
+      () =>
+        parseFiscalQrChunk(
+          "SEQL:02/04 HASH:ZZZZ IDUE:99 CARG:6 4545:2",
+          [p1]
+        ),
+      (err: unknown) => {
+        assert.ok(err instanceof WrongBuError);
+        assert.match(err.message, /outra urna/i);
+        return true;
+      }
+    );
   });
 });
 

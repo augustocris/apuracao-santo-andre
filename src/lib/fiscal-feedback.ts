@@ -68,8 +68,17 @@ export function waitingNextQrLabel(
 ): string {
   const z = zona?.trim() || "—";
   const s = secao?.trim() || "—";
-  const n = Math.max(2, Math.floor(nextIndex) || 2);
+  const n = Math.max(1, Math.floor(nextIndex) || 1);
   return `Falta o ${n}º QR · zona ${z} seção ${s}`;
+}
+
+export function waitingFirstQrLabel(): FiscalFeedback {
+  return {
+    kind: "incomplete_qr",
+    title: "Falta o 1º QR",
+    cause: "",
+    nextStep: "Filme o QR de cima (zona e seção). O 2º já ficou guardado.",
+  };
 }
 
 export function waitingSecondQrLabel(zona: string, secao: string): string {
@@ -124,7 +133,18 @@ export function qrMismatchFeedback(debug: string): FiscalFeedback {
     kind: "parse",
     title: "QR não combina",
     cause: "",
-    nextStep: "Filme o 2º QR desta urna.",
+    nextStep: "Filme o próximo QR desta mesma urna.",
+    debug: debug.trim() || undefined,
+  };
+}
+
+/** Only when IDUE / NR_UE of the new QR differs from the open set. */
+export function wrongBuFeedback(debug: string): FiscalFeedback {
+  return {
+    kind: "parse",
+    title: "BU errada",
+    cause: "",
+    nextStep: "Este QR é de outra urna (IDUE diferente). Filme o QR desta mesma BU.",
     debug: debug.trim() || undefined,
   };
 }
@@ -170,18 +190,19 @@ export function feedbackFromError(
   if (/já enviada|já cadastrada/i.test(message)) {
     return duplicateFeedback(opts?.zona ?? "—", opts?.secao ?? "—");
   }
-  if (/outra urna|não combina/i.test(message)) {
+  if (/outra urna/i.test(message)) {
     const debug =
       (err instanceof Error && "debug" in err
         ? String((err as { debug?: string }).debug ?? "")
         : "") || undefined;
-    return {
-      kind: "parse",
-      title: "QR não combina",
-      cause: "",
-      nextStep: "Filme o 2º QR desta urna.",
-      debug,
-    };
+    return wrongBuFeedback(debug ?? "");
+  }
+  if (/não combina/i.test(message)) {
+    const debug =
+      (err instanceof Error && "debug" in err
+        ? String((err as { debug?: string }).debug ?? "")
+        : "") || undefined;
+    return qrMismatchFeedback(debug ?? "");
   }
   if (/de \d+|incompleto|filme o próximo/i.test(message) && /QR/i.test(message)) {
     const m = message.match(/(\d+)\s+de\s+(\d+)/i);

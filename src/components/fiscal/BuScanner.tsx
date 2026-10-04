@@ -13,9 +13,11 @@ import {
   currentAppleTouchDevice,
   hardenLiveVideo,
   liveScanConfig,
+  NEXT_QR_IGNORE_MS,
   qrboxForDenseTse,
   requestCameraFromUserGesture,
   revealLiveScannerElement,
+  shouldAcceptLiveDecode,
   useBarcodeDetector,
   waitForScannerSurface,
   watchAndHardenLiveVideo,
@@ -35,6 +37,8 @@ interface BuScannerProps {
   nextQr?: boolean;
   /** Exact payloads already accepted (QR 1). Leftover frames must not fire again. */
   ignoreExactPayloads?: string[];
+  /** Keep the live session across QR 2+ (do not stop the camera). */
+  keepOpen?: boolean;
   whatsapp?: string | null;
   onCameraError?: (error: FiscalFeedback) => void;
 }
@@ -135,6 +139,7 @@ export function BuScanner({
   resetKey = 0,
   nextQr = false,
   ignoreExactPayloads = [],
+  keepOpen = false,
   whatsapp,
   onCameraError,
 }: BuScannerProps) {
@@ -156,6 +161,9 @@ export function BuScanner({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const unwatchVideoRef = useRef<(() => void) | null>(null);
   const startingRef = useRef(false);
+  const pendingDecodeRef = useRef<string | null>(null);
+  const keepOpenRef = useRef(keepOpen);
+  keepOpenRef.current = keepOpen;
   const appleTouch = currentAppleTouchDevice();
   const barcodeDetector = useBarcodeDetector(appleTouch);
 
@@ -187,7 +195,24 @@ export function BuScanner({
 
   useEffect(() => {
     handledRef.current = false;
-  }, [resetKey]);
+    if (nextQr) {
+      ignoreUntilRef.current = Date.now() + NEXT_QR_IGNORE_MS;
+    }
+    const timer = window.setTimeout(() => {
+      if (sessionLiveRef.current && !handledRef.current) {
+        flushPendingDecode();
+      }
+    }, nextQr ? NEXT_QR_IGNORE_MS + 20 : 0);
+    return () => window.clearTimeout(timer);
+  }, [resetKey, nextQr]);
+
+  useEffect(() => {
+    if (!busy && sessionLiveRef.current) {
+      flushPendingDecode();
+    }
+    // flushPendingDecode is stable enough for the busy edge
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
 
   async function stopScanner() {
     sessionLiveRef.current = false;
@@ -217,18 +242,38 @@ export function BuScanner({
     setActive(false);
   }
 
+  function flushPendingDecode() {
+    const pending = pendingDecodeRef.current;
+    if (!pending) return;
+    pendingDecodeRef.current = null;
+    deliverScan(pending);
+  }
+
   function deliverScan(text: string, fromPhoto = false) {
-    if (handledRef.current || busy) return;
-    if (!fromPhoto) {
-      if (!sessionLiveRef.current) return;
-      if (Date.now() < ignoreUntilRef.current) return;
+    if (
+      !shouldAcceptLiveDecode({
+        fromPhoto,
+        handled: handledRef.current,
+        busy: Boolean(busy),
+        sessionLive: sessionLiveRef.current,
+        ignoreUntil: ignoreUntilRef.current,
+        now: Date.now(),
+      })
+    ) {
+      if (!fromPhoto && !handledRef.current) {
+        pendingDecodeRef.current = text;
+      }
+      return;
     }
     if (ignorePayloadsRef.current.some((prev) => sameQrPayload(prev, text))) {
       return;
     }
     handledRef.current = true;
-    sessionLiveRef.current = false;
-    void stopScanner();
+    pendingDecodeRef.current = null;
+    if (!keepOpenRef.current) {
+      sessionLiveRef.current = false;
+      void stopScanner();
+    }
     onScan(text);
   }
 
@@ -358,11 +403,16 @@ export function BuScanner({
       const root = readerRoot();
       revealLiveScannerElement(root);
       hardenLiveVideo(root);
+      sessionLiveRef.current = true;
+      ignoreUntilRef.current = nextQr ? Date.now() + NEXT_QR_IGNORE_MS : 0;
+      flushPendingDecode();
       await waitForLiveVideo(root);
       hardenLiveVideo(root);
       clearScannerDecodedCache(scanner);
-      ignoreUntilRef.current = Date.now() + (nextQr ? 400 : 150);
-      sessionLiveRef.current = true;
+      if (!sessionLiveRef.current) {
+        sessionLiveRef.current = true;
+      }
+      flushPendingDecode();
     } catch (err) {
       sessionLiveRef.current = false;
       handedStream?.getTracks().forEach((track) => {

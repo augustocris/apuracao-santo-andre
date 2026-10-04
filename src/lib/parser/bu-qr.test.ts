@@ -28,6 +28,9 @@ import {
   parseQrbuMeta,
   SameQrRepeatError,
   IgnoreNonBuFrameError,
+  describeQrPayloadKeys,
+  extractZonaField,
+  TSE_QR1_ZONA_KEY,
   looksLikeTseBuQr,
   WrongBuError,
   backfillQrSet,
@@ -651,6 +654,32 @@ describe("multi-QR merge", () => {
     assert.ok(merged.votes.some((v) => v.numero === "13"));
     assert.ok(merged.votes.some((v) => v.numero === "4545"));
     assert.ok(merged.votes.some((v) => v.numero === "10"));
+  });
+
+  it("holds QR 01/02 even when zona key is missing — never red Zona não encontrada", () => {
+    const raw =
+      "QRBU:1:2 SEQL:01/02 ORIG:VOTA IDUE:1760649 UNFE:SP MUNI:71072 CARG:1 13:10";
+    assert.equal(extractZonaField(raw), null);
+    const dump = describeQrPayloadKeys(raw);
+    assert.match(dump, /QRBU/);
+    assert.match(dump, /IDUE/);
+    assert.doesNotMatch(dump, /Zona não encontrada/i);
+    const p1 = parseFiscalQrChunk(raw, []);
+    assert.equal(p1.qrIndex, 1);
+    assert.equal(p1.zona, "");
+    assert.equal(p1.urnaId, "1760649");
+    const p2 = parseFiscalQrChunk(
+      "QRBU:2:2 SEQL:02/02 IDUE:1760649 CARG:1 17:8",
+      [p1]
+    );
+    const merged = assertQrSetReadyToIngest(backfillQrSet([p1, p2]));
+    assert.equal(merged.zona, "");
+    assert.equal(merged.urnaId, "1760649");
+  });
+
+  it("QRBU official zona token on part 1 is ZONA", () => {
+    assert.equal(TSE_QR1_ZONA_KEY, "ZONA");
+    assert.equal(extractZonaField(SAMPLE_TSE_QR_PART1)?.key, "ZONA");
   });
 
   it("holds QR 2 of 2 (02 / 02, no zona) — never Zona não encontrada", () => {

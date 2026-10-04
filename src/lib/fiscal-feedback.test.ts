@@ -9,6 +9,7 @@ import {
   SUCCESS_CLEAR_MS,
   leftoverUrnaFeedback,
   heldContinuationFeedback,
+  qr1HeldNoZonaFeedback,
   qrReadFeedback,
   unreadWhatsappPhotosFeedback,
   waitingFirstQrLabel,
@@ -63,6 +64,11 @@ describe("fiscal feedback copy", () => {
     const held = heldContinuationFeedback(2, 2);
     assert.equal(held.title, "QR 2 lido — filme o QR 1");
     assert.match(held.nextStep, /2º QR de 2/i);
+    const noZona = qr1HeldNoZonaFeedback(1, 2);
+    assert.equal(noZona.kind, "incomplete_qr");
+    assert.match(noZona.title, /QR 1 lido/);
+    assert.doesNotMatch(noZona.title, /Zona não encontrada/i);
+    assert.doesNotMatch(noZona.nextStep, /ZONA:001|allowlist/i);
     const read = qrReadFeedback(1, 4);
     assert.equal(read.title, "QR lido 1/4");
     assert.match(read.nextStep, /2º QR/i);

@@ -96,6 +96,18 @@ export function heldContinuationFeedback(index = 2, total = 2): FiscalFeedback {
 }
 
 /** Instant confirmation that the camera actually decoded a QR. */
+export function qr1HeldNoZonaFeedback(index = 1, total = 2): FiscalFeedback {
+  const i = Math.max(1, Math.floor(index) || 1);
+  const t = Math.max(i, Math.floor(total) || i);
+  return {
+    kind: "incomplete_qr",
+    title: t > 1 ? `QR ${i} lido — filme o outro QR` : "QR lido",
+    cause: "",
+    nextStep:
+      "A zona não veio neste código. Filme o próximo QR. Se ainda faltar, escolha a zona no fim.",
+  };
+}
+
 export function qrReadFeedback(index: number, total = 0): FiscalFeedback {
   const i = Math.max(1, Math.floor(index) || 1);
   const t = Math.max(i, Math.floor(total) || i);

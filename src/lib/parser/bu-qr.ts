@@ -654,11 +654,11 @@ export function peekZonaSecao(raw: string): { zona?: string; secao?: string } {
 export const MAX_QR_PARTS = 8;
 
 /**
- * Header-only TSE QR 1 (zona/seção/IDUE, votes on 02/xx).
- * Never treat a voteless first part as a finished 1-of-1 set.
+ * Header-only TSE QR 1 (zona/seção/IDUE, votes on 02/xx) OR a part that
+ * still lacks zona/seção. Never treat that as a finished 1-of-1 set — the
+ * fiscal must film the other QR (or pick zona at the end).
  */
 export function markHeaderOnlyAsOpenSet(parsed: ParsedBu): ParsedBu {
-  if (parsed.votes.length > 0) return parsed;
   const index =
     typeof parsed.qrIndex === "number" && parsed.qrIndex >= 1
       ? parsed.qrIndex
@@ -667,7 +667,12 @@ export function markHeaderOnlyAsOpenSet(parsed: ParsedBu): ParsedBu {
     typeof parsed.qrTotal === "number" && parsed.qrTotal > 1
       ? parsed.qrTotal
       : 0;
-  if (known && index >= known) return parsed;
+  const missingIdentity = !parsed.zona?.trim() || !parsed.secao?.trim();
+  const headerOnly = parsed.votes.length === 0;
+  if (!headerOnly && !missingIdentity) return parsed;
+  if (known && index >= known) {
+    return { ...parsed, qrIndex: index, qrTotal: known };
+  }
   return { ...parsed, qrIndex: index, qrTotal: known || 2 };
 }
 
@@ -1032,6 +1037,9 @@ export function parseBuQrText(
   const secaoRaw = firstMatch(text, SECAO_PATTERNS);
 
   if (!zonaRaw && !continuation) {
+    // Fiscal multi-QR path uses allowMissingZonaSecao — this is only for
+    // single-shot admin/paste. Never phrase it as a hard “formatos aceitos”
+    // reject that blocks filming QR 2.
     throw new BuParseError(
       `Zona não veio neste QR. ${describeQrPayloadKeys(text)}`
     );

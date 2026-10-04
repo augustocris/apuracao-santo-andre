@@ -697,6 +697,7 @@ describe("multi-QR merge", () => {
     assert.equal(p1.qrIndex, 1);
     assert.equal(p1.zona, "");
     assert.equal(p1.urnaId, "1760649");
+    assert.equal(isQrSetComplete([p1]), false);
     const p2 = parseFiscalQrChunk(
       "QRBU:2:2 SEQL:02/02 IDUE:1760649 CARG:1 17:8",
       [p1]
@@ -704,6 +705,18 @@ describe("multi-QR merge", () => {
     const merged = assertQrSetReadyToIngest(backfillQrSet([p1, p2]));
     assert.equal(merged.zona, "");
     assert.equal(merged.urnaId, "1760649");
+  });
+
+  it("holds a QR with votes but no zona — still asks for the other part", () => {
+    const p1 = parseFiscalQrChunk(
+      "QRBU:1:2 IDUE:99001 CARG:1 13:10 17:8",
+      []
+    );
+    assert.equal(p1.zona, "");
+    assert.ok(p1.votes.length >= 1);
+    assert.equal(p1.qrTotal, 2);
+    assert.equal(isQrSetComplete([p1]), false);
+    assert.equal(nextMissingQrIndex([p1]), 2);
   });
 
   it("QRBU official zona token on part 1 is ZONA", () => {

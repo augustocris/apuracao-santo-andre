@@ -1,5 +1,5 @@
 /* Minimal offline shell — never leave a navigation without a Response. */
-const CACHE = "apuracao-shell-v4-admin-reports";
+const CACHE = "apuracao-shell-v5-multi-qr-hold";
 const ASSETS = ["/", "/fiscal", "/admin", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

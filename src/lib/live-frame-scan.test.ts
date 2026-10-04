@@ -7,6 +7,7 @@ import {
   isLiveVideoDecodable,
   LIVE_FRAME_FALLBACK_AFTER_MS,
   LIVE_FRAME_INTERVAL_MS,
+  shouldRescheduleFrameFallback,
   shouldStartFrameFallback,
 } from "./live-frame-scan";
 
@@ -56,6 +57,41 @@ describe("live frame fallback", () => {
         hasAcceptedDecode: true,
         startedAt: 1_000,
         now: 5_000,
+      }),
+      false
+    );
+  });
+
+  it("keeps the frame loop armed after QR 1 when keepOpen (QR 2+)", () => {
+    assert.equal(
+      shouldRescheduleFrameFallback({
+        sessionLive: true,
+        handled: true,
+        keepOpen: true,
+      }),
+      true
+    );
+    assert.equal(
+      shouldRescheduleFrameFallback({
+        sessionLive: true,
+        handled: false,
+        keepOpen: true,
+      }),
+      true
+    );
+    assert.equal(
+      shouldRescheduleFrameFallback({
+        sessionLive: true,
+        handled: true,
+        keepOpen: false,
+      }),
+      false
+    );
+    assert.equal(
+      shouldRescheduleFrameFallback({
+        sessionLive: false,
+        handled: false,
+        keepOpen: true,
       }),
       false
     );

@@ -42,6 +42,21 @@ export function shouldStartFrameFallback(opts: {
   return opts.now - opts.startedAt >= LIVE_FRAME_FALLBACK_AFTER_MS;
 }
 
+/**
+ * After QR 1, `handled` is briefly true until resetKey. The frame loop must
+ * stay armed (keepOpen) so QR 2+ is still sampled — html5-qrcode often misses
+ * dense TSE parts once the first decode already fired.
+ */
+export function shouldRescheduleFrameFallback(opts: {
+  sessionLive: boolean;
+  handled: boolean;
+  keepOpen: boolean;
+}): boolean {
+  if (!opts.sessionLive) return false;
+  if (opts.keepOpen) return true;
+  return !opts.handled;
+}
+
 export function frameScanSize(
   videoWidth: number,
   videoHeight: number

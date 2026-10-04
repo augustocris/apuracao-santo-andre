@@ -32,6 +32,7 @@ import {
   isLiveVideoDecodable,
   LIVE_FRAME_FALLBACK_AFTER_MS,
   LIVE_FRAME_INTERVAL_MS,
+  shouldRescheduleFrameFallback,
 } from "@/lib/live-frame-scan";
 import {
   decodeAllQrsFromFile,
@@ -230,6 +231,16 @@ export function BuScanner({
       if (sessionLiveRef.current && !handledRef.current) {
         flushPendingDecode();
       }
+      // After QR 1, re-arm frame sampling + clear html5-qrcode's last match
+      // so QR 2 is not stuck on a dead fallback loop / cached decode.
+      if (sessionLiveRef.current && keepOpenRef.current) {
+        clearScannerDecodedCache(scannerRef.current);
+        const root = readerRoot();
+        forceScannerSurface(root);
+        sizeLiveVideoToContainer(root);
+        hardenLiveVideo(root);
+        scheduleFrameFallback(LIVE_FRAME_INTERVAL_MS);
+      }
     }, nextQr ? NEXT_QR_IGNORE_MS + 20 : 0);
     return () => window.clearTimeout(timer);
   }, [resetKey, nextQr]);
@@ -237,6 +248,9 @@ export function BuScanner({
   useEffect(() => {
     if (!busy && sessionLiveRef.current) {
       flushPendingDecode();
+      if (keepOpenRef.current) {
+        scheduleFrameFallback(LIVE_FRAME_INTERVAL_MS);
+      }
     }
     // flushPendingDecode is stable enough for the busy edge
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,6 +262,12 @@ export function BuScanner({
       frameTimerRef.current = null;
     }
     frameBusyRef.current = false;
+  }
+
+  function armFrameFallbackAfterQr() {
+    if (!sessionLiveRef.current || !keepOpenRef.current) return;
+    clearScannerDecodedCache(scannerRef.current);
+    scheduleFrameFallback(NEXT_QR_IGNORE_MS + 40);
   }
 
   async function stopScanner() {
@@ -326,6 +346,7 @@ export function BuScanner({
       setLiveReadLabel(
         qrReadFeedback(meta?.index ?? 1, meta?.total ?? 0).title
       );
+      if (!fromPhoto) armFrameFallbackAfterQr();
       onPhotosDecoded(ordered);
       return;
     }
@@ -373,6 +394,8 @@ export function BuScanner({
       sessionLiveRef.current = false;
       stopFrameFallback();
       void stopScanner();
+    } else if (!fromPhoto) {
+      armFrameFallbackAfterQr();
     }
     onScan(text);
   }
@@ -415,8 +438,21 @@ export function BuScanner({
 
   async function runFrameFallback() {
     frameTimerRef.current = null;
-    if (handledRef.current || !sessionLiveRef.current) {
-      if (sessionLiveRef.current && !handledRef.current) {
+    if (!sessionLiveRef.current) return;
+    // handled/busy: stay armed (esp. keepOpen after QR 1 → wait for QR 2).
+    // Previous logic had a dead branch that never rescheduled when handled=true.
+    if (
+      handledRef.current ||
+      busyRef.current ||
+      Date.now() < ignoreUntilRef.current
+    ) {
+      if (
+        shouldRescheduleFrameFallback({
+          sessionLive: sessionLiveRef.current,
+          handled: handledRef.current,
+          keepOpen: keepOpenRef.current,
+        })
+      ) {
         scheduleFrameFallback(LIVE_FRAME_INTERVAL_MS);
       }
       return;
@@ -426,15 +462,15 @@ export function BuScanner({
       !video ||
       html5QrcodeWouldMissFrames(video) ||
       Date.now() - liveStartedAtRef.current >= LIVE_FRAME_FALLBACK_AFTER_MS;
-    if (!miss || frameBusyRef.current || busyRef.current) {
+    if (!miss || frameBusyRef.current) {
       scheduleFrameFallback(LIVE_FRAME_INTERVAL_MS);
       return;
     }
     frameBusyRef.current = true;
     try {
-      const video = readerRoot()?.querySelector("video");
-      const many = video
-        ? await decodeAllQrsFromVideo(video, scanFileOnce, "prefer-first")
+      const liveVideo = readerRoot()?.querySelector("video");
+      const many = liveVideo
+        ? await decodeAllQrsFromVideo(liveVideo, scanFileOnce, "prefer-first")
         : [];
       if (many.length > 0 && !handledRef.current) {
         deliverDecodedTexts(many);
@@ -446,7 +482,13 @@ export function BuScanner({
       }
     } finally {
       frameBusyRef.current = false;
-      if (sessionLiveRef.current && !handledRef.current) {
+      if (
+        shouldRescheduleFrameFallback({
+          sessionLive: sessionLiveRef.current,
+          handled: handledRef.current,
+          keepOpen: keepOpenRef.current,
+        })
+      ) {
         scheduleFrameFallback(LIVE_FRAME_INTERVAL_MS);
       }
     }

@@ -456,18 +456,50 @@ export function FiscalApp() {
           return;
         }
         if (
-          /Zona não encontrada|Zona não veio|Zona ou seção ausente|Zona\/seção ausentes/i.test(
+          /Zona não encontrada|Zona não veio|Zona ou seção ausente|Zona\/seção ausentes|Formatos aceitos:\s*ZONA/i.test(
             cause
           )
         ) {
-          void persistParseFailure(raw, describeQrPayloadKeys(raw));
-          if (isContinuationSequence(meta)) {
-            setFeedback(
-              heldContinuationFeedback(meta?.index ?? 2, meta?.total ?? 2)
+          // Never flash red “QR não entrou” — hold the chunk and ask for the rest.
+          try {
+            const held = parseFiscalQrChunk(raw, fragmentsRef.current);
+            const previous = fragmentsRef.current;
+            const nextFragments = backfillQrSet(
+              held.qrIndex
+                ? [...previous.filter((p) => p.qrIndex !== held.qrIndex), held]
+                : [...previous, held]
             );
-          } else if (looksLikeTseBuQr(raw)) {
+            fragmentsRef.current = nextFragments;
+            writeQrSession(nextFragments);
+            setFragments(nextFragments);
+            const progress = describeQrProgress(nextFragments);
+            const missing = nextMissingQrIndex(nextFragments);
+            const noZona = !nextFragments.some((p) => p.zona);
             setFeedback(
-              qr1HeldNoZonaFeedback(meta?.index ?? 1, meta?.total ?? 2)
+              missing === 1
+                ? heldContinuationFeedback(
+                    held.qrIndex ?? progress.index,
+                    held.qrTotal ?? progress.total
+                  )
+                : noZona
+                  ? qr1HeldNoZonaFeedback(
+                      held.qrIndex ?? progress.index,
+                      held.qrTotal ?? progress.total
+                    )
+                  : heldPartFeedback(
+                      held.qrIndex ?? progress.index,
+                      held.qrTotal ?? progress.total
+                    )
+            );
+          } catch {
+            void persistParseFailure(raw, describeQrPayloadKeys(raw));
+            setFeedback(
+              isContinuationSequence(meta)
+                ? heldContinuationFeedback(meta?.index ?? 2, meta?.total ?? 2)
+                : qr1HeldNoZonaFeedback(
+                    meta?.index ?? 1,
+                    Math.max(meta?.total ?? 2, 2)
+                  )
             );
           }
           setScanNonce((n) => n + 1);
@@ -668,7 +700,8 @@ export function FiscalApp() {
         </h1>
         {showIdleLine ? (
           <p className="text-lg font-bold leading-snug text-teal-900">
-            Filme o QR da BU ou escolha as Fotos do WhatsApp (todos os QRs).
+            Clique abaixo e filme o QRCODE da BU. Com 2 QRs, filme os dois — ou
+            use Fotos do WhatsApp.
           </p>
         ) : null}
       </header>

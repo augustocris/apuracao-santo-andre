@@ -10,6 +10,7 @@ import {
   leftoverUrnaFeedback,
   heldContinuationFeedback,
   heldPartFeedback,
+  parseFeedback,
   qr1HeldNoZonaFeedback,
   qrReadFeedback,
   unreadWhatsappPhotosFeedback,
@@ -74,6 +75,12 @@ describe("fiscal feedback copy", () => {
     assert.match(noZona.title, /QR 1 lido/);
     assert.doesNotMatch(noZona.title, /Zona não encontrada/i);
     assert.doesNotMatch(noZona.nextStep, /ZONA:001|allowlist/i);
+    const legacyZona = parseFeedback(
+      "Zona não encontrada no QR. Formatos aceitos: ZONA:001, Zona Eleitoral: 0001 ou ZonaEleitoral 0001."
+    );
+    assert.equal(legacyZona.kind, "incomplete_qr");
+    assert.doesNotMatch(legacyZona.title, /QR não entrou/i);
+    assert.doesNotMatch(legacyZona.nextStep, /Formatos aceitos/i);
     const read = qrReadFeedback(1, 4);
     assert.equal(read.title, "QR lido 1/4");
     assert.match(read.nextStep, /2º QR/i);

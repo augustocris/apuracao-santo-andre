@@ -205,11 +205,20 @@ export function zonaForaFeedback(zona?: string): FiscalFeedback {
 }
 
 export function parseFeedback(cause: string, debug?: string): FiscalFeedback {
+  const trimmed = cause.trim();
+  // Zona ausente em parte do BU ≠ rejeição — o fiscal deve filmar o outro QR.
+  if (
+    /Zona não encontrada|Zona não veio|Zona ou seção ausente|Zona\/seção ausentes|Formatos aceitos:\s*ZONA/i.test(
+      trimmed
+    )
+  ) {
+    return qr1HeldNoZonaFeedback(1, 2);
+  }
   return {
     kind: "parse",
     title: "QR não entrou",
     cause: "",
-    nextStep: cause.trim() || "Leia de novo ou mande foto no WhatsApp da central.",
+    nextStep: trimmed || "Leia de novo ou mande foto no WhatsApp da central.",
     debug: debug?.trim() || undefined,
   };
 }

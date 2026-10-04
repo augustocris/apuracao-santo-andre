@@ -7,6 +7,7 @@ import {
   hasWhatsappSuporte,
   isNetworkError,
   SUCCESS_CLEAR_MS,
+  qrReadFeedback,
   waitingFirstQrLabel,
   waitingNextQrLabel,
   waitingSecondQrLabel,
@@ -56,6 +57,11 @@ describe("fiscal feedback copy", () => {
     const first = waitingFirstQrLabel();
     assert.equal(first.title, "Falta o 1º QR");
     assert.match(first.nextStep, /1º|de cima/i);
+    const read = qrReadFeedback(1, 4);
+    assert.equal(read.title, "QR lido 1/4");
+    assert.match(read.nextStep, /2º QR/i);
+    assert.equal(qrReadFeedback(2, 4).title, "QR lido 2/4");
+    assert.equal(qrReadFeedback(1).title, "QR lido");
     const wrong = wrongBuFeedback("IDUE 11 vs 99");
     assert.equal(wrong.title, "BU errada");
     assert.match(wrong.nextStep, /IDUE/i);

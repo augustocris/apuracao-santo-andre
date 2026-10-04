@@ -81,6 +81,21 @@ export function waitingFirstQrLabel(): FiscalFeedback {
   };
 }
 
+/** Instant confirmation that the camera actually decoded a QR. */
+export function qrReadFeedback(index: number, total = 0): FiscalFeedback {
+  const i = Math.max(1, Math.floor(index) || 1);
+  const t = Math.max(i, Math.floor(total) || i);
+  const next = i < t ? i + 1 : null;
+  return {
+    kind: "incomplete_qr",
+    title: t > 1 ? `QR lido ${i}/${t}` : "QR lido",
+    cause: "",
+    nextStep: next
+      ? `Filme o ${next}º QR desta urna.`
+      : "QR aceito. Confira zona e seção se pedir.",
+  };
+}
+
 export function waitingSecondQrLabel(zona: string, secao: string): string {
   return waitingNextQrLabel(zona, secao, 2);
 }

@@ -53,19 +53,21 @@ export function cameraStartAttempts(appleTouch: boolean): CameraStartAttempt[] {
   ];
 }
 
-/** ~92% of the live viewfinder — dense thermal TSE QRs need almost the full frame. */
+/** ~90% of the live viewfinder — never larger than the box (0×0 crop = no decode). */
 export function qrboxForDenseTse(
   viewfinderWidth: number,
   viewfinderHeight: number
 ): { width: number; height: number } {
-  const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+  const w = Math.max(0, viewfinderWidth);
+  const h = Math.max(0, viewfinderHeight);
+  const minEdge = Math.min(w, h);
   if (!Number.isFinite(minEdge) || minEdge < 50) {
     return { width: 280, height: 280 };
   }
-  const size = Math.max(280, Math.floor(minEdge * 0.92));
+  const size = Math.max(50, Math.floor(minEdge * 0.9));
   return {
-    width: Math.min(size, viewfinderWidth),
-    height: Math.min(size, viewfinderHeight),
+    width: Math.min(size, w),
+    height: Math.min(size, h),
   };
 }
 
@@ -80,7 +82,7 @@ export const LIVE_SCAN_FPS = 20;
 /** Ignore leftover frames only after QR 1 is already in the set. First QR: 0. */
 export const NEXT_QR_IGNORE_MS = 400;
 
-/** First live decode must not wait for waitForLiveVideo / debounce. */
+/** First successful decode must pass — sessionLive / ignoreUntil must not swallow QR1. */
 export function shouldAcceptLiveDecode(opts: {
   fromPhoto?: boolean;
   handled: boolean;
@@ -92,7 +94,9 @@ export function shouldAcceptLiveDecode(opts: {
   if (opts.handled) return false;
   if (opts.fromPhoto) return !opts.busy;
   if (opts.busy) return false;
-  if (!opts.sessionLive) return false;
+  // sessionLive is informational — first QR (ignoreUntil 0) must not wait for it.
+  void opts.sessionLive;
+  if (opts.ignoreUntil <= 0) return true;
   if (opts.now < opts.ignoreUntil) return false;
   return true;
 }
@@ -133,8 +137,45 @@ export function revealLiveScannerElement(el: HTMLElement | null): void {
   el.style.visibility = "visible";
   el.style.opacity = "1";
   el.style.width = "100%";
+  el.style.minWidth = "100%";
   el.style.minHeight = "min(70vh, 520px)";
   el.style.height = "min(70vh, 520px)";
+}
+
+/**
+ * html5-qrcode sets video.style.width = parent.clientWidth + "px" at start.
+ * If that is 0, foreverScan draws a 0×0 canvas while the stream still plays.
+ */
+export function forceScannerSurface(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  revealLiveScannerElement(el);
+  void el.offsetWidth;
+  if (hasScannerSurface(el)) return true;
+  const parentW = el.parentElement?.clientWidth ?? 0;
+  const viewport = globalThis as { innerWidth?: number; innerHeight?: number };
+  const innerW = Number(viewport.innerWidth) || parentW || 360;
+  const innerH = Number(viewport.innerHeight) || 640;
+  const w = Math.max(parentW, Math.floor(innerW - 24), 320);
+  const h = Math.max(Math.floor(innerH * 0.5), 320);
+  el.style.width = `${w}px`;
+  el.style.minWidth = `${w}px`;
+  el.style.height = `${h}px`;
+  el.style.minHeight = `${h}px`;
+  void el.offsetHeight;
+  return hasScannerSurface(el);
+}
+
+/** Keep the <video> from staying at width:0px after html5-qrcode creates it. */
+export function sizeLiveVideoToContainer(root: HTMLElement | null): void {
+  if (!root) return;
+  root.querySelectorAll("video").forEach((video) => {
+    video.style.width = "100%";
+    video.style.maxWidth = "100%";
+    video.style.height = "100%";
+    video.style.maxHeight = "100%";
+    video.style.objectFit = "cover";
+    video.style.display = "block";
+  });
 }
 
 export function hasScannerSurface(
@@ -211,6 +252,7 @@ export function cameraErrorKind(
 
 export function hardenLiveVideo(root: HTMLElement | null) {
   if (!root) return;
+  sizeLiveVideoToContainer(root);
   const videos = root.querySelectorAll("video");
   videos.forEach((video) => {
     video.setAttribute("playsinline", "true");

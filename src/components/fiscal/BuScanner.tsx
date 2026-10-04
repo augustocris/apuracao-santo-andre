@@ -5,12 +5,13 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { Camera, CameraOff, Download, MessageCircle, Share2 } from "lucide-react";
 import { WhatsAppSupport } from "@/components/fiscal/FiscalFeedback";
 import { Button } from "@/components/ui/button";
-import { cameraFeedback, type FiscalFeedback } from "@/lib/fiscal-feedback";
+import { cameraFeedback, qrReadFeedback, type FiscalFeedback } from "@/lib/fiscal-feedback";
 import {
   ANDROID_IDEAL_VIDEO,
   cameraErrorKind,
   cameraStartAttempts,
   currentAppleTouchDevice,
+  forceScannerSurface,
   hardenLiveVideo,
   liveScanConfig,
   NEXT_QR_IGNORE_MS,
@@ -18,12 +19,21 @@ import {
   requestCameraFromUserGesture,
   revealLiveScannerElement,
   shouldAcceptLiveDecode,
+  sizeLiveVideoToContainer,
   useBarcodeDetector,
   waitForScannerSurface,
   watchAndHardenLiveVideo,
   withPrefetchedMediaStream,
 } from "@/lib/ios-camera";
-import { sameQrPayload } from "@/lib/parser/bu-qr";
+import {
+  canvasToJpegFile,
+  copyVideoFrameToCanvas,
+  html5QrcodeWouldMissFrames,
+  isLiveVideoDecodable,
+  LIVE_FRAME_FALLBACK_AFTER_MS,
+  LIVE_FRAME_INTERVAL_MS,
+} from "@/lib/live-frame-scan";
+import { parseQrbuMeta, sameQrPayload } from "@/lib/parser/bu-qr";
 import {
   shareBuPhoto,
   whatsappFallbackHref,
@@ -151,6 +161,7 @@ export function BuScanner({
     file: File;
   } | null>(null);
   const [photoBusyLabel, setPhotoBusyLabel] = useState<string | null>(null);
+  const [liveReadLabel, setLiveReadLabel] = useState<string | null>(null);
   const qrFileInputRef = useRef<HTMLInputElement | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handledRef = useRef(false);
@@ -164,6 +175,11 @@ export function BuScanner({
   const pendingDecodeRef = useRef<string | null>(null);
   const keepOpenRef = useRef(keepOpen);
   keepOpenRef.current = keepOpen;
+  const frameTimerRef = useRef<number | null>(null);
+  const frameBusyRef = useRef(false);
+  const liveStartedAtRef = useRef(0);
+  const busyRef = useRef(Boolean(busy));
+  busyRef.current = Boolean(busy);
   const appleTouch = currentAppleTouchDevice();
   const barcodeDetector = useBarcodeDetector(appleTouch);
 
@@ -197,6 +213,8 @@ export function BuScanner({
     handledRef.current = false;
     if (nextQr) {
       ignoreUntilRef.current = Date.now() + NEXT_QR_IGNORE_MS;
+    } else {
+      ignoreUntilRef.current = 0;
     }
     const timer = window.setTimeout(() => {
       if (sessionLiveRef.current && !handledRef.current) {
@@ -214,7 +232,16 @@ export function BuScanner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy]);
 
+  function stopFrameFallback() {
+    if (frameTimerRef.current != null) {
+      window.clearTimeout(frameTimerRef.current);
+      frameTimerRef.current = null;
+    }
+    frameBusyRef.current = false;
+  }
+
   async function stopScanner() {
+    stopFrameFallback();
     sessionLiveRef.current = false;
     ignoreUntilRef.current = 0;
     unwatchVideoRef.current?.();
@@ -254,7 +281,7 @@ export function BuScanner({
       !shouldAcceptLiveDecode({
         fromPhoto,
         handled: handledRef.current,
-        busy: Boolean(busy),
+        busy: busyRef.current,
         sessionLive: sessionLiveRef.current,
         ignoreUntil: ignoreUntilRef.current,
         now: Date.now(),
@@ -270,11 +297,83 @@ export function BuScanner({
     }
     handledRef.current = true;
     pendingDecodeRef.current = null;
+    const meta = parseQrbuMeta(text);
+    setLiveReadLabel(
+      qrReadFeedback(meta?.index ?? 1, meta?.total ?? 0).title
+    );
     if (!keepOpenRef.current) {
       sessionLiveRef.current = false;
+      stopFrameFallback();
       void stopScanner();
     }
     onScan(text);
+  }
+
+  async function decodeLiveVideoFrame(): Promise<string | null> {
+    const video = readerRoot()?.querySelector("video");
+    if (!video || !isLiveVideoDecodable(video)) return null;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    const copied = copyVideoFrameToCanvas(video, canvas, (dw, dh) => {
+      ctx.drawImage(video, 0, 0, dw, dh);
+    });
+    if (!copied) return null;
+    const file = await canvasToJpegFile(canvas);
+    if (!file) return null;
+    const scanner = scannerFactory("bu-qr-frame-reader");
+    try {
+      const text = await scanner.scanFile(file, false);
+      return text?.trim() ? text : null;
+    } catch {
+      return null;
+    } finally {
+      try {
+        scanner.clear();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  function scheduleFrameFallback(delayMs: number) {
+    if (frameTimerRef.current != null) {
+      window.clearTimeout(frameTimerRef.current);
+    }
+    frameTimerRef.current = window.setTimeout(() => {
+      void runFrameFallback();
+    }, delayMs);
+  }
+
+  async function runFrameFallback() {
+    frameTimerRef.current = null;
+    if (handledRef.current || !sessionLiveRef.current) {
+      if (sessionLiveRef.current && !handledRef.current) {
+        scheduleFrameFallback(LIVE_FRAME_INTERVAL_MS);
+      }
+      return;
+    }
+    const video = readerRoot()?.querySelector("video");
+    const miss =
+      !video ||
+      html5QrcodeWouldMissFrames(video) ||
+      Date.now() - liveStartedAtRef.current >= LIVE_FRAME_FALLBACK_AFTER_MS;
+    if (!miss || frameBusyRef.current || busyRef.current) {
+      scheduleFrameFallback(LIVE_FRAME_INTERVAL_MS);
+      return;
+    }
+    frameBusyRef.current = true;
+    try {
+      const text = await decodeLiveVideoFrame();
+      if (text && !handledRef.current) {
+        deliverScan(text);
+      }
+    } finally {
+      frameBusyRef.current = false;
+      if (sessionLiveRef.current && !handledRef.current) {
+        scheduleFrameFallback(LIVE_FRAME_INTERVAL_MS);
+      }
+    }
   }
 
   function showCameraError(cause: string) {
@@ -327,8 +426,11 @@ export function BuScanner({
     startingRef.current = true;
     handledRef.current = false;
     sessionLiveRef.current = false;
+    ignoreUntilRef.current = 0;
+    pendingDecodeRef.current = null;
+    setLiveReadLabel(null);
     // Visible + sized before getUserMedia — still inside the click/touch.
-    revealLiveScannerElement(readerRoot());
+    forceScannerSurface(readerRoot());
     setActive(true);
     // First statement that talks to the camera — still inside the click/touch.
     const streamPromise = requestCameraFromUserGesture();
@@ -338,12 +440,13 @@ export function BuScanner({
   async function attachScanner(streamPromise: Promise<MediaStream>) {
     setError(null);
     setActive(true);
-    revealLiveScannerElement(readerRoot());
+    forceScannerSurface(readerRoot());
     let handedStream: MediaStream | null = null;
     try {
       handedStream = await streamPromise;
+      forceScannerSurface(readerRoot());
       await waitForScannerSurface(readerRoot());
-      revealLiveScannerElement(readerRoot());
+      forceScannerSurface(readerRoot());
 
       const scanner = scannerFactory("bu-qr-reader");
       scannerRef.current = scanner;
@@ -401,18 +504,31 @@ export function BuScanner({
       }
 
       const root = readerRoot();
-      revealLiveScannerElement(root);
+      forceScannerSurface(root);
+      sizeLiveVideoToContainer(root);
       hardenLiveVideo(root);
       sessionLiveRef.current = true;
+      liveStartedAtRef.current = Date.now();
       ignoreUntilRef.current = nextQr ? Date.now() + NEXT_QR_IGNORE_MS : 0;
       flushPendingDecode();
       await waitForLiveVideo(root);
+      sizeLiveVideoToContainer(root);
       hardenLiveVideo(root);
       clearScannerDecodedCache(scanner);
       if (!sessionLiveRef.current) {
         sessionLiveRef.current = true;
       }
       flushPendingDecode();
+      scheduleFrameFallback(
+        html5QrcodeWouldMissFrames(root?.querySelector("video") ?? {
+          clientWidth: 0,
+          clientHeight: 0,
+          videoWidth: 0,
+          videoHeight: 0,
+        })
+          ? 80
+          : LIVE_FRAME_FALLBACK_AFTER_MS
+      );
     } catch (err) {
       sessionLiveRef.current = false;
       handedStream?.getTracks().forEach((track) => {
@@ -511,9 +627,18 @@ export function BuScanner({
       <div
         id="bu-qr-reader"
         className={`w-full overflow-hidden rounded-2xl border-2 border-teal-700/30 bg-slate-900/5 ${
-          active ? "block min-h-[70vh] max-h-[70vh]" : "hidden"
+          active ? "!block min-h-[70vh] max-h-[70vh]" : "hidden"
         }`}
       />
+
+      {active && liveReadLabel ? (
+        <p
+          role="status"
+          className="text-center text-lg font-bold text-teal-800"
+        >
+          {liveReadLabel}
+        </p>
+      ) : null}
 
       {active ? (
         <p className="text-center text-base font-bold text-teal-900">
@@ -548,6 +673,7 @@ export function BuScanner({
       )}
 
       <div id="bu-qr-file-reader" className="h-px w-px overflow-hidden" />
+      <div id="bu-qr-frame-reader" className="h-px w-px overflow-hidden" />
 
       <label className="block">
         <input

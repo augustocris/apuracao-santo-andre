@@ -21,6 +21,7 @@ import {
   isNetworkError,
   networkFeedback,
   parseFeedback,
+  qrReadFeedback,
   qrMismatchFeedback,
   SUCCESS_CLEAR_MS,
   waitingFirstQrLabel,
@@ -235,11 +236,16 @@ export function FiscalApp() {
 
   const handleRawText = useCallback(
     async (raw: string) => {
+      const metaEarly = parseQrbuMeta(raw);
+      setFeedback(
+        qrReadFeedback(
+          metaEarly?.index ?? fragmentsRef.current.length + 1,
+          metaEarly?.total ?? 0
+        )
+      );
       setProcessing(true);
-      setFeedback(null);
       setSuccess(null);
       try {
-        await new Promise((r) => setTimeout(r, 80));
         const previous = fragmentsRef.current;
         if (previous.some((part) => sameQrPayload(part.rawText, raw))) {
           setScanNonce((n) => n + 1);
@@ -284,10 +290,14 @@ export function FiscalApp() {
 
         if (!isQrSetComplete(nextFragments)) {
           const missing = nextMissingQrIndex(nextFragments);
+          const progress = describeQrProgress(nextFragments);
           setFeedback(
             missing === 1
               ? waitingFirstQrLabel()
-              : null
+              : qrReadFeedback(
+                  result.qrIndex ?? progress.index,
+                  result.qrTotal ?? progress.total
+                )
           );
           setConfirmOpen(false);
           return;

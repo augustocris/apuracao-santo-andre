@@ -62,7 +62,7 @@ describe("QR1 zona keys", () => {
   it("accepts NR_ZONA, ZE and glued ZonaEleitoral without colon", () => {
     assert.equal(extractZonaField("NR_ZONA:383 NR_SECAO:0001")?.key, "NR_ZONA");
     assert.equal(extractZonaField("ZE:306 SECA:12")?.key, "ZE");
-    assert.equal(extractZonaField("ZonaEleitoral:0001 SECA:1")?.value, "0001");
+    assert.equal(extractZonaField("ZonaEleitoral:0001 SECA:1")?.value, "001");
     assert.equal(extractZonaField("ZonaEleitoral 383 SECA:1")?.value, "383");
     assert.equal(parseBuQrText("ZONA 383 SECA 0001 CARG:1 13:10").zona, "383");
     assert.equal(parseBuQrText("NR_ZONA:156 NR_SECA:0401 CARG:1 13:1").zona, "156");

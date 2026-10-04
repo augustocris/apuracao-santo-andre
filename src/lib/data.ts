@@ -977,12 +977,16 @@ export async function listBusPendentes(): Promise<BuPendente[]> {
     return getMockPendentes().filter((p) => p.status === "pendente");
   }
 
-  const { data, error } = await supabase
-    .from("bus_pendentes")
-    .select("*")
-    .eq("status", "pendente")
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const { data, error } = await withTimeout(
+    supabase
+      .from("bus_pendentes")
+      .select("id, zona, secao, erro, raw_text, created_at, status")
+      .eq("status", "pendente")
+      .order("created_at", { ascending: false })
+      .limit(50),
+    LIVE_FETCH_TIMEOUT_MS,
+    "BUs pendentes"
+  );
 
   if (error) {
     if (/bus_pendentes|42P01|42703/i.test(error.message) || error.code === "42P01") {
@@ -1744,25 +1748,36 @@ export async function fetchBusRecebidas(): Promise<BusRecebidasReport> {
     );
   }
 
-  return liveSingleFlight("bus-recebidas", async () => {
-    const [locais, boletins, config] = await Promise.all([
-      cachedLocais(supabase).then((rows) =>
-        rows.map((l) => ({
-          zona: l.zona,
-          secao: l.secao,
-          nome_escola: l.nome_escola,
-        }))
-      ),
-      fetchAllSupabaseRows<{ zona: string; secao: string }>(
-        supabase,
-        "boletins_urna",
-        "zona, secao"
-      ),
-      getConfig(),
-    ]);
+  return withTimeout(
+    liveSingleFlight("bus-recebidas", async () => {
+      const config = await getConfig();
+      const [locais, boletins] = await Promise.all([
+        fetchAllSupabaseRows<
+          Pick<LocalVotacao, "zona" | "secao" | "nome_escola">
+        >(supabase, "locais_votacao", "zona, secao, nome_escola", {
+          pageSize: 500,
+          maxRows: 4_000,
+          timeoutMs: 6_000,
+          allowPartial: true,
+        }).catch(() => []),
+        fetchAllSupabaseRows<{ zona: string; secao: string }>(
+          supabase,
+          "boletins_urna",
+          "zona, secao",
+          {
+            pageSize: 500,
+            maxRows: 12_000,
+            timeoutMs: 6_000,
+            allowPartial: true,
+          }
+        ),
+      ]);
 
-    return buildBusRecebidasReport(boletins, locais, config, "supabase");
-  });
+      return buildBusRecebidasReport(boletins, locais, config, "supabase");
+    }),
+    LIVE_FETCH_TIMEOUT_MS,
+    "BUs recebidas"
+  );
 }
 
 export function subscribeDashboard(

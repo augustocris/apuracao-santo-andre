@@ -4,7 +4,7 @@ PWA for parallel ballot-box counting (fiscais scan BU QR codes; admin TV dashboa
 
 The **`/telao`** view is the public TV screen: compact header (**Apuração Antecipada - Santo André**), slim Enviadas/Faltam + % Progresso bars, and five cargo cards (Dep. Estadual, Dep. Federal, Senador 1, Senador 2, Governador). Photos sit on the right at card height with a 3:4 proportion (`object-contain`). Dep. Estadual/Federal celebrate vote milestones (50 mil / 100.000 / 150.000 / +10 mil) with confetti. No PIN.
 
-**`/admin`** is the operator panel only (Cadastro, BUs pendentes, Digitar BU), behind PIN **Acesso admin**. Only Cristiano’s pin (`apuracao_config.chefe_pin`, fallback `andre2026`) unlocks it — other `chefes` PINs stay on `/chefe`. Session lives in `sessionStorage` until **Sair**. Link **Abrir telão** → `/telao`. **BUs recebidas** abre `/admin/bus-recebidas` numa nova aba (mesmo PIN): zonas/seções já gravadas em `boletins_urna`, totais e faltam.
+**`/admin`** is the operator panel only (Cadastro, Digitar BU), behind PIN **Acesso admin**. Only Cristiano’s pin (`apuracao_config.chefe_pin`, fallback `andre2026`) unlocks it — other `chefes` PINs stay on `/chefe`. Session lives in `sessionStorage` until **Sair**. Link **Abrir telão** → `/telao`. **BUs pendentes** abre `/admin/pendentes` e **BUs recebidas** abre `/admin/bus-recebidas` (nova aba, mesmo PIN). As duas rotas pintam o cabeçalho na hora; o fetch tem timeout e não baixa o catálogo.
 
 ## Quick start
 
@@ -19,6 +19,7 @@ npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigi
 - Fiscal (mobile, só QR): [http://127.0.0.1:43127/fiscal](http://127.0.0.1:43127/fiscal)
 - Telão (TV, público): [http://127.0.0.1:43127/telao](http://127.0.0.1:43127/telao)
 - Admin (cadastro, pendentes, Digitar BU, PIN `andre2026`): [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
+- BUs pendentes (mesmo PIN, nova aba): [http://127.0.0.1:43127/admin/pendentes](http://127.0.0.1:43127/admin/pendentes)
 - BUs recebidas (mesmo PIN, nova aba): [http://127.0.0.1:43127/admin/bus-recebidas](http://127.0.0.1:43127/admin/bus-recebidas)
 - `/dashboard` redirects to `/telao`
 
@@ -107,7 +108,7 @@ PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe**
 3. BUs com **N QRs** (`1 de 2`, `01/04`…`04/04`, `---------- 02 / 04 ----------`, SEQL/ORQR) **não gravam** até o último. A linha diz **Falta o 2º QR** / **Falta o 3º QR** / **Falta o 4º QR**. HASH não precisa bater entre as partes.
 4. Confirmação: **Confirme a zona = …, seção = …**, votos de **um** candidato oficial da campanha que apareceu neste BU (se nenhum dos 5, um candidato parseado). Botão **Enviar**. Opcional: **Filmar de novo**. Sem edição de votos.
 5. Depois da confirmação do servidor: **Zona … seção … enviada com sucesso. Vá para a próxima.** A tela volta sozinha ao idle em ~4 s.
-6. Duplicata `(zona, seção)` = **já enviada**. Zona fora de `zonas_config` = **Zona não é de Santo André** (não é erro de câmera; não grava). Parser recusou → texto bruto vai para `/admin` → **BUs pendentes**.
+6. Duplicata `(zona, seção)` = **já enviada**. Zona fora de `zonas_config` = **Zona não é de Santo André** (não é erro de câmera; não grava). Parser recusou → texto bruto vai para `/admin/pendentes`.
 7. Se a câmera não ler: **Foto do QR** tira foto e **decodifica** o QR. Se ainda falhar, **Foto no WhatsApp** manda o arquivo à central (`navigator.share` / Compartilhar / Baixar + `wa.me`).
 8. Digitação fica em `/admin` → **Digitar BU**, atrás do PIN do admin (`andre2026`).
 
@@ -141,7 +142,8 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. 
 ```
 src/app/fiscal                 Mobile fiscal UI
 src/app/telao                  TV pública (5 cards)
-src/app/admin                  Painel: cadastro, pendentes, Digitar BU
+src/app/admin                  Painel: cadastro, Digitar BU
+src/app/admin/pendentes        Fila de BUs que o parser recusou
 src/app/admin/bus-recebidas    Relatório de urnas já recebidas (zona+seção)
 src/components/admin/          Telão (5 slots + milestones), cadastro
 src/lib/milestones.ts          Thresholds / PT-BR labels for confetti

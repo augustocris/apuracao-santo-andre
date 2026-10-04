@@ -12,14 +12,13 @@ import {
 import Link from "next/link";
 import { AdminCadastro } from "@/components/admin/AdminCadastro";
 import { AdminDigitarBu } from "@/components/admin/AdminDigitarBu";
-import { AdminPendentes } from "@/components/admin/AdminPendentes";
 import { useAdminLock } from "@/components/admin/PinGate";
 import { Button } from "@/components/ui/button";
 import { getConfig } from "@/lib/data";
 import { hasSupabaseEnv } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
-type AdminView = "cadastro" | "pendentes" | "digitar";
+type AdminView = "cadastro" | "digitar";
 
 export function AdminDashboard() {
   const lockAdmin = useAdminLock();
@@ -91,9 +90,18 @@ export function AdminDashboard() {
             Abrir telão
           </Link>
           <a
+            href="/admin/pendentes"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-white/25 bg-white/5 px-3 text-sm font-semibold text-white hover:bg-white/10"
+          >
+            <TriangleAlert className="size-4" />
+            BUs pendentes
+          </a>
+          <a
             href="/admin/bus-recebidas"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-white/25 bg-white/5 px-3 text-sm font-semibold text-white hover:bg-white/10"
           >
             <ListChecks className="size-4" />
@@ -118,22 +126,6 @@ export function AdminDashboard() {
             >
               <Settings2 className="size-4" />
               Cadastro
-            </Button>
-            <Button
-              type="button"
-              role="tab"
-              aria-selected={view === "pendentes"}
-              variant="ghost"
-              className={cn(
-                "h-10 rounded-lg text-sm font-semibold",
-                view === "pendentes"
-                  ? "bg-[#00ADEF] text-[#001a3a] hover:bg-[#00ADEF]"
-                  : "text-white/70 hover:bg-white/5 hover:text-white"
-              )}
-              onClick={() => setView("pendentes")}
-            >
-              <TriangleAlert className="size-4" />
-              BUs pendentes
             </Button>
             <Button
               type="button"
@@ -181,8 +173,6 @@ export function AdminDashboard() {
 
       {view === "cadastro" ? (
         <AdminCadastro onConfigSaved={() => void reload()} />
-      ) : view === "pendentes" ? (
-        <AdminPendentes />
       ) : (
         <AdminDigitarBu />
       )}

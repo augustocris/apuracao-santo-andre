@@ -95,6 +95,19 @@ export function heldContinuationFeedback(index = 2, total = 2): FiscalFeedback {
   };
 }
 
+/** Header-only 01/xx (votes on the next QR). Never a red “nenhum voto”. */
+export function heldPartFeedback(index = 1, total = 2): FiscalFeedback {
+  const i = Math.max(1, Math.floor(index) || 1);
+  const t = Math.max(i + 1, Math.floor(total) || 2);
+  const next = Math.min(i + 1, t);
+  return {
+    kind: "incomplete_qr",
+    title: `QR ${i} lido — filme o QR ${next}`,
+    cause: "",
+    nextStep: "Os votos podem estar no outro QR. A câmera continua aberta.",
+  };
+}
+
 /** Instant confirmation that the camera actually decoded a QR. */
 export function qr1HeldNoZonaFeedback(index = 1, total = 2): FiscalFeedback {
   const i = Math.max(1, Math.floor(index) || 1);

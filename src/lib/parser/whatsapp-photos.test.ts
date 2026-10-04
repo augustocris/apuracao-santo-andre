@@ -71,6 +71,18 @@ describe("assembleWhatsappPhotos", () => {
     assert.equal(nextMissingQrIndex(later.primary), 4);
   });
 
+  it("assembles header-only 01/02 + votes on 02/02 from one WhatsApp still", () => {
+    const header =
+      "QRBU:1:2 ORIG:VOTA ZONA:383 SECA:0001 IDUE:1760649";
+    const votes = "QRBU:2:2 SEQL:02/02 IDUE:1760649 CARG:1 13:10 17:8";
+    const batch = assembleWhatsappPhotos([header, votes]);
+    assert.equal(batch.read, 2);
+    assert.equal(isQrSetComplete(batch.primary), true);
+    const merged = assertQrSetReadyToIngest(batch.primary);
+    assert.equal(merged.zona, "383");
+    assert.ok(merged.votes.some((v) => v.numero === "13"));
+  });
+
   it("assembles a 2-QR BU from one still that decoded both 01/02 and 02/02", () => {
     const batch = assembleWhatsappPhotos([QR1_B, QR2_B]);
     assert.equal(batch.read, 2);

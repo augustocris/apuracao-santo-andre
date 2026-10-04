@@ -653,6 +653,24 @@ export function peekZonaSecao(raw: string): { zona?: string; secao?: string } {
 
 export const MAX_QR_PARTS = 8;
 
+/**
+ * Header-only TSE QR 1 (zona/seção/IDUE, votes on 02/xx).
+ * Never treat a voteless first part as a finished 1-of-1 set.
+ */
+export function markHeaderOnlyAsOpenSet(parsed: ParsedBu): ParsedBu {
+  if (parsed.votes.length > 0) return parsed;
+  const index =
+    typeof parsed.qrIndex === "number" && parsed.qrIndex >= 1
+      ? parsed.qrIndex
+      : 1;
+  const known =
+    typeof parsed.qrTotal === "number" && parsed.qrTotal > 1
+      ? parsed.qrTotal
+      : 0;
+  if (known && index >= known) return parsed;
+  return { ...parsed, qrIndex: index, qrTotal: known || 2 };
+}
+
 export function isQrSetComplete(parts: ParsedBu[]): boolean {
   if (parts.length === 0) return false;
   const total = parts.reduce((max, p) => Math.max(max, p.qrTotal ?? 0), 0);
@@ -1066,7 +1084,8 @@ export function parseBuQrText(
   const allowEmpty =
     incomplete ||
     options.allowEmptyVotes === true ||
-    isContinuationSequence(qrbu);
+    isContinuationSequence(qrbu) ||
+    qrbuShape;
 
   if (votes.length === 0 && !allowEmpty) {
     throw new BuParseError("Nenhum voto de candidato encontrado no QR.");
@@ -1131,15 +1150,12 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
     throw new SameQrRepeatError();
   }
 
-  const meta = parseQrbuMeta(decodeBuPayloadStrategies(raw));
-  const continuation =
-    awaitingMore ||
-    isContinuationSequence(meta) ||
-    Boolean(meta && meta.index > 1);
-  const parsed = parseBuQrText(raw, {
-    allowMissingZonaSecao: true,
-    allowEmptyVotes: continuation || !parsedHasZonaHint(meta),
-  });
+  const parsed = markHeaderOnlyAsOpenSet(
+    parseBuQrText(raw, {
+      allowMissingZonaSecao: true,
+      allowEmptyVotes: true,
+    })
+  );
 
   if (awaitingMore) {
     const open =
@@ -1155,10 +1171,6 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
     return inheritQrSetMeta(parsed, []);
   }
   return parsed;
-}
-
-function parsedHasZonaHint(meta: { index: number; total: number } | null): boolean {
-  return !meta || meta.index === 1;
 }
 
 /** Sample BU text for demos / paste fallback testing (cargos estaduais). */

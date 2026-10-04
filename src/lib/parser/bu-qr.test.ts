@@ -374,6 +374,35 @@ describe("multi-QR merge", () => {
     assert.equal(parsed.votes.length, 0);
   });
 
+  it("holds header-only QR 01/02 (zona/IDUE, votes on 02) — never Nenhum voto", () => {
+    const header =
+      "QRBU:1:2 ORIG:VOTA UNFE:SP MUNI:71072 ZONA:383 SECA:0001 IDUE:1760649";
+    const p1 = parseFiscalQrChunk(header, []);
+    assert.equal(p1.zona, "383");
+    assert.equal(p1.urnaId, "1760649");
+    assert.equal(p1.votes.length, 0);
+    assert.equal(p1.qrIndex, 1);
+    assert.equal(p1.qrTotal, 2);
+    assert.equal(isQrSetComplete([p1]), false);
+    assert.doesNotMatch(JSON.stringify(p1), /Nenhum voto/i);
+
+    const noMeta =
+      "ORIG:VOTA UNFE:SP ZONA:307 SECA:0401 IDUE:99";
+    const inferred = parseFiscalQrChunk(noMeta, []);
+    assert.equal(inferred.qrIndex, 1);
+    assert.equal(inferred.qrTotal, 2);
+    assert.equal(inferred.votes.length, 0);
+    assert.equal(isQrSetComplete([inferred]), false);
+
+    const p2 = parseFiscalQrChunk(
+      "QRBU:2:2 SEQL:02/02 IDUE:1760649 CARG:1 13:10 17:8",
+      [p1]
+    );
+    const merged = assertQrSetReadyToIngest(backfillQrSet([p1, p2]));
+    assert.equal(merged.zona, "383");
+    assert.ok(merged.votes.some((v) => v.numero === "13"));
+  });
+
   it("does not ingest an incomplete 1 de 2 set", () => {
     const a = parseBuQrText(SAMPLE_TSE_QR_PART1);
     assert.throws(

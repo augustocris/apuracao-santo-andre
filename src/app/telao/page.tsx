@@ -6,10 +6,7 @@ export const metadata: Metadata = {
   description: "O telão está desligado. Use o /chefe.",
 };
 
-/**
- * Sunday load: this route must not import TelaoScreen, fetchDashboard,
- * subscribeDashboard, or any Supabase/live helper.
- */
+/** Sunday load: static page only — no live dashboard, no Realtime, no poll. */
 export default function TelaoOffPage() {
   return (
     <main className="flex min-h-[100dvh] flex-1 flex-col items-center justify-center bg-slate-950 px-6 py-10 text-center text-slate-100">

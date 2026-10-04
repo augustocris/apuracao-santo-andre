@@ -6,11 +6,11 @@ describe("telão desligado", () => {
   it("does not import dashboard fetch, Realtime, or TelaoScreen", () => {
     const src = readFileSync(new URL("../app/telao/page.tsx", import.meta.url), "utf8");
     assert.match(src, /Telão desligado/);
-    assert.doesNotMatch(src, /fetchDashboard/);
-    assert.doesNotMatch(src, /subscribeDashboard/);
+    assert.doesNotMatch(src, /from ["']@\/lib\/data["']/);
+    assert.doesNotMatch(src, /from ["']@\/components\/telao/);
     assert.doesNotMatch(src, /subscribeLive/);
     assert.doesNotMatch(src, /TelaoScreen/);
-    assert.doesNotMatch(src, /supabase/i);
+    assert.doesNotMatch(src, /createClient|supabase-js/i);
     assert.doesNotMatch(src, /TELAO_POLL/);
   });
 });

@@ -14,6 +14,7 @@ import {
   urnaJaCadastrada,
   assertZonaPermitida,
 } from "@/lib/data";
+import { PENDENTES_POLL_MS } from "@/lib/live-load";
 import { duplicateUrnaMessage } from "@/lib/fiscal-feedback";
 import { pickConfirmPreview } from "@/lib/fiscal-confirm";
 import {
@@ -55,7 +56,7 @@ export function AdminPendentes() {
     void reload();
     return subscribeDashboard(() => {
       void reload();
-    }, 6000);
+    }, PENDENTES_POLL_MS);
   }, [reload]);
 
   async function handleReprocessar(item: BuPendente) {

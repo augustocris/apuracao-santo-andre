@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
   ArrowDown,
@@ -42,6 +42,7 @@ import {
   subscribeDashboard,
   unlockChefeByPin,
 } from "@/lib/data";
+import { CHEFE_POLL_MS } from "@/lib/live-load";
 import { linkStoredUrnaFotos } from "@/lib/urna-fotos";
 import type { Candidato, Chefe, DashboardSnapshot } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
@@ -465,6 +466,7 @@ export function ChefeRanking() {
     useState<ChefeMobileCargoFilter>("todos");
 
   const unlocked = chefe != null;
+  const fotoLinkTriedRef = useRef(false);
 
   useEffect(() => {
     setHour(new Date().getHours());
@@ -517,7 +519,8 @@ export function ChefeRanking() {
                 )))
         )
       );
-      if (pinsNeedFoto) {
+      if (pinsNeedFoto && !fotoLinkTriedRef.current) {
+        fotoLinkTriedRef.current = true;
         try {
           const linked = await linkStoredUrnaFotos();
           if (linked.linked > 0) {
@@ -548,7 +551,7 @@ export function ChefeRanking() {
     void reload();
     return subscribeDashboard(() => {
       void reload();
-    }, 4000);
+    }, CHEFE_POLL_MS);
   }, [unlocked, reload]);
 
   const groups = snapshot.rankingGeralByCargo;

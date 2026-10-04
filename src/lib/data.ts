@@ -49,6 +49,17 @@ import { normalizeSqCandidato } from "@/lib/chapada";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
 import { pinMatchesAdmin } from "@/lib/admin-pin";
 import { buildBusRecebidasReport } from "@/lib/bus-recebidas";
+import {
+  CATALOG_TTL_MS,
+  CONFIG_TTL_MS,
+  createTtlCache,
+  FEATURED_TTL_MS,
+  liveSingleFlight,
+  LOCAIS_TTL_MS,
+  subscribeLive,
+  TELAO_POLL_MS,
+  type LiveRealtimeClient,
+} from "@/lib/live-load";
 import { percentualNoCargo } from "@/lib/utils";
 import type {
   ApuracaoConfig,
@@ -144,6 +155,18 @@ let origemColumnCache: boolean | null = null;
 let favoritoColumnCache: boolean | null = null;
 let sqCandidatoColumnCache: boolean | null = null;
 
+const configTtl = createTtlCache<ApuracaoConfig>();
+const featuredTtl = createTtlCache<Candidato[]>();
+const catalogTtl = createTtlCache<Candidato[]>();
+const locaisTtl = createTtlCache<LocalVotacao[]>();
+
+export function invalidateLiveReadCaches() {
+  configTtl.clear();
+  featuredTtl.clear();
+  catalogTtl.clear();
+  locaisTtl.clear();
+}
+
 function normalizeCandidato(raw: Candidato): Candidato {
   return {
     ...raw,
@@ -183,21 +206,87 @@ function mergeCandidatosForRanking(
 async function fetchAllSupabaseRows<T>(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   table: string,
-  columns: string
+  columns: string,
+  orFilter?: string
 ): Promise<T[]> {
   const pageSize = 1000;
   const all: T[] = [];
   for (let from = 0; from < 200_000; from += pageSize) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(columns)
-      .range(from, from + pageSize - 1);
+    let query = supabase.from(table).select(columns);
+    if (orFilter) query = query.or(orFilter);
+    const { data, error } = await query.range(from, from + pageSize - 1);
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as T[];
     all.push(...rows);
     if (rows.length < pageSize) break;
   }
   return all;
+}
+
+const FEATURED_ORIGEM_OR = "origem.is.null,origem.eq.cadastro,origem.eq.";
+
+async function fetchCandidatosRows(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  featuredOnly: boolean
+): Promise<Candidato[]> {
+  if (featuredOnly && (await candidatosHasOrigemColumn())) {
+    const rows = await fetchAllSupabaseRows<Candidato>(
+      supabase,
+      "candidatos",
+      "*",
+      FEATURED_ORIGEM_OR
+    );
+    return rows.map(normalizeCandidato).filter((c) => isFeaturedCandidato(c.origem));
+  }
+  const rows = await fetchAllSupabaseRows<Candidato>(supabase, "candidatos", "*");
+  const list = rows.map(normalizeCandidato);
+  return featuredOnly ? list.filter((c) => isFeaturedCandidato(c.origem)) : list;
+}
+
+async function cachedFeaturedCandidatos(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>
+): Promise<Candidato[]> {
+  const hit = featuredTtl.get(FEATURED_TTL_MS);
+  if (hit) return hit;
+  return liveSingleFlight("candidatos:featured", async () => {
+    const again = featuredTtl.get(FEATURED_TTL_MS);
+    if (again) return again;
+    const list = await fetchCandidatosRows(supabase, true);
+    featuredTtl.set(list);
+    return list;
+  });
+}
+
+async function cachedCatalogCandidatos(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>
+): Promise<Candidato[]> {
+  const hit = catalogTtl.get(CATALOG_TTL_MS);
+  if (hit) return hit;
+  return liveSingleFlight("candidatos:all", async () => {
+    const again = catalogTtl.get(CATALOG_TTL_MS);
+    if (again) return again;
+    const list = await fetchCandidatosRows(supabase, false);
+    catalogTtl.set(list);
+    return list;
+  });
+}
+
+async function cachedLocais(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>
+): Promise<LocalVotacao[]> {
+  const hit = locaisTtl.get(LOCAIS_TTL_MS);
+  if (hit) return hit;
+  return liveSingleFlight("locais", async () => {
+    const again = locaisTtl.get(LOCAIS_TTL_MS);
+    if (again) return again;
+    const list = await fetchAllSupabaseRows<LocalVotacao>(
+      supabase,
+      "locais_votacao",
+      "*"
+    );
+    locaisTtl.set(list);
+    return list;
+  });
 }
 
 async function fetchCandidatosByIds(
@@ -417,7 +506,7 @@ export function buildDashboardSnapshot(
   };
 }
 
-export async function getConfig(): Promise<ApuracaoConfig> {
+async function getConfigUncached(): Promise<ApuracaoConfig> {
   const supabase = getSupabase();
   if (!supabase) return getMockConfig();
 
@@ -448,6 +537,19 @@ export async function getConfig(): Promise<ApuracaoConfig> {
   }
 
   return normalizeConfig(data as ApuracaoConfig);
+}
+
+export async function getConfig(): Promise<ApuracaoConfig> {
+  if (!getSupabase()) return getMockConfig();
+  const hit = configTtl.get(CONFIG_TTL_MS);
+  if (hit) return hit;
+  return liveSingleFlight("config", async () => {
+    const again = configTtl.get(CONFIG_TTL_MS);
+    if (again) return again;
+    const value = await getConfigUncached();
+    configTtl.set(value);
+    return value;
+  });
 }
 
 export async function saveConfig(
@@ -504,11 +606,15 @@ export async function saveConfig(
         .select("*")
         .single();
       if (retry.error) throw new Error(retry.error.message);
-      return normalizeConfig(retry.data as ApuracaoConfig);
+      const saved = normalizeConfig(retry.data as ApuracaoConfig);
+      configTtl.set(saved);
+      return saved;
     }
     throw new Error(error.message);
   }
-  return normalizeConfig(data as ApuracaoConfig);
+  const saved = normalizeConfig(data as ApuracaoConfig);
+  configTtl.set(saved);
+  return saved;
 }
 
 export async function saveChefePin(pin: string): Promise<ApuracaoConfig> {
@@ -909,18 +1015,18 @@ export async function listCandidatos(opts?: {
   featuredOnly?: boolean;
 }): Promise<Candidato[]> {
   const supabase = getSupabase();
+  const featuredOnly = opts?.featuredOnly !== false;
   let list: Candidato[];
 
   if (!supabase) {
-    list = getMockCandidatos();
+    list = getMockCandidatos().map(normalizeCandidato);
+    if (featuredOnly) {
+      list = list.filter((c) => isFeaturedCandidato(c.origem));
+    }
   } else {
-    list = await fetchAllSupabaseRows<Candidato>(supabase, "candidatos", "*");
-  }
-
-  list = list.map(normalizeCandidato);
-
-  if (opts?.featuredOnly !== false) {
-    list = list.filter((c) => isFeaturedCandidato(c.origem));
+    list = featuredOnly
+      ? await cachedFeaturedCandidatos(supabase)
+      : await cachedCatalogCandidatos(supabase);
   }
 
   if (opts?.activeRaceOnly !== false) {
@@ -986,6 +1092,7 @@ export async function upsertCandidato(input: {
       .select("*")
       .single();
     if (error) throw supabaseWriteError("Falha ao atualizar candidato", error.message);
+    invalidateLiveReadCaches();
     return data as Candidato;
   }
 
@@ -995,6 +1102,7 @@ export async function upsertCandidato(input: {
     .select("*")
     .single();
   if (error) throw supabaseWriteError("Falha ao cadastrar candidato", error.message);
+  invalidateLiveReadCaches();
   return data as Candidato;
 }
 
@@ -1006,6 +1114,7 @@ export async function removeCandidato(id: string): Promise<void> {
   }
   const { error } = await supabase.from("candidatos").delete().eq("id", id);
   if (error) throw supabaseWriteError("Falha ao remover candidato", error.message);
+  invalidateLiveReadCaches();
 }
 
 export async function findLocal(
@@ -1119,22 +1228,10 @@ export async function resolveBuVotes(
     cargo?: string;
   }>
 ): Promise<{ featured: ConfirmVoteRow[]; discovered: DiscoveredVote[] }> {
-  const [featuredList, allList] = await Promise.all([
-    listCandidatos({
-      activeRaceOnly: true,
-      featuredOnly: true,
-    }),
-    listCandidatos({
-      activeRaceOnly: false,
-      featuredOnly: false,
-    }),
-  ]);
-  const knownByKey = new Map(
-    allList.map((c) => [
-      `${c.cargo}::${normalizeCandidateNumero(c.numero)}`,
-      c,
-    ])
-  );
+  const featuredList = await listCandidatos({
+    activeRaceOnly: true,
+    featuredOnly: true,
+  });
   const featured: ConfirmVoteRow[] = [];
   const discovered: DiscoveredVote[] = [];
   const seenFeatured = new Set<string>();
@@ -1144,11 +1241,7 @@ export async function resolveBuVotes(
     const numero = normalizeCandidateNumero(vote.numero);
     if (!numero) continue;
     const cargo = resolveVoteCargo(vote.numero, vote.cargo);
-    const known = knownByKey.get(`${cargo}::${numero}`);
-    const nome =
-      (known && !/^Candidato\s/i.test(known.nome) ? known.nome : null) ||
-      vote.nome?.trim() ||
-      placeholderCandidateName(numero);
+    const nome = vote.nome?.trim() || placeholderCandidateName(numero);
     const featuredCand = matchFeaturedCandidato(featuredList, numero, cargo);
     if (featuredCand && cargo !== CARGO_INDEFINIDO && cargo !== "Outro") {
       if (seenFeatured.has(featuredCand.id)) continue;
@@ -1463,6 +1556,12 @@ export async function transmitVotes(
   return { ok: true };
 }
 
+function wantsFullCatalog(cargoOverride?: string | string[]): boolean {
+  if (cargoOverride == null) return false;
+  const list = Array.isArray(cargoOverride) ? cargoOverride : [cargoOverride];
+  return list.includes("todos");
+}
+
 export async function fetchDashboard(
   cargoOverride?: string | string[]
 ): Promise<DashboardSnapshot> {
@@ -1478,34 +1577,44 @@ export async function fetchDashboard(
     );
   }
 
-  const [locais, listedCandidatos, boletins, config] = await Promise.all([
-    fetchAllSupabaseRows<LocalVotacao>(supabase, "locais_votacao", "*"),
-    fetchAllSupabaseRows<Candidato>(supabase, "candidatos", "*"),
-    fetchAllSupabaseRows<SnapshotBoletim>(
-      supabase,
-      "boletins_urna",
-      "id, zona, secao, candidato_id, quantidade_votos, fiscal_nome, created_at"
-    ),
-    getConfig(),
-  ]);
+  const cacheKey = `dashboard:${wantsFullCatalog(cargoOverride) ? "todos" : "featured"}`;
+  return liveSingleFlight(cacheKey, async () => {
+    const config = await getConfig();
+    const needLocais = !(config.secoes_esperadas > 0);
+    const fullCatalog = wantsFullCatalog(cargoOverride);
 
-  const have = new Set(listedCandidatos.map((c) => String(c.id)));
-  const missingIds = boletins
-    .map((b) => String(b.candidato_id ?? ""))
-    .filter((id) => id && !have.has(id));
-  const extras =
-    missingIds.length > 0
-      ? await fetchCandidatosByIds(supabase, missingIds)
+    const [locais, listedCandidatos, boletins] = await Promise.all([
+      needLocais ? cachedLocais(supabase) : Promise.resolve([] as LocalVotacao[]),
+      fullCatalog
+        ? cachedCatalogCandidatos(supabase)
+        : cachedFeaturedCandidatos(supabase),
+      fetchAllSupabaseRows<SnapshotBoletim>(
+        supabase,
+        "boletins_urna",
+        "id, zona, secao, candidato_id, quantidade_votos, fiscal_nome, created_at"
+      ),
+    ]);
+
+    const have = new Set(listedCandidatos.map((c) => String(c.id)));
+    const missingIds = fullCatalog
+      ? boletins
+          .map((b) => String(b.candidato_id ?? ""))
+          .filter((id) => id && !have.has(id))
       : [];
+    const extras =
+      missingIds.length > 0
+        ? await fetchCandidatosByIds(supabase, missingIds)
+        : [];
 
-  return buildDashboardSnapshot(
-    locais,
-    mergeCandidatosForRanking(listedCandidatos, extras),
-    boletins,
-    config,
-    "supabase",
-    cargoOverride
-  );
+    return buildDashboardSnapshot(
+      locais,
+      mergeCandidatosForRanking(listedCandidatos, extras),
+      boletins,
+      config,
+      "supabase",
+      cargoOverride
+    );
+  });
 }
 
 export async function fetchBusRecebidas(): Promise<BusRecebidasReport> {
@@ -1519,68 +1628,44 @@ export async function fetchBusRecebidas(): Promise<BusRecebidasReport> {
     );
   }
 
-  const [locais, boletins, config] = await Promise.all([
-    fetchAllSupabaseRows<Pick<LocalVotacao, "zona" | "secao" | "nome_escola">>(
-      supabase,
-      "locais_votacao",
-      "zona, secao, nome_escola"
-    ),
-    fetchAllSupabaseRows<{ zona: string; secao: string }>(
-      supabase,
-      "boletins_urna",
-      "zona, secao"
-    ),
-    getConfig(),
-  ]);
+  return liveSingleFlight("bus-recebidas", async () => {
+    const [locais, boletins, config] = await Promise.all([
+      cachedLocais(supabase).then((rows) =>
+        rows.map((l) => ({
+          zona: l.zona,
+          secao: l.secao,
+          nome_escola: l.nome_escola,
+        }))
+      ),
+      fetchAllSupabaseRows<{ zona: string; secao: string }>(
+        supabase,
+        "boletins_urna",
+        "zona, secao"
+      ),
+      getConfig(),
+    ]);
 
-  return buildBusRecebidasReport(boletins, locais, config, "supabase");
+    return buildBusRecebidasReport(boletins, locais, config, "supabase");
+  });
 }
 
 export function subscribeDashboard(
   onChange: () => void,
-  pollMs = 4000
+  pollMs = TELAO_POLL_MS
 ): () => void {
   const supabase = getSupabase();
 
   if (!supabase) {
-    const unsub = subscribeMock(onChange);
-    const timer = setInterval(onChange, pollMs);
-    return () => {
-      unsub();
-      clearInterval(timer);
-    };
+    return subscribeLive(onChange, {
+      pollMs,
+      mockUnsub: subscribeMock(onChange),
+    });
   }
 
-  const channel = supabase
-    .channel("boletins_urna_live")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "boletins_urna" },
-      () => onChange()
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "apuracao_config" },
-      () => onChange()
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "candidatos" },
-      () => onChange()
-    )
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "bus_pendentes" },
-      () => onChange()
-    )
-    .subscribe();
-
-  const timer = setInterval(onChange, pollMs);
-
-  return () => {
-    clearInterval(timer);
-    void supabase.removeChannel(channel);
-  };
+  return subscribeLive(onChange, {
+    pollMs,
+    realtime: supabase as unknown as LiveRealtimeClient,
+  });
 }
 
 export async function importLocais(
@@ -1606,6 +1691,7 @@ export async function importLocais(
     { onConflict: "zona,secao", count: "exact" }
   );
   if (error) throw new Error(error.message);
+  invalidateLiveReadCaches();
   return count ?? normalized.length;
 }
 
@@ -1681,6 +1767,7 @@ export async function applyZonasExpectativa(
     zonas_config: normalized,
   });
 
+  invalidateLiveReadCaches();
   return { locais: locaisCount, secoesEsperadas, config };
 }
 
@@ -1921,6 +2008,7 @@ export async function importCandidatos(
     upserted += count ?? slice.length;
   }
 
+  invalidateLiveReadCaches();
   return { upserted, skippedCadastro, duplicates, sqPersisted: hasSq };
 }
 
@@ -1999,6 +2087,7 @@ export async function applyCandidatoFotos(
     updated += 1;
   }
 
+  invalidateLiveReadCaches();
   return { updated, skippedCadastroFoto, notFound };
 }
 
@@ -2062,6 +2151,7 @@ export async function applyCandidatoSq(
     updated += 1;
   }
 
+  invalidateLiveReadCaches();
   return { updated, notFound };
 }
 

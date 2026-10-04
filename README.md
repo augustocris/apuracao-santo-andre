@@ -102,7 +102,7 @@ PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe**
 
 ## Fiscal flow (domingo)
 
-1. Abra `/fiscal` no celular (PWA). **Só QR** — sem digitação e sem colar texto.
+1. Abra `/fiscal` no celular (PWA). **Só QR** — sem digitação e sem colar texto. Sem telão/realtime em segundo plano. Câmera só depois de **Filmar o QR**; solta ao enviar, parar ou ir para segundo plano.
 2. Tela inicial: título **Apuração Santo André**, a linha **Clique abaixo e Filme o QRCODE da BU.** e o botão verde **Filmar o QR**. Sem badge Fonte SUPABASE/MOCK.
 3. BUs com **N QRs** (`1 de 2`, `01/04`…`04/04`, `---------- 02 / 04 ----------`, SEQL/ORQR) **não gravam** até o último. A linha diz **Falta o 2º QR** / **Falta o 3º QR** / **Falta o 4º QR**. HASH não precisa bater entre as partes.
 4. Confirmação: **Confirme a zona = …, seção = …**, votos de **um** candidato oficial da campanha que apareceu neste BU (se nenhum dos 5, um candidato parseado). Botão **Enviar**. Opcional: **Filmar de novo**. Sem edição de votos.
@@ -120,7 +120,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. 
 - Progress: **enviadas / faltam** (vs `secoes_esperadas` do cadastro)
 - Cards compactos: texto à esquerda, **foto proporcional à direita** (altura do card, 3:4, `object-contain`; sem foto → número). Nome em até 2 linhas. **Votos e % cabem inteiros** no miolo (não cortam no fundo do card).
 - Marcos Dep. Estadual/Federal: confete só quando o voto **cruza** o limiar ao vivo; marcos já celebrados ficam em `sessionStorage` (não repetem ao reabrir o telão)
-- Supabase Realtime when configured; otherwise polling every ~4s
+- Supabase Realtime when configured (one channel, reconnect with backoff). Polling 12–15s only if Realtime is down; paused while connected. `/fiscal` does not subscribe. Close extra `/telao` `/chefe` `/admin` tabs on Sunday.
 
 ## Deploy (Vercel + Supabase)
 

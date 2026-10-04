@@ -168,6 +168,24 @@ export function BuScanner({
   }, []);
 
   useEffect(() => {
+    const releaseIfHidden = () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        void stopScanner();
+      }
+    };
+    const onPageHide = () => {
+      void stopScanner();
+    };
+    document.addEventListener("visibilitychange", releaseIfHidden);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", releaseIfHidden);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bind once; stopScanner is stable enough
+  }, []);
+
+  useEffect(() => {
     handledRef.current = false;
   }, [resetKey]);
 

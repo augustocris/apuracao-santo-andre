@@ -6,6 +6,7 @@ import { useMilestoneCelebrations } from "@/components/admin/MilestoneCelebratio
 import { StatsCards } from "@/components/admin/StatsCards";
 import { TelaoSlots } from "@/components/admin/TelaoSlots";
 import { fetchDashboard, subscribeDashboard } from "@/lib/data";
+import { TELAO_POLL_MS } from "@/lib/live-load";
 import type { DashboardSnapshot } from "@/lib/types";
 
 const EMPTY: DashboardSnapshot = {
@@ -44,7 +45,7 @@ export function TelaoScreen() {
     void reload();
     return subscribeDashboard(() => {
       void reload();
-    }, 4000);
+    }, TELAO_POLL_MS);
   }, [reload]);
 
   const celebration = useMilestoneCelebrations({

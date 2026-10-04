@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAdminLock } from "@/components/admin/PinGate";
 import { Button } from "@/components/ui/button";
 import { fetchBusRecebidas, subscribeDashboard } from "@/lib/data";
+import { BUS_RECEBIDAS_POLL_MS } from "@/lib/live-load";
 import type { BusRecebidasReport as Report } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +52,7 @@ export function BusRecebidasReport() {
     void reload();
     return subscribeDashboard(() => {
       void reload();
-    }, 4000);
+    }, BUS_RECEBIDAS_POLL_MS);
   }, [reload]);
 
   return (

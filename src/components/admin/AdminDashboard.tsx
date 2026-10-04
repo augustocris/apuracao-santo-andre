@@ -15,36 +15,24 @@ import { AdminDigitarBu } from "@/components/admin/AdminDigitarBu";
 import { AdminPendentes } from "@/components/admin/AdminPendentes";
 import { useAdminLock } from "@/components/admin/PinGate";
 import { Button } from "@/components/ui/button";
-import { fetchDashboard, subscribeDashboard } from "@/lib/data";
-import type { DashboardSnapshot } from "@/lib/types";
+import { getConfig } from "@/lib/data";
+import { hasSupabaseEnv } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-
-const EMPTY: DashboardSnapshot = {
-  totalSecoes: 0,
-  secoesEsperadas: 0,
-  urnasApuradas: 0,
-  secoesFaltam: 0,
-  totalVotosValidos: 0,
-  rankings: [],
-  rankingsByCargo: [],
-  rankingGeralByCargo: [],
-  relatorioCargos: [],
-  feed: [],
-  mode: "mock",
-};
 
 type AdminView = "cadastro" | "pendentes" | "digitar";
 
 export function AdminDashboard() {
   const lockAdmin = useAdminLock();
   const [view, setView] = useState<AdminView>("cadastro");
-  const [snapshot, setSnapshot] = useState<DashboardSnapshot>(EMPTY);
+  const [mode, setMode] = useState<"supabase" | "mock">(() =>
+    hasSupabaseEnv() ? "supabase" : "mock"
+  );
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
-      const data = await fetchDashboard();
-      setSnapshot(data);
+      await getConfig();
+      setMode(hasSupabaseEnv() ? "supabase" : "mock");
       setError(null);
     } catch (err) {
       setError(
@@ -55,9 +43,6 @@ export function AdminDashboard() {
 
   useEffect(() => {
     void reload();
-    return subscribeDashboard(() => {
-      void reload();
-    }, 4000);
   }, [reload]);
 
   return (
@@ -80,15 +65,15 @@ export function AdminDashboard() {
             <span
               className={cn(
                 "font-semibold uppercase",
-                snapshot.mode === "supabase"
+                mode === "supabase"
                   ? "text-emerald-300"
                   : "text-[#FFDE00]"
               )}
             >
-              {snapshot.mode}
+              {mode}
             </span>
           </p>
-          {snapshot.mode === "mock" && view === "cadastro" && (
+          {mode === "mock" && view === "cadastro" && (
             <p className="mt-2 max-w-2xl text-xs text-[#FFDE00]/90">
               Sem Supabase neste deploy: cadastros ficam só no navegador.
               Configure{" "}

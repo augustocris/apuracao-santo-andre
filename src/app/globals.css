@@ -138,8 +138,9 @@
 }
 
 #bu-qr-reader video {
-  width: 100%;
-  height: auto;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 240px;
   object-fit: cover;
 }
 

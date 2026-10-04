@@ -7,13 +7,17 @@ import { WhatsAppSupport } from "@/components/fiscal/FiscalFeedback";
 import { Button } from "@/components/ui/button";
 import { cameraFeedback, type FiscalFeedback } from "@/lib/fiscal-feedback";
 import {
+  ANDROID_IDEAL_VIDEO,
   cameraErrorKind,
   cameraStartAttempts,
   currentAppleTouchDevice,
   hardenLiveVideo,
   liveScanConfig,
+  qrboxForDenseTse,
   requestCameraFromUserGesture,
+  revealLiveScannerElement,
   useBarcodeDetector,
+  waitForScannerSurface,
   watchAndHardenLiveVideo,
   withPrefetchedMediaStream,
 } from "@/lib/ios-camera";
@@ -59,26 +63,8 @@ function mapCameraError(err: unknown, appleTouch: boolean): string {
   return "Não deu para abrir a câmera. Tente de novo ou mande foto no WhatsApp.";
 }
 
-/** Almost full-frame — dense TSE BUs need the whole code sharp. */
-function qrboxForViewfinder(viewfinderWidth: number, viewfinderHeight: number) {
-  const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-  if (!Number.isFinite(minEdge) || minEdge < 50) {
-    return { width: 240, height: 240 };
-  }
-  const size = Math.max(240, Math.floor(minEdge * 0.9));
-  return {
-    width: Math.min(size, viewfinderWidth),
-    height: Math.min(size, viewfinderHeight),
-  };
-}
-
-function waitForReaderLayout(): Promise<void> {
-  if (typeof requestAnimationFrame === "undefined") {
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
+function readerRoot(): HTMLElement | null {
+  return document.getElementById("bu-qr-reader");
 }
 
 function stopVideoTracks(root: HTMLElement | null) {
@@ -143,10 +129,6 @@ function clearScannerDecodedCache(scanner: Html5Qrcode | null) {
   loose.lastDecodedText = undefined;
 }
 
-const FOCUS_CONSTRAINTS = {
-  advanced: [{ focusMode: "continuous" }],
-} as unknown as MediaTrackConstraints;
-
 export function BuScanner({
   onScan,
   busy,
@@ -163,6 +145,8 @@ export function BuScanner({
     url: string;
     file: File;
   } | null>(null);
+  const [photoBusyLabel, setPhotoBusyLabel] = useState<string | null>(null);
+  const qrFileInputRef = useRef<HTMLInputElement | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handledRef = useRef(false);
   const sessionLiveRef = useRef(false);
@@ -192,7 +176,7 @@ export function BuScanner({
     ignoreUntilRef.current = 0;
     unwatchVideoRef.current?.();
     unwatchVideoRef.current = null;
-    const root = document.getElementById("bu-qr-reader");
+    const root = readerRoot();
     stopVideoTracks(root);
     const scanner = scannerRef.current;
     scannerRef.current = null;
@@ -215,10 +199,12 @@ export function BuScanner({
     setActive(false);
   }
 
-  function deliverScan(text: string) {
+  function deliverScan(text: string, fromPhoto = false) {
     if (handledRef.current || busy) return;
-    if (!sessionLiveRef.current) return;
-    if (Date.now() < ignoreUntilRef.current) return;
+    if (!fromPhoto) {
+      if (!sessionLiveRef.current) return;
+      if (Date.now() < ignoreUntilRef.current) return;
+    }
     if (ignorePayloadsRef.current.some((prev) => sameQrPayload(prev, text))) {
       return;
     }
@@ -252,7 +238,7 @@ export function BuScanner({
       attempt.cameraIdOrConfig,
       {
         ...liveScanConfig(appleTouch),
-        qrbox: qrboxForViewfinder,
+        qrbox: qrboxForDenseTse,
         ...(attempt.videoConstraints
           ? { videoConstraints: attempt.videoConstraints }
           : {}),
@@ -260,7 +246,7 @@ export function BuScanner({
       (decoded) => deliverScan(decoded),
       () => undefined
     );
-    hardenLiveVideo(document.getElementById("bu-qr-reader"));
+    hardenLiveVideo(readerRoot());
   }
 
   /**
@@ -278,6 +264,9 @@ export function BuScanner({
     startingRef.current = true;
     handledRef.current = false;
     sessionLiveRef.current = false;
+    // Visible + sized before getUserMedia — still inside the click/touch.
+    revealLiveScannerElement(readerRoot());
+    setActive(true);
     // First statement that talks to the camera — still inside the click/touch.
     const streamPromise = requestCameraFromUserGesture();
     void attachScanner(streamPromise);
@@ -286,18 +275,18 @@ export function BuScanner({
   async function attachScanner(streamPromise: Promise<MediaStream>) {
     setError(null);
     setActive(true);
+    revealLiveScannerElement(readerRoot());
     let handedStream: MediaStream | null = null;
     try {
       handedStream = await streamPromise;
-      await waitForReaderLayout();
+      await waitForScannerSurface(readerRoot());
+      revealLiveScannerElement(readerRoot());
 
       const scanner = scannerFactory("bu-qr-reader");
       scannerRef.current = scanner;
       clearScannerDecodedCache(scanner);
       unwatchVideoRef.current?.();
-      unwatchVideoRef.current = watchAndHardenLiveVideo(
-        document.getElementById("bu-qr-reader")
-      );
+      unwatchVideoRef.current = watchAndHardenLiveVideo(readerRoot());
 
       const attempts = cameraStartAttempts(appleTouch);
       let lastErr: unknown;
@@ -340,17 +329,21 @@ export function BuScanner({
       }
       if (lastErr) throw lastErr;
 
-      try {
-        await scanner.applyVideoConstraints(FOCUS_CONSTRAINTS);
-      } catch {
-        /* focus not supported — ok, especially on iOS */
+      if (!appleTouch) {
+        try {
+          await scanner.applyVideoConstraints(ANDROID_IDEAL_VIDEO);
+        } catch {
+          /* some Androids reject 1920 — keep the stream that already started */
+        }
       }
-      const root = document.getElementById("bu-qr-reader");
+
+      const root = readerRoot();
+      revealLiveScannerElement(root);
       hardenLiveVideo(root);
       await waitForLiveVideo(root);
       hardenLiveVideo(root);
       clearScannerDecodedCache(scanner);
-      ignoreUntilRef.current = Date.now() + (nextQr ? 700 : 350);
+      ignoreUntilRef.current = Date.now() + (nextQr ? 400 : 150);
       sessionLiveRef.current = true;
     } catch (err) {
       sessionLiveRef.current = false;
@@ -365,6 +358,40 @@ export function BuScanner({
       showCameraError(mapCameraError(err, appleTouch));
     } finally {
       startingRef.current = false;
+    }
+  }
+
+  async function decodeQrFromPhoto(file: File): Promise<string> {
+    const scanner = scannerFactory("bu-qr-file-reader");
+    try {
+      return await scanner.scanFile(file, false);
+    } finally {
+      try {
+        scanner.clear();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  async function handlePhotoOfQr(file: File | undefined) {
+    if (!file || busy) return;
+    setError(null);
+    setUploading(true);
+    setPhotoBusyLabel("Lendo foto…");
+    try {
+      await stopScanner();
+      const text = await decodeQrFromPhoto(file);
+      if (!text.trim()) throw new Error("empty qr");
+      deliverScan(text, true);
+    } catch {
+      setError(
+        "Não deu para ler o QR nesta foto. Tente outra foto mais perto, ou mande no WhatsApp."
+      );
+    } finally {
+      setUploading(false);
+      setPhotoBusyLabel(null);
+      if (qrFileInputRef.current) qrFileInputRef.current.value = "";
     }
   }
 
@@ -415,10 +442,16 @@ export function BuScanner({
     <div className="space-y-3">
       <div
         id="bu-qr-reader"
-        className={`overflow-hidden rounded-2xl border-2 border-teal-700/30 bg-slate-900/5 ${
-          active ? "min-h-[320px] sm:min-h-[380px]" : "hidden"
+        className={`w-full overflow-hidden rounded-2xl border-2 border-teal-700/30 bg-slate-900/5 ${
+          active ? "block min-h-[70vh] max-h-[70vh]" : "hidden"
         }`}
       />
+
+      {active ? (
+        <p className="text-center text-base font-bold text-teal-900">
+          Aponte o QR da BU. A leitura é contínua.
+        </p>
+      ) : null}
 
       {!active && (
         <Button
@@ -446,6 +479,27 @@ export function BuScanner({
         </Button>
       )}
 
+      <div id="bu-qr-file-reader" className="h-px w-px overflow-hidden" />
+
+      <label className="block">
+        <input
+          ref={qrFileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="sr-only"
+          onChange={(e) => void handlePhotoOfQr(e.target.files?.[0])}
+        />
+        <span
+          className={`inline-flex h-14 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border-2 border-teal-800 bg-teal-700 text-base font-bold text-white hover:bg-teal-800 ${
+            busy || uploading ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
+          <Camera className="size-5" />
+          {photoBusyLabel ?? "Foto do QR"}
+        </span>
+      </label>
+
       <label className="block">
         <input
           ref={fileInputRef}
@@ -461,7 +515,9 @@ export function BuScanner({
           }`}
         >
           <MessageCircle className="size-5" />
-          {uploading ? "Abrindo WhatsApp…" : "Deu erro? Foto no WhatsApp"}
+          {uploading && !photoBusyLabel
+            ? "Abrindo WhatsApp…"
+            : "Deu erro? Foto no WhatsApp"}
         </span>
       </label>
 

@@ -6,8 +6,12 @@ import {
   cameraStartAttempts,
   GESTURE_CAMERA_CONSTRAINTS,
   isAppleTouchDevice,
+  hasScannerSurface,
   liveScanConfig,
+  LIVE_SCAN_FPS,
+  qrboxForDenseTse,
   requestCameraFromUserGesture,
+  revealLiveScannerElement,
   useBarcodeDetector,
   withPrefetchedMediaStream,
 } from "./ios-camera";
@@ -35,13 +39,20 @@ describe("iPhone / Safari camera helpers", () => {
     for (const apple of [true, false]) {
       const first = cameraStartAttempts(apple)[0];
       assert.deepEqual(first.cameraIdOrConfig, { facingMode: "environment" });
-      assert.equal(first.videoConstraints, undefined);
-      const json = JSON.stringify(first);
-      assert.doesNotMatch(json, /1920/);
-      assert.doesNotMatch(json, /"min"/);
       assert.equal("width" in first.cameraIdOrConfig, false);
       assert.equal("height" in first.cameraIdOrConfig, false);
+      const idJson = JSON.stringify(first.cameraIdOrConfig);
+      assert.doesNotMatch(idJson, /1920/);
+      assert.doesNotMatch(idJson, /"min"/);
     }
+    const ios = cameraStartAttempts(true)[0];
+    assert.equal(ios.videoConstraints, undefined);
+    const android = cameraStartAttempts(false)[0];
+    assert.equal(
+      JSON.stringify(android.videoConstraints?.width),
+      JSON.stringify({ ideal: 1920 })
+    );
+    assert.doesNotMatch(JSON.stringify(android.videoConstraints), /"min"/);
   });
 
   it("does not require 1920 on any phone", () => {
@@ -63,9 +74,49 @@ describe("iPhone / Safari camera helpers", () => {
     assert.equal("aspectRatio" in liveScanConfig(true), false);
   });
 
-  it("turns BarcodeDetector off on iOS, on on Android", () => {
+  it("uses ZXing on Android and iPhone (BarcodeDetector misses dense TSE)", () => {
     assert.equal(useBarcodeDetector(true), false);
-    assert.equal(useBarcodeDetector(false), true);
+    assert.equal(useBarcodeDetector(false), false);
+  });
+
+  it("scans at a high enough fps for dense TSE QR", () => {
+    assert.equal(liveScanConfig(true).fps, LIVE_SCAN_FPS);
+    assert.equal(liveScanConfig(false).fps, LIVE_SCAN_FPS);
+    assert.ok(LIVE_SCAN_FPS >= 18);
+  });
+
+  it("qrbox covers ~90% of the viewfinder for dense TSE", () => {
+    const box = qrboxForDenseTse(400, 300);
+    assert.equal(box.width, Math.max(280, Math.floor(300 * 0.92)));
+    assert.equal(box.height, box.width);
+    assert.ok(box.width / 300 >= 0.9);
+    const tall = qrboxForDenseTse(720, 1280);
+    assert.ok(tall.width / 720 >= 0.9);
+  });
+
+  it("reveals a hidden scanner so html5-qrcode can measure a real box", () => {
+    const el = {
+      hidden: true,
+      classList: {
+        removed: [] as string[],
+        remove(...names: string[]) {
+          this.removed.push(...names);
+        },
+      },
+      style: {} as Record<string, string>,
+      removeAttribute(name: string) {
+        if (name === "hidden") this.hidden = false;
+      },
+      clientWidth: 0,
+      clientHeight: 0,
+    };
+    revealLiveScannerElement(el as unknown as HTMLElement);
+    assert.equal(el.hidden, false);
+    assert.equal(el.style.display, "block");
+    assert.equal(el.style.width, "100%");
+    assert.ok(el.classList.removed.includes("hidden"));
+    assert.equal(hasScannerSurface({ clientWidth: 0, clientHeight: 0 }), false);
+    assert.equal(hasScannerSurface({ clientWidth: 320, clientHeight: 240 }), true);
   });
 
   it("gesture getUserMedia is facingMode environment with no min/1920/aspectRatio", () => {

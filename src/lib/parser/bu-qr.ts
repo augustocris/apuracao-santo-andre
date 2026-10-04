@@ -566,6 +566,8 @@ export function peekZonaSecao(raw: string): { zona?: string; secao?: string } {
   }
 }
 
+export const MAX_QR_PARTS = 8;
+
 export function isQrSetComplete(parts: ParsedBu[]): boolean {
   if (parts.length === 0) return false;
   const total = parts.reduce((max, p) => Math.max(max, p.qrTotal ?? 0), 0);
@@ -575,7 +577,25 @@ export function isQrSetComplete(parts: ParsedBu[]): boolean {
       .map((p) => p.qrIndex)
       .filter((n): n is number => typeof n === "number" && n >= 1)
   );
-  return indexes.size >= total || parts.length >= total;
+  for (let i = 1; i <= total; i += 1) {
+    if (!indexes.has(i)) return false;
+  }
+  return true;
+}
+
+/** Next QR the fiscal should film (1-based). */
+export function nextMissingQrIndex(parts: ParsedBu[]): number {
+  const total = parts.reduce((max, p) => Math.max(max, p.qrTotal ?? 0), 0);
+  const have = new Set(
+    parts
+      .map((p) => p.qrIndex)
+      .filter((n): n is number => typeof n === "number" && n >= 1)
+  );
+  const goal = Math.max(total, 2);
+  for (let i = 1; i <= goal; i += 1) {
+    if (!have.has(i)) return i;
+  }
+  return parts.length + 1;
 }
 
 export function describeQrProgress(parts: ParsedBu[]): {
@@ -607,7 +627,7 @@ export function assertQrSetReadyToIngest(parts: ParsedBu[]): ParsedBu {
   const merged = mergeParsedBus(parts);
   if (merged.votes.length === 0) {
     throw new BuParseError(
-      "Nenhum voto de candidato encontrado nos dois QRs."
+      "Nenhum voto de candidato encontrado neste conjunto de QRs."
     );
   }
   return merged;
@@ -672,6 +692,40 @@ export function parseQrbuMeta(
     }
   }
 
+  const dashedSlash = folded.match(
+    /-{2,}[^\n]*?0*(\d{1,2})\s*\/\s*0*(\d{1,2})/
+  );
+  if (dashedSlash) {
+    const index = Number.parseInt(dashedSlash[1], 10);
+    const total = Number.parseInt(dashedSlash[2], 10);
+    if (
+      Number.isFinite(index) &&
+      Number.isFinite(total) &&
+      index >= 1 &&
+      total >= 2 &&
+      total <= MAX_QR_PARTS &&
+      index <= total
+    ) {
+      return { index, total };
+    }
+  }
+
+  const bareSlash = folded.match(/\b0*(\d{1,2})\s*\/\s*0*(\d{1,2})\b/);
+  if (bareSlash) {
+    const index = Number.parseInt(bareSlash[1], 10);
+    const total = Number.parseInt(bareSlash[2], 10);
+    if (
+      Number.isFinite(index) &&
+      Number.isFinite(total) &&
+      index >= 1 &&
+      total >= 2 &&
+      total <= MAX_QR_PARTS &&
+      index <= total
+    ) {
+      return { index, total };
+    }
+  }
+
   const orqr = folded.match(/ORQR\s*:\s*0*(\d+)/i);
   if (orqr) {
     const index = Number.parseInt(orqr[1], 10);
@@ -726,6 +780,22 @@ export function inheritQrZonaSecao(part: ParsedBu, from: ParsedBu): ParsedBu {
     zona: part.zona || from.zona,
     secao: part.secao || from.secao,
   };
+}
+
+/** Later QRs often only have ORQR:n — keep the set size from SEQL / 01/04. */
+export function inheritQrSetMeta(
+  part: ParsedBu,
+  previousParts: ParsedBu[]
+): ParsedBu {
+  const prevTotal = previousParts.reduce(
+    (max, p) => Math.max(max, p.qrTotal ?? 0),
+    0
+  );
+  const qrTotal = Math.max(part.qrTotal ?? 0, prevTotal) || part.qrTotal;
+  const qrIndex =
+    part.qrIndex ??
+    (previousParts.length > 0 ? previousParts.length + 1 : undefined);
+  return { ...part, qrTotal, qrIndex };
 }
 
 export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
@@ -918,7 +988,7 @@ export function parseBuQrText(
 }
 
 /**
- * Live fiscal path: QR 1 requires zona+seção; QR 2 (SEQL/ORQR/2 de 2) does not.
+ * Live fiscal path: first QR requires zona+seção; later parts (SEQL/ORQR/N de M) do not.
  * Bind on IDUE / NR_UE / zona+seção. HASH is per-QR — never required to match.
  */
 export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): ParsedBu {
@@ -952,7 +1022,7 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
     ) {
       throw new BuParseError("Este QR é de outra urna.", debug);
     }
-    return inheritQrZonaSecao(parsed, first);
+    return inheritQrSetMeta(inheritQrZonaSecao(parsed, first), previousParts);
   }
 
   if (!parsed.zona || !parsed.secao) {

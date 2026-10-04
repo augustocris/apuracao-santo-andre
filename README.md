@@ -4,7 +4,7 @@ PWA for parallel ballot-box counting (fiscais scan BU QR codes; admin TV dashboa
 
 The **`/telao`** view is the public TV screen: compact header (**Apuração Antecipada - Santo André**), slim Enviadas/Faltam + % Progresso bars, and five cargo cards (Dep. Estadual, Dep. Federal, Senador 1, Senador 2, Governador). Photos sit on the right at card height with a 3:4 proportion (`object-contain`). Dep. Estadual/Federal celebrate vote milestones (50 mil / 100.000 / 150.000 / +10 mil) with confetti. No PIN.
 
-**`/admin`** is the operator panel only (Cadastro, BUs pendentes, Digitar BU). Link **Abrir telão** → `/telao`.
+**`/admin`** is the operator panel only (Cadastro, BUs pendentes, Digitar BU), behind PIN **Acesso admin**. Only Cristiano’s pin (`apuracao_config.chefe_pin`, fallback `andre2026`) unlocks it — other `chefes` PINs stay on `/chefe`. Session lives in `sessionStorage` until **Sair**. Link **Abrir telão** → `/telao`.
 
 ## Quick start
 
@@ -18,7 +18,7 @@ npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigi
 
 - Fiscal (mobile, só QR): [http://127.0.0.1:43127/fiscal](http://127.0.0.1:43127/fiscal)
 - Telão (TV, público): [http://127.0.0.1:43127/telao](http://127.0.0.1:43127/telao)
-- Admin (cadastro, pendentes, Digitar BU): [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
+- Admin (cadastro, pendentes, Digitar BU, PIN `andre2026`): [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
 - `/dashboard` redirects to `/telao`
 
 ## Environment
@@ -108,7 +108,7 @@ PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe**
 5. Depois da confirmação do servidor: **Zona … seção … enviada com sucesso. Vá para a próxima.** A tela volta sozinha ao idle em ~4 s.
 6. Duplicata `(zona, seção)` = **já enviada**. Zona fora de `zonas_config` = **Zona não é de Santo André** (não é erro de câmera; não grava). Parser recusou → texto bruto vai para `/admin` → **BUs pendentes**.
 7. **Deu erro? Foto no WhatsApp** tira foto do BU (`capture=environment`) e abre o compartilhar do sistema com o arquivo (`navigator.share({ files, text })`) para mandar à central. Não tenta ler QR nessa foto. Sem Web Share: Compartilhar / Baixar + `wa.me`.
-8. Digitação fica em `/admin` → **Digitar BU**, atrás do PIN do chefe.
+8. Digitação fica em `/admin` → **Digitar BU**, atrás do PIN do admin (`andre2026`).
 
 WhatsApp da central: campo `whatsapp_suporte` em `apuracao_config`, editável no Cadastro. Vazio = “peça o WhatsApp à central”. O badge **Fonte: Supabase** vs **Fonte: MOCK** continua só no Cadastro admin.
 
@@ -127,7 +127,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. 
 2. Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set for **Production**, then **Redeploy** (env changes need a new build for `NEXT_PUBLIC_*`).
 3. Open `/admin` — header must show **modo supabase** (not mock). Cadastro badge: **Fonte: Supabase**.
 4. Run SQL migrations `001` … `012` on Supabase. **010 é a allowlist das 6 zonas** (`ingest_bu_completo` recusa zona fora; seed só se `zonas_config` estiver vazio). **011** é acessos chefe + favoritos por PIN. **012** (ou **008**) é `sq_candidato` para fotos de urna. **009** é WhatsApp + fila de erro. A Vercel não executa SQL.
-5. Point fiscales to `/fiscal`, telão to `/telao`, admin to `/admin`, chefe to `/chefe` (PIN padrão `andre2026`). Favoritos no ranking do chefe exigem a 011.
+5. Point fiscales to `/fiscal`, telão to `/telao` (público), admin to `/admin` (PIN do Cristiano: `apuracao_config.chefe_pin` ou `andre2026`; outros PINs da tabela `chefes` não entram), chefe to `/chefe` (PIN por pessoa). Favoritos no ranking do chefe exigem a 011.
 
 ## Stack
 

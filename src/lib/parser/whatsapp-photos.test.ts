@@ -71,6 +71,15 @@ describe("assembleWhatsappPhotos", () => {
     assert.equal(nextMissingQrIndex(later.primary), 4);
   });
 
+  it("assembles a 2-QR BU from one still that decoded both 01/02 and 02/02", () => {
+    const batch = assembleWhatsappPhotos([QR1_B, QR2_B]);
+    assert.equal(batch.read, 2);
+    assert.equal(isQrSetComplete(batch.primary), true);
+    const merged = assertQrSetReadyToIngest(batch.primary);
+    assert.equal(merged.zona, "247");
+    assert.equal(merged.urnaId, "99");
+  });
+
   it("counts photos that did not decode as failed", () => {
     const batch = assembleWhatsappPhotos([QR1_A, "", "not a bu"]);
     assert.equal(batch.read, 1);

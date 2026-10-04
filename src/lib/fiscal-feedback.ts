@@ -20,8 +20,15 @@ export interface FiscalFeedback {
 
 export const DUPLICATE_URNA_TITLE = "BU já enviada";
 
-export function duplicateUrnaMessage(zona: string, secao: string): string {
-  return `BU já enviada — zona ${zona} seção ${secao}.`;
+export function duplicateUrnaMessage(
+  zona: string,
+  secao: string,
+  urnaId?: string | null
+): string {
+  const idue = urnaId?.trim();
+  return idue
+    ? `BU já enviada — zona ${zona} seção ${secao} · urna ${idue}.`
+    : `BU já enviada — zona ${zona} seção ${secao}.`;
 }
 
 export function fiscalSuccessMessage(zona: string, secao: string): string {
@@ -73,15 +80,34 @@ export function waitingNextQrLabel(
 }
 
 export function waitingFirstQrLabel(): FiscalFeedback {
+  return heldContinuationFeedback(2, 2);
+}
+
+/** QR 2+ arrived first (no zona on that part). Never say allowlist / Zona não encontrada. */
+export function heldContinuationFeedback(index = 2, total = 2): FiscalFeedback {
+  const i = Math.max(2, Math.floor(index) || 2);
+  const t = Math.max(i, Math.floor(total) || i);
   return {
     kind: "incomplete_qr",
-    title: "Falta o 1º QR",
+    title: `QR ${i} lido — filme o QR 1`,
     cause: "",
-    nextStep: "Filme o QR de cima (zona e seção). O 2º já ficou guardado.",
+    nextStep: `O ${i}º QR de ${t} ficou guardado. Filme o QR de cima (zona e seção).`,
   };
 }
 
 /** Instant confirmation that the camera actually decoded a QR. */
+export function qr1HeldNoZonaFeedback(index = 1, total = 2): FiscalFeedback {
+  const i = Math.max(1, Math.floor(index) || 1);
+  const t = Math.max(i, Math.floor(total) || i);
+  return {
+    kind: "incomplete_qr",
+    title: t > 1 ? `QR ${i} lido — filme o outro QR` : "QR lido",
+    cause: "",
+    nextStep:
+      "A zona não veio neste código. Filme o próximo QR. Se ainda faltar, escolha a zona no fim.",
+  };
+}
+
 export function qrReadFeedback(index: number, total = 0): FiscalFeedback {
   const i = Math.max(1, Math.floor(index) || 1);
   const t = Math.max(i, Math.floor(total) || i);
@@ -137,12 +163,19 @@ export function incompleteQrFeedback(index: number, total: number): FiscalFeedba
   };
 }
 
-export function duplicateFeedback(zona: string, secao: string): FiscalFeedback {
+export function duplicateFeedback(
+  zona: string,
+  secao: string,
+  urnaId?: string | null
+): FiscalFeedback {
+  const idue = urnaId?.trim();
   return {
     kind: "duplicate",
     title: DUPLICATE_URNA_TITLE,
     cause: "",
-    nextStep: `Zona ${zona} seção ${secao} já foi gravada. Próxima urna.`,
+    nextStep: idue
+      ? `Zona ${zona} seção ${secao} · urna ${idue} já foi gravada. A outra urna desta seção pode entrar.`
+      : `Zona ${zona} seção ${secao} já foi gravada. Próxima urna.`,
   };
 }
 

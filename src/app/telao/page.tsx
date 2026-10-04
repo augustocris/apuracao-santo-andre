@@ -1,15 +1,30 @@
 import type { Metadata } from "next";
-import { TelaoScreen } from "@/components/admin/TelaoScreen";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Telão — Apuração Antecipada - Santo André",
-  description: "Telão ao vivo da apuração antecipada — Santo André.",
+  title: "Telão desligado — Santo André",
+  description: "O telão está desligado. Use o /chefe.",
 };
 
-export default function TelaoPage() {
+/** Sunday load: static page only — no live dashboard, no Realtime, no poll. */
+export default function TelaoOffPage() {
   return (
-    <main className="theme-admin dark flex h-[100dvh] min-h-0 flex-1 flex-col overflow-hidden">
-      <TelaoScreen />
+    <main className="flex min-h-[100dvh] flex-1 flex-col items-center justify-center bg-slate-950 px-6 py-10 text-center text-slate-100">
+      <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+        Apuração Santo André
+      </p>
+      <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+        Telão desligado
+      </h1>
+      <p className="mt-3 max-w-md text-base text-slate-300">
+        A tela grande não atualiza mais. Acompanhe a apuração no chefe.
+      </p>
+      <Link
+        href="/chefe"
+        className="mt-8 inline-flex h-12 items-center justify-center rounded-lg bg-teal-600 px-6 text-base font-bold text-white hover:bg-teal-500"
+      >
+        Abrir /chefe
+      </Link>
     </main>
   );
 }

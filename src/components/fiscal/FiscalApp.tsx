@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { BuScanner } from "@/components/fiscal/BuScanner";
 import { ConfirmTransmitModal } from "@/components/fiscal/ConfirmTransmitModal";
 import { FiscalErrorCard, FiscalSuccessCard } from "@/components/fiscal/FiscalFeedback";
+import { ZonaConfirmPanel } from "@/components/fiscal/ZonaConfirmPanel";
 import { Button } from "@/components/ui/button";
 import {
   getConfig,
@@ -27,7 +28,8 @@ import {
   qrMismatchFeedback,
   SUCCESS_CLEAR_MS,
   unreadWhatsappPhotosFeedback,
-  waitingFirstQrLabel,
+  heldContinuationFeedback,
+  qr1HeldNoZonaFeedback,
   waitingNextQrLabel,
   wrongBuFeedback,
   zonaForaFeedback,
@@ -43,8 +45,11 @@ import {
   nextMissingQrIndex,
   parseBuQrText,
   parseFiscalQrChunk,
+  describeQrPayloadKeys,
   parseQrbuMeta,
   peekZonaSecao,
+  IgnoreNonBuFrameError,
+  looksLikeTseBuQr,
   SameQrRepeatError,
   SAMPLE_TSE_QR_TEXT,
   sameQrPayload,
@@ -97,6 +102,7 @@ export function FiscalApp() {
   const [leftover, setLeftover] = useState<ParsedBu[]>([]);
   const [scanNonce, setScanNonce] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [needZonaPick, setNeedZonaPick] = useState(false);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const fragmentsRef = useRef<ParsedBu[]>([]);
   fragmentsRef.current = fragments;
@@ -161,7 +167,7 @@ export function FiscalApp() {
         const missing = nextMissingQrIndex(held);
         setFeedback(
           missing === 1
-            ? waitingFirstQrLabel()
+            ? heldContinuationFeedback(progress.index, progress.total)
             : qrReadFeedback(progress.index, progress.total)
         );
       } else {
@@ -194,6 +200,18 @@ export function FiscalApp() {
     setFeedback(null);
     setSuccess(null);
     try {
+      if (!merged.zona || !merged.secao) {
+        setNeedZonaPick(true);
+        setParsed(merged);
+        setConfirmOpen(false);
+        setFeedback(qr1HeldNoZonaFeedback(merged.qrIndex ?? 1, merged.qrTotal ?? 2));
+        await persistParseFailure(
+          merged.rawText,
+          `QR1 sem zona. ${describeQrPayloadKeys(merged.rawText)}`
+        );
+        return;
+      }
+
       const zona = padZona(merged.zona);
       const secao = padSecao(merged.secao);
 
@@ -203,8 +221,8 @@ export function FiscalApp() {
         return;
       }
 
-      if (await urnaJaCadastrada(zona, secao)) {
-        setFeedback(duplicateFeedback(zona, secao));
+      if (await urnaJaCadastrada(zona, secao, merged.urnaId)) {
+        setFeedback(duplicateFeedback(zona, secao, merged.urnaId));
         setConfirmOpen(false);
         return;
       }
@@ -257,9 +275,9 @@ export function FiscalApp() {
       if (
         donor?.zona &&
         donor.secao &&
-        (await urnaJaCadastrada(donor.zona, donor.secao))
+        (await urnaJaCadastrada(donor.zona, donor.secao, donor.urnaId))
       ) {
-        setFeedback(duplicateFeedback(donor.zona, donor.secao));
+        setFeedback(duplicateFeedback(donor.zona, donor.secao, donor.urnaId));
         setScanNonce((n) => n + 1);
         return;
       }
@@ -272,19 +290,22 @@ export function FiscalApp() {
       const leftoverInfo =
         leftoverParts.length > 0 ? leftoverUrnaSummary(leftoverParts) : null;
 
-      if (!isQrSetComplete(nextFragments)) {
-        const missing = nextMissingQrIndex(nextFragments);
-        const progress = describeQrProgress(nextFragments);
-        setFeedback(
-          leftoverInfo
-            ? leftoverUrnaFeedback(leftoverInfo.urnaId, leftoverInfo.qrLabel)
-            : missing === 1
-              ? waitingFirstQrLabel()
-              : qrReadFeedback(progress.index, progress.total)
-        );
-        setConfirmOpen(false);
-        return;
-      }
+        if (!isQrSetComplete(nextFragments)) {
+          const missing = nextMissingQrIndex(nextFragments);
+          const progress = describeQrProgress(nextFragments);
+          const noZona = !nextFragments.some((p) => p.zona);
+          setFeedback(
+            leftoverInfo
+              ? leftoverUrnaFeedback(leftoverInfo.urnaId, leftoverInfo.qrLabel)
+              : missing === 1
+                ? heldContinuationFeedback(progress.index, progress.total)
+                : noZona
+                  ? qr1HeldNoZonaFeedback(progress.index, progress.total)
+                  : qrReadFeedback(progress.index, progress.total)
+          );
+          setConfirmOpen(false);
+          return;
+        }
 
       const merged = assertQrSetReadyToIngest(nextFragments);
       await openConfirmFromMerged(merged);
@@ -312,13 +333,10 @@ export function FiscalApp() {
 
   const handleRawText = useCallback(
     async (raw: string) => {
-      const metaEarly = parseQrbuMeta(raw);
-      setFeedback(
-        qrReadFeedback(
-          metaEarly?.index ?? fragmentsRef.current.length + 1,
-          metaEarly?.total ?? 0
-        )
-      );
+      if (!looksLikeTseBuQr(raw)) {
+        setScanNonce((n) => n + 1);
+        return;
+      }
       setProcessing(true);
       setSuccess(null);
       try {
@@ -342,9 +360,9 @@ export function FiscalApp() {
           previous.length === 0 &&
           result.zona &&
           result.secao &&
-          (await urnaJaCadastrada(result.zona, result.secao))
+          (await urnaJaCadastrada(result.zona, result.secao, result.urnaId))
         ) {
-          setFeedback(duplicateFeedback(result.zona, result.secao));
+          setFeedback(duplicateFeedback(result.zona, result.secao, result.urnaId));
           setScanNonce((n) => n + 1);
           return;
         }
@@ -367,13 +385,28 @@ export function FiscalApp() {
         if (!isQrSetComplete(nextFragments)) {
           const missing = nextMissingQrIndex(nextFragments);
           const progress = describeQrProgress(nextFragments);
+          const noZona = !result.zona && !nextFragments.some((p) => p.zona);
+          if (noZona) {
+            void persistParseFailure(
+              raw,
+              `QR sem zona. ${describeQrPayloadKeys(raw)}`
+            );
+          }
           setFeedback(
             missing === 1
-              ? waitingFirstQrLabel()
-              : qrReadFeedback(
+              ? heldContinuationFeedback(
                   result.qrIndex ?? progress.index,
                   result.qrTotal ?? progress.total
                 )
+              : noZona
+                ? qr1HeldNoZonaFeedback(
+                    result.qrIndex ?? progress.index,
+                    result.qrTotal ?? progress.total
+                  )
+                : qrReadFeedback(
+                    result.qrIndex ?? progress.index,
+                    result.qrTotal ?? progress.total
+                  )
           );
           setConfirmOpen(false);
           return;
@@ -382,7 +415,10 @@ export function FiscalApp() {
         const merged = assertQrSetReadyToIngest(nextFragments);
         await openConfirmFromMerged(merged);
       } catch (err) {
-        if (err instanceof SameQrRepeatError) {
+        if (
+          err instanceof SameQrRepeatError ||
+          err instanceof IgnoreNonBuFrameError
+        ) {
           setScanNonce((n) => n + 1);
           return;
         }
@@ -392,11 +428,34 @@ export function FiscalApp() {
           err instanceof Error ? err.message : "Falha ao processar o BU.";
         const meta = parseQrbuMeta(raw);
         if (
+          /Zona não encontrada|Zona não veio|Zona ou seção ausente|Zona\/seção ausentes/i.test(
+            cause
+          )
+        ) {
+          void persistParseFailure(raw, describeQrPayloadKeys(raw));
+          if (isContinuationSequence(meta)) {
+            setFeedback(
+              heldContinuationFeedback(meta?.index ?? 2, meta?.total ?? 2)
+            );
+          } else if (looksLikeTseBuQr(raw)) {
+            setFeedback(
+              qr1HeldNoZonaFeedback(meta?.index ?? 1, meta?.total ?? 2)
+            );
+          }
+          setScanNonce((n) => n + 1);
+          return;
+        }
+        if (
           fragmentsRef.current.length === 0 &&
-          isContinuationSequence(meta) &&
+          (isContinuationSequence(meta) ||
+            /Filme o QR de cima|1º/i.test(cause)) &&
           !(err instanceof WrongBuError)
         ) {
-          setFeedback(waitingFirstQrLabel());
+          setFeedback(
+            isContinuationSequence(meta)
+              ? heldContinuationFeedback(meta?.index ?? 2, meta?.total ?? 2)
+              : qr1HeldNoZonaFeedback(meta?.index ?? 1, meta?.total ?? 2)
+          );
           setScanNonce((n) => n + 1);
           return;
         }
@@ -462,10 +521,35 @@ export function FiscalApp() {
           )
         : null
     );
+    setNeedZonaPick(false);
     setConfirmOpen(false);
     setParsed(null);
     setRows([]);
     setDiscovered([]);
+  }
+
+  function handleManualZona(zona: string, secao: string) {
+    const z = padZona(zona);
+    const s = padSecao(secao);
+    if (isZonaForaDaCidade(z, zonasConfigRef.current)) {
+      setFeedback(zonaForaFeedback(z));
+      return;
+    }
+    const next = fragmentsRef.current.map((part) => ({
+      ...part,
+      zona: part.zona || z,
+      secao: part.secao || s,
+    }));
+    fragmentsRef.current = next;
+    writeQrSession(next);
+    setFragments(next);
+    setNeedZonaPick(false);
+    const merged = {
+      ...assertQrSetReadyToIngest(next),
+      zona: z,
+      secao: s,
+    };
+    void openConfirmFromMerged(merged);
   }
 
   function handleStartLeftoverBu() {
@@ -490,8 +574,8 @@ export function FiscalApp() {
     setTransmitting(true);
     setFeedback(null);
     try {
-      if (await urnaJaCadastrada(parsed.zona, parsed.secao)) {
-        setFeedback(duplicateFeedback(parsed.zona, parsed.secao));
+      if (await urnaJaCadastrada(parsed.zona, parsed.secao, parsed.urnaId)) {
+        setFeedback(duplicateFeedback(parsed.zona, parsed.secao, parsed.urnaId));
         setConfirmOpen(false);
         return;
       }
@@ -499,6 +583,7 @@ export function FiscalApp() {
       const result = await transmitBuCompleto({
         zona: parsed.zona,
         secao: parsed.secao,
+        urnaId: parsed.urnaId ?? null,
         rawText: parsed.rawText,
         votes: [
           ...rows.map((r) => ({
@@ -514,7 +599,7 @@ export function FiscalApp() {
 
       if (!result.ok) {
         if (result.duplicate) {
-          setFeedback(duplicateFeedback(parsed.zona, parsed.secao));
+          setFeedback(duplicateFeedback(parsed.zona, parsed.secao, parsed.urnaId));
         } else {
           setFeedback(feedbackFromError(result.message, parsed));
         }
@@ -523,6 +608,7 @@ export function FiscalApp() {
       }
 
       setSuccess({ zona: parsed.zona, secao: parsed.secao });
+      setNeedZonaPick(false);
       setConfirmOpen(false);
       setParsed(null);
       setRows([]);
@@ -544,7 +630,7 @@ export function FiscalApp() {
   const progress = describeQrProgress(fragments);
   const awaitingMore = fragments.length > 0 && !progress.complete;
   const preview = pickConfirmPreview(rows, discovered);
-  const showIdleLine = !success && !confirmOpen && !awaitingMore;
+  const showIdleLine = !success && !confirmOpen && !needZonaPick && !awaitingMore;
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-lg flex-col gap-4 px-3 py-4 sm:px-4">
@@ -579,7 +665,14 @@ export function FiscalApp() {
         ) : null}
       </div>
 
-      {success ? null : confirmOpen ? (
+      {success ? null : needZonaPick ? (
+        <ZonaConfirmPanel
+          zonas={zonasConfig}
+          secao={parsed?.secao ?? fragments.find((p) => p.secao)?.secao ?? ""}
+          onConfirm={handleManualZona}
+          onCancel={handleCancelFragments}
+        />
+      ) : confirmOpen ? (
         <ConfirmTransmitModal
           open={confirmOpen}
           onOpenChange={(open) => {

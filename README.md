@@ -2,7 +2,7 @@
 
 PWA for parallel ballot-box counting (fiscais scan BU QR codes; admin TV dashboard shows live results). Built with Next.js App Router, TypeScript, Tailwind CSS, Supabase, and a mock fallback for local demos without credentials.
 
-The **`/telao`** view is the public TV screen: compact header (**Apuração Antecipada - Santo André**), slim Enviadas/Faltam + % Progresso bars, and five cargo cards (Dep. Estadual, Dep. Federal, Senador 1, Senador 2, Governador). Photos sit on the right at card height with a 3:4 proportion (`object-contain`). Dep. Estadual/Federal celebrate vote milestones (50 mil / 100.000 / 150.000 / +10 mil) with confetti. No PIN.
+The **`/telao`** route is **desligado** on Sunday: static “Telão desligado”, **zero** `fetchDashboard` / Realtime / poll. Acompanhe no **`/chefe`**.
 
 **`/admin`** is the operator panel only (Cadastro, Digitar BU), behind PIN **Acesso admin**. Only Cristiano’s pin (`apuracao_config.chefe_pin`, fallback `andre2026`) unlocks it — other `chefes` PINs stay on `/chefe`. Session lives in `sessionStorage` until **Sair**. Link **Abrir telão** → `/telao`. **BUs pendentes** abre `/admin/pendentes` e **BUs recebidas** abre `/admin/bus-recebidas` (nova aba, mesmo PIN). As duas rotas pintam o cabeçalho na hora; o fetch tem timeout e não baixa o catálogo.
 
@@ -50,6 +50,7 @@ In `/admin` → Cadastro the badge **Fonte: Supabase** vs **Fonte: MOCK** shows 
    - [`supabase/migrations/010_zona_allowlist.sql`](supabase/migrations/010_zona_allowlist.sql) — allowlist das 6 zonas de Santo André no ingest
    - [`supabase/migrations/011_chefes_favoritos.sql`](supabase/migrations/011_chefes_favoritos.sql) — tabelas `chefes` + `chefe_favoritos`; seed Cristiano / `andre2026`
    - [`supabase/migrations/012_sq_candidato_fotos.sql`](supabase/migrations/012_sq_candidato_fotos.sql) — garante `candidatos.sq_candidato` (idempotente com a 008) para casar fotos de urna
+   - [`supabase/migrations/013_urna_id_duas_bus.sql`](supabase/migrations/013_urna_id_duas_bus.sql) — `urna_id` (IDUE); duas BUs na mesma seção; unique (zona, seção, IDUE, candidato)
 3. Copy Project URL + anon key into `.env.local` (and Vercel env).
 4. Confirm Realtime is enabled for `boletins_urna` (Database → Replication).
 
@@ -105,10 +106,10 @@ PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe**
 
 1. Abra `/fiscal` no celular (PWA). **Só QR** — sem digitação e sem colar texto. Sem telão/realtime em segundo plano. Câmera só depois de **Filmar o QR**; solta ao enviar, parar ou ir para segundo plano.
 2. Tela inicial: título **Apuração Santo André**, a linha **Clique abaixo e Filme o QRCODE da BU.** e o botão verde **Filmar o QR**. Sem badge Fonte SUPABASE/MOCK.
-3. BUs com **N QRs** (`1 de 2`, `01/04`…`04/04`, `---------- 02 / 04 ----------`, SEQL/ORQR) **não gravam** até o último. A câmera **continua aberta** depois do 1º. No decode aparece **QR lido 1/N**. **Fotos do WhatsApp** escolhe várias fotos da galeria (até 12; uma BU junta até 8 QRs, em geral 2–4) e monta o mesmo conjunto por IDUE/NR_UE. Se misturar duas urnas, mostra o IDUE/QR que sobrou. Se o 2º entrar antes, fica guardado e pede o 1º. Liga por IDUE/NR_UE, não HASH. **BU errada** só quando o IDUE é de outra urna. O visor precisa ter tamanho real (não 0×0); se o html5-qrcode não amostrar o frame, um segundo passe lê o `<video>` pelos pixels intrínsecos.
+3. BUs com **N QRs** (`1 de 2`, `01/04`…`04/04`, `---------- 02 / 04 ----------`, SEQL/ORQR) **não gravam** até o último. A câmera **continua aberta** depois do 1º. No decode aparece **QR lido 1/N**. Uma foto com os dois QRs (01/02 + 02/02) decodifica os dois. Chave oficial de zona no QRBU é **`ZONA`**; o parser também lê `NR_ZONA`, `ZN`, `ZE`, `Zona eleitoral`. Se o 01/xx não trouxer zona, **não pisca vermelho** — guarda o QR, pede o resto, e no fim o fiscal escolhe entre as 6 zonas (383, 307, 306, 264, 263, 156). **Fotos do WhatsApp** escolhe várias fotos da galeria (até 12; uma BU junta até 8 QRs, em geral 2–4) e monta o mesmo conjunto por IDUE/NR_UE. Se misturar duas urnas, mostra o IDUE/QR que sobrou. Se o 2º entrar antes, fica guardado e pede o 1º. Liga por IDUE/NR_UE, não HASH. **BU errada** só quando o IDUE é de outra urna. O visor precisa ter tamanho real (não 0×0); se o html5-qrcode não amostrar o frame, um segundo passe lê o `<video>` pelos pixels intrínsecos.
 4. Confirmação: **Confirme a zona = …, seção = …**, votos de **um** candidato oficial da campanha que apareceu neste BU (se nenhum dos 5, um candidato parseado). Botão **Enviar**. Opcional: **Filmar de novo**. Sem edição de votos.
 5. Depois da confirmação do servidor: **Zona … seção … enviada com sucesso. Vá para a próxima.** A tela volta sozinha ao idle em ~4 s.
-6. Duplicata `(zona, seção)` = **já enviada**. Zona fora de `zonas_config` = **Zona não é de Santo André** (não é erro de câmera; não grava). Parser recusou → texto bruto vai para `/admin/pendentes`.
+6. Duplicata é `(zona, seção, IDUE)` — a mesma seção pode ter **2 BUs**. Frame lixo da câmera não pisca vermelho. Zona fora de `zonas_config` = **Zona não é de Santo André**. Parser recusou (BU de verdade) → `/admin/pendentes`.
 7. Se a câmera não ler: **Foto do QR** tira foto e **decodifica** o QR. Se ainda falhar, **Foto no WhatsApp** manda o arquivo à central (`navigator.share` / Compartilhar / Baixar + `wa.me`).
 8. Digitação fica em `/admin` → **Digitar BU**, atrás do PIN do admin (`andre2026`).
 
@@ -116,12 +117,7 @@ WhatsApp da central: campo `whatsapp_suporte` em `apuracao_config`, editável no
 
 ## Telão (`/telao`)
 
-Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. **Público, sem PIN.**
-
-- Progress: **enviadas / faltam** (vs `secoes_esperadas` do cadastro)
-- Cards compactos: texto à esquerda, **foto proporcional à direita** (altura do card, 3:4, `object-contain`; sem foto → número). Nome em até 2 linhas. **Votos e % cabem inteiros** no miolo (não cortam no fundo do card).
-- Marcos Dep. Estadual/Federal: confete só quando o voto **cruza** o limiar ao vivo; marcos já celebrados ficam em `sessionStorage` (não repetem ao reabrir o telão)
-- Supabase Realtime when configured (one channel, reconnect with backoff). Polling 12–15s only if Realtime is down **and** the first fetch already succeeded; until then, retry every 4s. `/telao` and `/chefe` pintam na hora (cards/pins vazios) e o fetch tem timeout de 8s. `/fiscal` does not subscribe. Close extra `/telao` `/chefe` `/admin` tabs on Sunday.
+**Desligado.** Página estática, sem poll, sem Realtime, sem `fetchDashboard`. Use `/chefe`. `/fiscal` não assina live. Feche abas extras de `/chefe` e `/admin` no domingo.
 
 ## Deploy (Vercel + Supabase)
 

@@ -33,6 +33,11 @@ import {
   LIVE_FRAME_FALLBACK_AFTER_MS,
   LIVE_FRAME_INTERVAL_MS,
 } from "@/lib/live-frame-scan";
+import {
+  decodeAllQrsFromFile,
+  decodeAllQrsFromVideo,
+} from "@/lib/decode-multi-qr-browser";
+import { hasFirstOrZonaQr, preferFirstOrZonaQr } from "@/lib/decode-multi-qr";
 import { parseQrbuMeta, sameQrPayload } from "@/lib/parser/bu-qr";
 import { MAX_WHATSAPP_PHOTOS } from "@/lib/parser/whatsapp-photos";
 import {
@@ -281,6 +286,64 @@ export function BuScanner({
     deliverScan(pending);
   }
 
+  async function scanFileOnce(file: File): Promise<string | null> {
+    const scanner = scannerFactory("bu-qr-file-reader");
+    try {
+      const text = await scanner.scanFile(file, false);
+      return text?.trim() ? text : null;
+    } catch {
+      return null;
+    } finally {
+      try {
+        scanner.clear();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  function deliverDecodedTexts(texts: string[], fromPhoto = false) {
+    const ordered = preferFirstOrZonaQr(texts);
+    if (ordered.length === 0) return;
+    if (onPhotosDecoded && ordered.length > 1) {
+      if (
+        !fromPhoto &&
+        !shouldAcceptLiveDecode({
+          fromPhoto,
+          handled: handledRef.current,
+          busy: busyRef.current,
+          sessionLive: sessionLiveRef.current,
+          ignoreUntil: ignoreUntilRef.current,
+          now: Date.now(),
+        })
+      ) {
+        pendingDecodeRef.current = ordered[0];
+        return;
+      }
+      handledRef.current = true;
+      pendingDecodeRef.current = null;
+      const meta = parseQrbuMeta(ordered[0]);
+      setLiveReadLabel(
+        qrReadFeedback(meta?.index ?? 1, meta?.total ?? 0).title
+      );
+      onPhotosDecoded(ordered);
+      return;
+    }
+    deliverScan(ordered[0], fromPhoto);
+  }
+
+  async function enrichLiveDecode(first: string) {
+    if (hasFirstOrZonaQr([first])) {
+      deliverDecodedTexts([first]);
+      return;
+    }
+    const video = readerRoot()?.querySelector("video");
+    const extra = video
+      ? await decodeAllQrsFromVideo(video, scanFileOnce, "prefer-first")
+      : [];
+    deliverDecodedTexts([first, ...extra]);
+  }
+
   function deliverScan(text: string, fromPhoto = false) {
     if (
       !shouldAcceptLiveDecode({
@@ -369,9 +432,17 @@ export function BuScanner({
     }
     frameBusyRef.current = true;
     try {
+      const video = readerRoot()?.querySelector("video");
+      const many = video
+        ? await decodeAllQrsFromVideo(video, scanFileOnce, "prefer-first")
+        : [];
+      if (many.length > 0 && !handledRef.current) {
+        deliverDecodedTexts(many);
+        return;
+      }
       const text = await decodeLiveVideoFrame();
       if (text && !handledRef.current) {
-        deliverScan(text);
+        void enrichLiveDecode(text);
       }
     } finally {
       frameBusyRef.current = false;
@@ -410,7 +481,7 @@ export function BuScanner({
           ? { videoConstraints: attempt.videoConstraints }
           : {}),
       },
-      (decoded) => deliverScan(decoded),
+      (decoded) => void enrichLiveDecode(decoded),
       () => undefined
     );
     hardenLiveVideo(readerRoot());
@@ -550,19 +621,6 @@ export function BuScanner({
     }
   }
 
-  async function decodeQrFromPhoto(file: File): Promise<string> {
-    const scanner = scannerFactory("bu-qr-file-reader");
-    try {
-      return await scanner.scanFile(file, false);
-    } finally {
-      try {
-        scanner.clear();
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
   async function handlePhotoOfQr(file: File | undefined) {
     if (!file || busy) return;
     setError(null);
@@ -570,9 +628,9 @@ export function BuScanner({
     setPhotoBusyLabel("Lendo foto…");
     try {
       await stopScanner();
-      const text = await decodeQrFromPhoto(file);
-      if (!text.trim()) throw new Error("empty qr");
-      deliverScan(text, true);
+      const texts = await decodeAllQrsFromFile(file, scanFileOnce);
+      if (texts.length === 0) throw new Error("empty qr");
+      deliverDecodedTexts(texts, true);
     } catch {
       setError(
         "Não deu para ler o QR nesta foto. Tente outra foto mais perto, ou mande no WhatsApp."
@@ -597,8 +655,9 @@ export function BuScanner({
       for (let i = 0; i < picked.length; i += 1) {
         setPhotoBusyLabel(`Lendo foto ${i + 1}/${picked.length}…`);
         try {
-          const text = await decodeQrFromPhoto(picked[i]);
-          texts.push(text?.trim() ? text : "");
+          const decoded = await decodeAllQrsFromFile(picked[i], scanFileOnce);
+          if (decoded.length === 0) texts.push("");
+          else texts.push(...decoded);
         } catch {
           texts.push("");
         }

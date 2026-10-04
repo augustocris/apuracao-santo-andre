@@ -27,9 +27,20 @@ const METADATA_KEYS = new Set(
     "UNFE",
     "MUNI",
     "ZONA",
+    "NR_ZONA",
+    "NRZONA",
+    "CD_ZONA",
+    "CDZONA",
+    "NUMZONA",
+    "ZE",
+    "ZN",
     "SECA",
     "SECAO",
     "SEÇÃO",
+    "NR_SECAO",
+    "NRSECAO",
+    "NR_SECA",
+    "CD_SECAO",
     "AGRE",
     "IDUE",
     "IDCA",
@@ -80,17 +91,32 @@ const METADATA_KEYS = new Set(
   ].map((k) => k.toUpperCase())
 );
 
-const ZONA_PATTERNS = [
-  /ZONA\s*:\s*(\d+)/i,
-  /Zona\s+Eleitoral\s*:?\s*(\d+)/i,
-  /ZONA\s+ELEITORAL\s*:?\s*(\d+)/i,
+/** Official TSE QR-BU part 1 field. QR2+ omits it. */
+export const TSE_QR1_ZONA_KEY = "ZONA";
+
+/** Wider than the 3 printed aliases — QR1 may use TSE tokens or glued OCR. */
+export const ZONA_FIELD_SPECS: Array<{ key: string; re: RegExp }> = [
+  { key: "NR_ZONA", re: /\bNR[_.\s-]*ZONA\s*:?\s*(\d{1,5})/i },
+  { key: "CD_ZONA", re: /\bCD[_.\s-]*ZONA\s*:?\s*(\d{1,5})/i },
+  { key: "NUMZONA", re: /\bNUM[_.\s-]*ZONA\s*:?\s*(\d{1,5})/i },
+  { key: "Municipio/Zona", re: /Munic[ií]pio[^\n]{0,48}?Zona\s*:?\s*(\d{1,5})/i },
+  { key: "ZonaEleitoral", re: /Zona\s*Eleitoral\s*:?\s*(\d{1,5})/i },
+  { key: TSE_QR1_ZONA_KEY, re: /\bZONA\s*:?\s*(\d{1,5})/i },
+  { key: "ZE", re: /\bZE\s*:?\s*(\d{1,5})\b/i },
+  { key: "ZN", re: /\bZN\s*:?\s*(\d{1,5})\b/i },
+  { key: "UN", re: /\bUN\s*:\s*(\d{1,5})\b/i },
 ];
 
+const ZONA_PATTERNS = ZONA_FIELD_SPECS.map((spec) => spec.re);
+
 const SECAO_PATTERNS = [
-  /SEC(?:A|AO|ÇÃO|CAO)\s*:\s*(\d+)/i,
-  /Secao\s+Eleitoral\s*:?\s*(\d+)/i,
-  /Se[cç][aã]o\s+Eleitoral\s*:?\s*(\d+)/i,
-  /SE[CÇ][AÃ]O\s+ELEITORAL\s*:?\s*(\d+)/i,
+  /\bNR[_.\s-]*SEC(?:A|AO|ÇÃO|CAO)\s*:?\s*(\d{1,5})/i,
+  /\bCD[_.\s-]*SEC(?:A|AO|ÇÃO|CAO)\s*:?\s*(\d{1,5})/i,
+  /\bSEC(?:A|AO|ÇÃO|CAO)\s*:?\s*(\d{1,5})/i,
+  /Secao\s*Eleitoral\s*:?\s*(\d{1,5})/i,
+  /Se[cç][aã]o\s*Eleitoral\s*:?\s*(\d{1,5})/i,
+  /SE[CÇ][AÃ]O\s*ELEITORAL\s*:?\s*(\d{1,5})/i,
+  /\bSE\s*:\s*(\d{1,5})\b/i,
 ];
 
 /** Demo / paste: CAND:13 QTVO:142 */
@@ -545,6 +571,41 @@ export class SameQrRepeatError extends BuParseError {
   }
 }
 
+/** Camera decoded junk (table, glare). Must not flash a red parse error. */
+export class IgnoreNonBuFrameError extends BuParseError {
+  constructor() {
+    super("Frame sem BU.");
+    this.name = "IgnoreNonBuFrameError";
+  }
+}
+
+/** True only for a TSE BU payload — not a random camera false-positive. */
+export function looksLikeTseBuQr(raw: string): boolean {
+  const text = normalizePrintedBuText(decodeBuPayloadStrategies(String(raw ?? "")));
+  if (!text.trim() || looksBinaryPayload(text)) return false;
+  if (parseUrnaFingerprint(text).urnaId) return true;
+  const peek = peekZonaSecao(text);
+  if (peek.zona && peek.secao) return true;
+  if (/\b(SEQL|ORQR|QRBU|IDUE|NR_?UE)\s*:/i.test(text)) return true;
+  if (/-{2,}[^\n]*\d+\s*\/\s*\d+/.test(text)) return true;
+  const slash = text.match(/\b0*(\d{1,2})\s*\/\s*0*(\d{1,2})\b/);
+  if (slash) {
+    const index = Number.parseInt(slash[1], 10);
+    const total = Number.parseInt(slash[2], 10);
+    if (
+      Number.isFinite(index) &&
+      Number.isFinite(total) &&
+      index >= 1 &&
+      total >= 2 &&
+      total <= MAX_QR_PARTS &&
+      index <= total
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function parseComparecimento(text: string): number | null {
   const m = String(text).match(/\bCOMP\s*:\s*(\d+)/i);
   if (!m) return null;
@@ -552,13 +613,37 @@ export function parseComparecimento(text: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/** First 200 chars + every `KEY:` token — for Sunday debug when zona is missing. */
+export function describeQrPayloadKeys(raw: string): string {
+  const text = normalizePrintedBuText(decodeBuPayloadStrategies(String(raw ?? "")));
+  const head = text.replace(/\s+/g, " ").trim().slice(0, 200);
+  const keys = [
+    ...text.matchAll(/\b([A-Za-z][A-Za-z0-9_]{1,12})\s*:/g),
+  ].map((m) => m[1].toUpperCase());
+  const unique = [...new Set(keys)];
+  return `head=${head} keys=${unique.join(",") || "—"}`;
+}
+
+export function extractZonaField(
+  raw: string
+): { key: string; value: string } | null {
+  const text = normalizePrintedBuText(decodeBuPayloadStrategies(String(raw ?? "")));
+  for (const spec of ZONA_FIELD_SPECS) {
+    const m = text.match(spec.re);
+    if (m?.[1]) {
+      return { key: spec.key, value: normalizeZona(m[1]) };
+    }
+  }
+  return null;
+}
+
 export function peekZonaSecao(raw: string): { zona?: string; secao?: string } {
   try {
     const text = normalizePrintedBuText(decodeBuPayloadStrategies(String(raw)));
-    const zonaRaw = firstMatch(text, ZONA_PATTERNS);
+    const zonaHit = extractZonaField(text);
     const secaoRaw = firstMatch(text, SECAO_PATTERNS);
     return {
-      zona: zonaRaw ? normalizeZona(zonaRaw) : undefined,
+      zona: zonaHit?.value,
       secao: secaoRaw ? normalizeSecao(secaoRaw) : undefined,
     };
   } catch {
@@ -813,14 +898,12 @@ export function mergeParsedBus(parts: ParsedBu[]): ParsedBu {
   if (parts.length === 0) {
     throw new BuParseError("Nenhum QR para unir.");
   }
-  const donor = parts.find((p) => p.zona && p.secao);
-  if (!donor) {
-    throw new BuParseError(
-      "Zona/seção ausentes no conjunto de QRs. Filme primeiro o QR que traz zona e seção."
-    );
-  }
-  const zona = donor.zona;
-  const secao = donor.secao;
+  const donor =
+    parts.find((p) => p.zona && p.secao) ??
+    parts.find((p) => p.zona || p.secao) ??
+    parts[0];
+  const zona = donor.zona ?? "";
+  const secao = donor.secao ?? "";
   const urnaId = parts.find((p) => p.urnaId)?.urnaId ?? null;
   for (const part of parts) {
     if (urnaId && part.urnaId && part.urnaId !== urnaId) {
@@ -918,16 +1001,21 @@ export function parseBuQrText(
   const text = normalizePrintedBuText(decoded);
   const registered = options.registeredNumeros;
   const qrbuEarly = parseQrbuMeta(text);
+  const qrbuShape =
+    Boolean(qrbuEarly) ||
+    /\b(SEQL|ORQR|QRBU|IDUE|NR_?UE|ORIG|VRQR)\s*:/i.test(text);
   const continuation =
     options.allowMissingZonaSecao === true ||
-    isContinuationSequence(qrbuEarly);
+    isContinuationSequence(qrbuEarly) ||
+    qrbuShape;
 
-  const zonaRaw = firstMatch(text, ZONA_PATTERNS);
+  const zonaHit = extractZonaField(text);
+  const zonaRaw = zonaHit?.value ?? firstMatch(text, ZONA_PATTERNS);
   const secaoRaw = firstMatch(text, SECAO_PATTERNS);
 
   if (!zonaRaw && !continuation) {
     throw new BuParseError(
-      "Zona não encontrada no QR. Formatos aceitos: ZONA:001, Zona Eleitoral: 0001 ou ZonaEleitoral 0001."
+      `Zona não veio neste QR. ${describeQrPayloadKeys(text)}`
     );
   }
   if (!secaoRaw && !continuation) {
@@ -1032,6 +1120,10 @@ function assertSameOpenUrna(open: ParsedBu, incoming: ParsedBu): void {
  * A continuation (02/04) without an open set is held — not “BU errada”.
  */
 export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): ParsedBu {
+  if (!looksLikeTseBuQr(raw)) {
+    throw new IgnoreNonBuFrameError();
+  }
+
   const awaitingMore =
     previousParts.length > 0 && !isQrSetComplete(previousParts);
 
@@ -1040,10 +1132,13 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
   }
 
   const meta = parseQrbuMeta(decodeBuPayloadStrategies(raw));
-  const continuation = awaitingMore || isContinuationSequence(meta);
+  const continuation =
+    awaitingMore ||
+    isContinuationSequence(meta) ||
+    Boolean(meta && meta.index > 1);
   const parsed = parseBuQrText(raw, {
-    allowMissingZonaSecao: continuation,
-    allowEmptyVotes: continuation,
+    allowMissingZonaSecao: true,
+    allowEmptyVotes: continuation || !parsedHasZonaHint(meta),
   });
 
   if (awaitingMore) {
@@ -1055,16 +1150,15 @@ export function parseFiscalQrChunk(raw: string, previousParts: ParsedBu[]): Pars
     return inheritQrSetMeta(inheritQrZonaSecao(parsed, open), previousParts);
   }
 
-  if (isContinuationSequence(meta) && (!parsed.zona || !parsed.secao)) {
+  if (!parsed.zona || !parsed.secao) {
+    // Valid 01/xx without a parsed zona key: hold the chunk, never flash red.
     return inheritQrSetMeta(parsed, []);
   }
-
-  if (!parsed.zona || !parsed.secao) {
-    throw new BuParseError(
-      "Zona ou seção ausente neste QR. Filme o QR de cima (1º), o que traz zona e seção."
-    );
-  }
   return parsed;
+}
+
+function parsedHasZonaHint(meta: { index: number; total: number } | null): boolean {
+  return !meta || meta.index === 1;
 }
 
 /** Sample BU text for demos / paste fallback testing (cargos estaduais). */

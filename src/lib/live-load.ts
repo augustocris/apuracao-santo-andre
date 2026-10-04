@@ -13,6 +13,46 @@ export const FEATURED_TTL_MS = 30_000;
 export const CATALOG_TTL_MS = 20_000;
 export const LOCAIS_TTL_MS = 60_000;
 export const FETCH_BURST_MS = 1_500;
+export const LIVE_FETCH_TIMEOUT_MS = 8_000;
+export const LIVE_FETCH_RETRY_MS = 4_000;
+export const UNLOCK_TIMEOUT_MS = 5_000;
+export const CONFIG_FETCH_TIMEOUT_MS = 5_000;
+export const CATALOG_PAGE_SIZE = 400;
+export const CATALOG_MAX_ROWS = 3_200;
+export const FEATURED_FETCH_LIMIT = 80;
+
+export class LiveFetchTimeoutError extends Error {
+  constructor(ms = LIVE_FETCH_TIMEOUT_MS, label?: string) {
+    const where = label ? ` ao carregar ${label}` : "";
+    super(
+      `Tempo esgotado${where} (${Math.round(ms / 1000)}s). Tentando de novo.`
+    );
+    this.name = "LiveFetchTimeoutError";
+  }
+}
+
+export function withTimeout<T>(
+  promise: PromiseLike<T>,
+  ms: number,
+  label?: string
+): Promise<T> {
+  const budget = Math.max(250, Math.floor(ms));
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new LiveFetchTimeoutError(budget, label));
+    }, budget);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
 
 export function realtimeReconnectDelay(attempt: number): number {
   const n = Math.max(0, Math.floor(attempt));
@@ -22,12 +62,18 @@ export function realtimeReconnectDelay(attempt: number): number {
   );
 }
 
-/** Poll only when Realtime is down and the tab is visible. */
+/**
+ * Poll when Realtime is down, or until the first successful fetch.
+ * Never wait on Realtime before painting.
+ */
 export function shouldRunLivePoll(
   realtimeConnected: boolean,
-  pageHidden: boolean
+  pageHidden: boolean,
+  fetchOk = true
 ): boolean {
-  return !realtimeConnected && !pageHidden;
+  if (pageHidden) return false;
+  if (realtimeConnected && fetchOk) return false;
+  return true;
 }
 
 export function isPageHidden(): boolean {
@@ -36,6 +82,7 @@ export function isPageHidden(): boolean {
 
 export function createTtlCache<T>(): {
   get: (ttlMs: number) => T | undefined;
+  peek: () => T | undefined;
   set: (value: T) => void;
   clear: () => void;
 } {
@@ -45,6 +92,9 @@ export function createTtlCache<T>(): {
     get(ttlMs: number) {
       if (value === undefined) return undefined;
       if (Date.now() - at > ttlMs) return undefined;
+      return value;
+    },
+    peek() {
       return value;
     },
     set(next: T) {
@@ -86,6 +136,7 @@ const listeners = new Set<LiveListener>();
 let channel: { unsubscribe?: () => void } | null = null;
 let removeChannel: (() => void) | null = null;
 let realtimeOk = false;
+let liveFetchOk = false;
 let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let notifyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -111,12 +162,27 @@ function syncPolls() {
   const hidden = isPageHidden();
   for (const listener of listeners) {
     clearListenerTimer(listener);
-    if (!shouldRunLivePoll(realtimeOk, hidden)) continue;
+    if (!shouldRunLivePoll(realtimeOk, hidden, liveFetchOk)) continue;
+    const interval = liveFetchOk
+      ? listener.pollMs
+      : Math.min(listener.pollMs, LIVE_FETCH_RETRY_MS);
     listener.timer = setInterval(() => {
-      if (!shouldRunLivePoll(realtimeOk, isPageHidden())) return;
+      if (!shouldRunLivePoll(realtimeOk, isPageHidden(), liveFetchOk)) return;
       listener.onChange();
-    }, listener.pollMs);
+    }, interval);
   }
+}
+
+export function markLiveFetchOk() {
+  if (liveFetchOk) return;
+  liveFetchOk = true;
+  syncPolls();
+}
+
+export function markLiveFetchPending() {
+  if (!liveFetchOk) return;
+  liveFetchOk = false;
+  syncPolls();
 }
 
 function notifyListeners() {
@@ -255,5 +321,6 @@ export function resetLiveLoadForTests() {
     notifyTimer = null;
   }
   realtimeOk = false;
+  liveFetchOk = false;
   reconnectAttempt = 0;
 }

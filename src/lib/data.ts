@@ -48,10 +48,12 @@ import {
 import { normalizeSqCandidato } from "@/lib/chapada";
 import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
 import { pinMatchesAdmin } from "@/lib/admin-pin";
+import { buildBusRecebidasReport } from "@/lib/bus-recebidas";
 import { percentualNoCargo } from "@/lib/utils";
 import type {
   ApuracaoConfig,
   BuPendente,
+  BusRecebidasReport,
   Candidato,
   CargoRanking,
   Chefe,
@@ -1504,6 +1506,34 @@ export async function fetchDashboard(
     "supabase",
     cargoOverride
   );
+}
+
+export async function fetchBusRecebidas(): Promise<BusRecebidasReport> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return buildBusRecebidasReport(
+      getMockBoletins(),
+      getMockLocais(),
+      getMockConfig(),
+      "mock"
+    );
+  }
+
+  const [locais, boletins, config] = await Promise.all([
+    fetchAllSupabaseRows<Pick<LocalVotacao, "zona" | "secao" | "nome_escola">>(
+      supabase,
+      "locais_votacao",
+      "zona, secao, nome_escola"
+    ),
+    fetchAllSupabaseRows<{ zona: string; secao: string }>(
+      supabase,
+      "boletins_urna",
+      "zona, secao"
+    ),
+    getConfig(),
+  ]);
+
+  return buildBusRecebidasReport(boletins, locais, config, "supabase");
 }
 
 export function subscribeDashboard(

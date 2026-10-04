@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ClipboardList,
   ExternalLink,
+  ListChecks,
   LogOut,
   Settings2,
   TriangleAlert,
@@ -104,6 +105,15 @@ export function AdminDashboard() {
             <ExternalLink className="size-4" />
             Abrir telão
           </Link>
+          <a
+            href="/admin/bus-recebidas"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-white/25 bg-white/5 px-3 text-sm font-semibold text-white hover:bg-white/10"
+          >
+            <ListChecks className="size-4" />
+            BUs recebidas
+          </a>
           <div
             role="tablist"
             className="flex gap-1 rounded-xl bg-[#001a3a]/80 p-1"

@@ -158,6 +158,28 @@ export interface DashboardSnapshot {
   mode: "supabase" | "mock";
 }
 
+export interface BuRecebidaRow {
+  zona: string;
+  secao: string;
+  /** Só se `locais_votacao` já mapeia zona+seção. Senão null. */
+  escola: string | null;
+}
+
+export interface BuRecebidaZonaGroup {
+  zona: string;
+  recebidas: number;
+  rows: BuRecebidaRow[];
+}
+
+export interface BusRecebidasReport {
+  urnasRecebidas: number;
+  secoesEsperadas: number;
+  secoesFaltam: number;
+  rows: BuRecebidaRow[];
+  zonas: BuRecebidaZonaGroup[];
+  mode: "supabase" | "mock";
+}
+
 export interface TransmitPayload {
   zona: string;
   secao: string;

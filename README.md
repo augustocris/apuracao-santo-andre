@@ -4,7 +4,7 @@ PWA for parallel ballot-box counting (fiscais scan BU QR codes; admin TV dashboa
 
 The **`/telao`** view is the public TV screen: compact header (**Apuração Antecipada - Santo André**), slim Enviadas/Faltam + % Progresso bars, and five cargo cards (Dep. Estadual, Dep. Federal, Senador 1, Senador 2, Governador). Photos sit on the right at card height with a 3:4 proportion (`object-contain`). Dep. Estadual/Federal celebrate vote milestones (50 mil / 100.000 / 150.000 / +10 mil) with confetti. No PIN.
 
-**`/admin`** is the operator panel only (Cadastro, BUs pendentes, Digitar BU), behind PIN **Acesso admin**. Only Cristiano’s pin (`apuracao_config.chefe_pin`, fallback `andre2026`) unlocks it — other `chefes` PINs stay on `/chefe`. Session lives in `sessionStorage` until **Sair**. Link **Abrir telão** → `/telao`.
+**`/admin`** is the operator panel only (Cadastro, BUs pendentes, Digitar BU), behind PIN **Acesso admin**. Only Cristiano’s pin (`apuracao_config.chefe_pin`, fallback `andre2026`) unlocks it — other `chefes` PINs stay on `/chefe`. Session lives in `sessionStorage` until **Sair**. Link **Abrir telão** → `/telao`. **BUs recebidas** abre `/admin/bus-recebidas` numa nova aba (mesmo PIN): zonas/seções já gravadas em `boletins_urna`, totais e faltam.
 
 ## Quick start
 
@@ -19,6 +19,7 @@ npm run dev                  # http://127.0.0.1:43127 (webpack + allowedDevOrigi
 - Fiscal (mobile, só QR): [http://127.0.0.1:43127/fiscal](http://127.0.0.1:43127/fiscal)
 - Telão (TV, público): [http://127.0.0.1:43127/telao](http://127.0.0.1:43127/telao)
 - Admin (cadastro, pendentes, Digitar BU, PIN `andre2026`): [http://127.0.0.1:43127/admin](http://127.0.0.1:43127/admin)
+- BUs recebidas (mesmo PIN, nova aba): [http://127.0.0.1:43127/admin/bus-recebidas](http://127.0.0.1:43127/admin/bus-recebidas)
 - `/dashboard` redirects to `/telao`
 
 ## Environment
@@ -141,6 +142,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. 
 src/app/fiscal                 Mobile fiscal UI
 src/app/telao                  TV pública (5 cards)
 src/app/admin                  Painel: cadastro, pendentes, Digitar BU
+src/app/admin/bus-recebidas    Relatório de urnas já recebidas (zona+seção)
 src/components/admin/          Telão (5 slots + milestones), cadastro
 src/lib/milestones.ts          Thresholds / PT-BR labels for confetti
 src/lib/cargos.ts              Digit rules per cargo

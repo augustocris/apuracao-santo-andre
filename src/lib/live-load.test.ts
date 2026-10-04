@@ -3,12 +3,14 @@ import { afterEach, describe, it } from "node:test";
 import {
   createSingleFlight,
   createTtlCache,
+  LiveFetchTimeoutError,
   realtimeReconnectDelay,
   resetLiveLoadForTests,
   REALTIME_RECONNECT_BASE_MS,
   REALTIME_RECONNECT_MAX_MS,
   shouldRunLivePoll,
   subscribeLive,
+  withTimeout,
 } from "./live-load";
 
 afterEach(() => {
@@ -21,6 +23,24 @@ describe("live-load", () => {
     assert.equal(shouldRunLivePoll(true, false), false);
     assert.equal(shouldRunLivePoll(false, true), false);
     assert.equal(shouldRunLivePoll(true, true), false);
+    assert.equal(shouldRunLivePoll(true, false, false), true);
+  });
+
+  it("times out a hung fetch so retries are free", async () => {
+    const hung = new Promise<string>(() => undefined);
+    await assert.rejects(
+      () => withTimeout(hung, 30, "telão"),
+      LiveFetchTimeoutError
+    );
+    const single = createSingleFlight();
+    let runs = 0;
+    const work = () => {
+      runs += 1;
+      return withTimeout(new Promise<number>(() => undefined), 20);
+    };
+    await assert.rejects(() => single("dash", work), LiveFetchTimeoutError);
+    await assert.rejects(() => single("dash", work), LiveFetchTimeoutError);
+    assert.equal(runs, 2);
   });
 
   it("backs off Realtime reconnects instead of thrashing", () => {

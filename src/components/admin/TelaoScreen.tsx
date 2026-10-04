@@ -6,7 +6,7 @@ import { useMilestoneCelebrations } from "@/components/admin/MilestoneCelebratio
 import { StatsCards } from "@/components/admin/StatsCards";
 import { TelaoSlots } from "@/components/admin/TelaoSlots";
 import { fetchDashboard, subscribeDashboard } from "@/lib/data";
-import { TELAO_POLL_MS } from "@/lib/live-load";
+import { markLiveFetchOk, TELAO_POLL_MS } from "@/lib/live-load";
 import type { DashboardSnapshot } from "@/lib/types";
 
 const EMPTY: DashboardSnapshot = {
@@ -34,6 +34,7 @@ export function TelaoScreen() {
       setSnapshot(data);
       setDataReady(true);
       setError(null);
+      markLiveFetchOk();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Falha ao carregar o telão."
@@ -65,6 +66,11 @@ export function TelaoScreen() {
           <h1 className="truncate text-base font-bold leading-tight tracking-tight text-white md:text-2xl lg:text-3xl">
             Apuração Antecipada - Santo André
           </h1>
+          {!dataReady ? (
+            <p className="mt-0.5 text-[10px] text-white/50 md:text-xs">
+              Atualizando votos…
+            </p>
+          ) : null}
         </div>
       </header>
 

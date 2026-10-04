@@ -42,7 +42,12 @@ import {
   subscribeDashboard,
   unlockChefeByPin,
 } from "@/lib/data";
-import { CHEFE_POLL_MS } from "@/lib/live-load";
+import {
+  CHEFE_POLL_MS,
+  markLiveFetchOk,
+  UNLOCK_TIMEOUT_MS,
+  withTimeout,
+} from "@/lib/live-load";
 import { linkStoredUrnaFotos } from "@/lib/urna-fotos";
 import type { Candidato, Chefe, DashboardSnapshot } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
@@ -477,7 +482,7 @@ export function ChefeRanking() {
     if (!storedId) return;
     void (async () => {
       try {
-        const list = await listChefes();
+        const list = await withTimeout(listChefes(), UNLOCK_TIMEOUT_MS);
         const found =
           list.find((row) => row.id === storedId) ??
           (storedId === "config-fallback"
@@ -495,6 +500,15 @@ export function ChefeRanking() {
         }
         setChefe(found);
       } catch {
+        if (storedId === "config-fallback") {
+          setChefe({
+            id: "config-fallback",
+            nome: "Cristiano",
+            pin: "",
+            created_at: new Date().toISOString(),
+          });
+          return;
+        }
         setChefe(null);
       }
     })();
@@ -503,47 +517,43 @@ export function ChefeRanking() {
   const reload = useCallback(async () => {
     if (!chefe) return;
     try {
-      const [data, ids] = await Promise.all([
-        fetchDashboard("todos"),
-        listChefeFavoritoIds(chefe.id),
+      const [lite, ids] = await Promise.all([
+        fetchDashboard(),
+        listChefeFavoritoIds(chefe.id).catch(() => [] as string[]),
       ]);
-      const pinsNeedFoto = data.rankingGeralByCargo.some((g) =>
-        g.rankings.some(
-          (r) =>
-            !r.candidato.foto_url?.trim() &&
-            ((g.cargo === "Governador" &&
-              ["10", "13"].includes(r.candidato.numero)) ||
-              (g.cargo === "Presidente" &&
-                /lula|flavio/i.test(
-                  r.candidato.nome.normalize("NFD").replace(/\p{M}/gu, "")
-                )))
-        )
-      );
-      if (pinsNeedFoto && !fotoLinkTriedRef.current) {
-        fotoLinkTriedRef.current = true;
-        try {
-          const linked = await linkStoredUrnaFotos();
-          if (linked.linked > 0) {
-            const refreshed = await fetchDashboard("todos");
-            setSnapshot(refreshed);
-          } else {
-            setSnapshot(data);
-          }
-        } catch {
-          setSnapshot(data);
-        }
-      } else {
-        setSnapshot(data);
-      }
+      setSnapshot(lite);
       setFavoritoIds(new Set(ids));
       setError(null);
+      setLoading(false);
+      markLiveFetchOk();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Falha ao carregar o ranking."
       );
-    } finally {
       setLoading(false);
     }
+
+    try {
+      const full = await fetchDashboard("todos");
+      setSnapshot(full);
+      setError(null);
+      markLiveFetchOk();
+    } catch {
+      /* pins + colunas vazias já estão na tela */
+    }
+
+    if (fotoLinkTriedRef.current) return;
+    fotoLinkTriedRef.current = true;
+    void linkStoredUrnaFotos()
+      .then(async (linked) => {
+        if (linked.linked > 0) {
+          const refreshed = await fetchDashboard("todos").catch(() => null);
+          if (refreshed) setSnapshot(refreshed);
+        }
+      })
+      .catch(() => {
+        /* foto é extra */
+      });
   }, [chefe]);
 
   useEffect(() => {
@@ -613,9 +623,9 @@ export function ChefeRanking() {
         return;
       }
       persistChefeSession(session);
-      setChefe(session);
       setPin("");
       setLoading(true);
+      setChefe(session);
     } catch (err) {
       setPinError(
         err instanceof Error ? err.message : "Não foi possível entrar."

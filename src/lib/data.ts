@@ -50,14 +50,21 @@ import { getSupabase, hasSupabaseEnv } from "@/lib/supabase";
 import { pinMatchesAdmin } from "@/lib/admin-pin";
 import { buildBusRecebidasReport } from "@/lib/bus-recebidas";
 import {
+  CATALOG_MAX_ROWS,
+  CATALOG_PAGE_SIZE,
   CATALOG_TTL_MS,
+  CONFIG_FETCH_TIMEOUT_MS,
   CONFIG_TTL_MS,
   createTtlCache,
+  FEATURED_FETCH_LIMIT,
   FEATURED_TTL_MS,
+  LIVE_FETCH_TIMEOUT_MS,
   liveSingleFlight,
   LOCAIS_TTL_MS,
   subscribeLive,
   TELAO_POLL_MS,
+  UNLOCK_TIMEOUT_MS,
+  withTimeout,
   type LiveRealtimeClient,
 } from "@/lib/live-load";
 import { percentualNoCargo } from "@/lib/utils";
@@ -203,44 +210,106 @@ function mergeCandidatosForRanking(
   return Array.from(map.values());
 }
 
+const CANDIDATO_LIVE_COLUMNS =
+  "id, numero, nome, cargo, foto_url, origem, favorito, sq_candidato";
+
 async function fetchAllSupabaseRows<T>(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   table: string,
   columns: string,
-  orFilter?: string
+  opts?: {
+    orFilter?: string;
+    eq?: { column: string; value: string };
+    pageSize?: number;
+    maxRows?: number;
+    timeoutMs?: number;
+    allowPartial?: boolean;
+  }
 ): Promise<T[]> {
-  const pageSize = 1000;
+  const pageSize = opts?.pageSize ?? 1000;
+  const maxRows = opts?.maxRows ?? 200_000;
+  const timeoutMs = opts?.timeoutMs ?? LIVE_FETCH_TIMEOUT_MS;
+  const started = Date.now();
   const all: T[] = [];
-  for (let from = 0; from < 200_000; from += pageSize) {
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const left = timeoutMs - (Date.now() - started);
+    if (left <= 0) {
+      if (opts?.allowPartial && all.length > 0) return all;
+      throw new Error(`Tempo esgotado ao ler ${table}.`);
+    }
     let query = supabase.from(table).select(columns);
-    if (orFilter) query = query.or(orFilter);
-    const { data, error } = await query.range(from, from + pageSize - 1);
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as T[];
-    all.push(...rows);
-    if (rows.length < pageSize) break;
+    if (opts?.eq) query = query.eq(opts.eq.column, opts.eq.value);
+    if (opts?.orFilter) query = query.or(opts.orFilter);
+    const to = Math.min(from + pageSize - 1, maxRows - 1);
+    try {
+      const { data, error } = await withTimeout(
+        query.range(from, to),
+        Math.max(800, left),
+        table
+      );
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as T[];
+      all.push(...rows);
+      if (rows.length < pageSize) break;
+    } catch (err) {
+      if (opts?.allowPartial && all.length > 0) return all;
+      throw err;
+    }
   }
   return all;
 }
-
-const FEATURED_ORIGEM_OR = "origem.is.null,origem.eq.cadastro,origem.eq.";
 
 async function fetchCandidatosRows(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
   featuredOnly: boolean
 ): Promise<Candidato[]> {
-  if (featuredOnly && (await candidatosHasOrigemColumn())) {
-    const rows = await fetchAllSupabaseRows<Candidato>(
-      supabase,
-      "candidatos",
-      "*",
-      FEATURED_ORIGEM_OR
+  if (featuredOnly) {
+    const hasOrigem = await withTimeout(
+      candidatosHasOrigemColumn(),
+      2_500,
+      "origem"
+    ).catch(() => true);
+    if (hasOrigem) {
+      const { data, error } = await withTimeout(
+        supabase
+          .from("candidatos")
+          .select(CANDIDATO_LIVE_COLUMNS)
+          .eq("origem", "cadastro")
+          .limit(FEATURED_FETCH_LIMIT),
+        LIVE_FETCH_TIMEOUT_MS,
+        "oficiais"
+      );
+      if (error) throw new Error(error.message);
+      return ((data ?? []) as Candidato[])
+        .map(normalizeCandidato)
+        .filter((c) => isFeaturedCandidato(c.origem));
+    }
+    const { data, error } = await withTimeout(
+      supabase
+        .from("candidatos")
+        .select(CANDIDATO_LIVE_COLUMNS)
+        .limit(FEATURED_FETCH_LIMIT),
+      LIVE_FETCH_TIMEOUT_MS,
+      "oficiais"
     );
-    return rows.map(normalizeCandidato).filter((c) => isFeaturedCandidato(c.origem));
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as Candidato[])
+      .map(normalizeCandidato)
+      .filter((c) => isFeaturedCandidato(c.origem));
   }
-  const rows = await fetchAllSupabaseRows<Candidato>(supabase, "candidatos", "*");
-  const list = rows.map(normalizeCandidato);
-  return featuredOnly ? list.filter((c) => isFeaturedCandidato(c.origem)) : list;
+
+  const rows = await fetchAllSupabaseRows<Candidato>(
+    supabase,
+    "candidatos",
+    CANDIDATO_LIVE_COLUMNS,
+    {
+      pageSize: CATALOG_PAGE_SIZE,
+      maxRows: CATALOG_MAX_ROWS,
+      timeoutMs: LIVE_FETCH_TIMEOUT_MS,
+      allowPartial: true,
+    }
+  );
+  return rows.map(normalizeCandidato);
 }
 
 async function cachedFeaturedCandidatos(
@@ -539,17 +608,36 @@ async function getConfigUncached(): Promise<ApuracaoConfig> {
   return normalizeConfig(data as ApuracaoConfig);
 }
 
+function fallbackLiveConfig(): ApuracaoConfig {
+  return (
+    configTtl.peek() ??
+    normalizeConfig({
+      secoes_esperadas: 1744,
+      relatorio_cargos: [...DEFAULT_RELATORIO_CARGOS],
+      zonas_config: [],
+    })
+  );
+}
+
 export async function getConfig(): Promise<ApuracaoConfig> {
   if (!getSupabase()) return getMockConfig();
   const hit = configTtl.get(CONFIG_TTL_MS);
   if (hit) return hit;
-  return liveSingleFlight("config", async () => {
-    const again = configTtl.get(CONFIG_TTL_MS);
-    if (again) return again;
-    const value = await getConfigUncached();
-    configTtl.set(value);
-    return value;
-  });
+  try {
+    return await withTimeout(
+      liveSingleFlight("config", async () => {
+        const again = configTtl.get(CONFIG_TTL_MS);
+        if (again) return again;
+        const value = await getConfigUncached();
+        configTtl.set(value);
+        return value;
+      }),
+      CONFIG_FETCH_TIMEOUT_MS,
+      "config"
+    );
+  } catch {
+    return fallbackLiveConfig();
+  }
 }
 
 export async function saveConfig(
@@ -737,15 +825,32 @@ export async function deleteChefe(id: string): Promise<void> {
   }
 }
 
+function fallbackChefeSession(pin: string): Chefe {
+  return {
+    id: "config-fallback",
+    nome: DEFAULT_CHEFE_NOME,
+    pin,
+    created_at: new Date().toISOString(),
+  };
+}
+
 export async function unlockChefeByPin(pin: string): Promise<Chefe | null> {
   const cleaned = pin.trim();
   if (!cleaned) return null;
 
-  const chefes = await listChefes();
-  const match = chefes.find((c) => c.pin === cleaned);
-  if (match) return match;
-
-  if (chefes.length > 0) return null;
+  try {
+    const chefes = await withTimeout(
+      listChefes(),
+      UNLOCK_TIMEOUT_MS,
+      "acessos chefe"
+    );
+    const match = chefes.find((c) => c.pin === cleaned);
+    if (match) return match;
+    if (chefes.length > 0) return null;
+  } catch {
+    if (cleaned === DEFAULT_CHEFE_PIN) return fallbackChefeSession(cleaned);
+    throw new Error("Servidor lento. Tente o PIN de novo.");
+  }
 
   const cfg = await getConfig();
   const fallback = resolveChefePin(cfg.chefe_pin);
@@ -762,12 +867,7 @@ export async function unlockChefeByPin(pin: string): Promise<Chefe | null> {
     }
   }
 
-  return {
-    id: "config-fallback",
-    nome: DEFAULT_CHEFE_NOME,
-    pin: fallback,
-    created_at: new Date().toISOString(),
-  };
+  return fallbackChefeSession(fallback);
 }
 
 /** Só o PIN do Cristiano (`apuracao_config.chefe_pin` ou andre2026). Sem tabela chefes. */
@@ -1577,44 +1677,60 @@ export async function fetchDashboard(
     );
   }
 
-  const cacheKey = `dashboard:${wantsFullCatalog(cargoOverride) ? "todos" : "featured"}`;
-  return liveSingleFlight(cacheKey, async () => {
-    const config = await getConfig();
-    const needLocais = !(config.secoes_esperadas > 0);
-    const fullCatalog = wantsFullCatalog(cargoOverride);
+  const fullCatalog = wantsFullCatalog(cargoOverride);
+  const cacheKey = `dashboard:${fullCatalog ? "todos" : "featured"}`;
+  return withTimeout(
+    liveSingleFlight(cacheKey, async () => {
+      const config = await getConfig();
+      const needLocais = !(config.secoes_esperadas > 0);
 
-    const [locais, listedCandidatos, boletins] = await Promise.all([
-      needLocais ? cachedLocais(supabase) : Promise.resolve([] as LocalVotacao[]),
-      fullCatalog
-        ? cachedCatalogCandidatos(supabase)
-        : cachedFeaturedCandidatos(supabase),
-      fetchAllSupabaseRows<SnapshotBoletim>(
-        supabase,
-        "boletins_urna",
-        "id, zona, secao, candidato_id, quantidade_votos, fiscal_nome, created_at"
-      ),
-    ]);
+      const [locais, listedCandidatos, boletins] = await Promise.all([
+        needLocais
+          ? cachedLocais(supabase)
+          : Promise.resolve([] as LocalVotacao[]),
+        fullCatalog
+          ? cachedCatalogCandidatos(supabase)
+          : cachedFeaturedCandidatos(supabase),
+        fetchAllSupabaseRows<SnapshotBoletim>(
+          supabase,
+          "boletins_urna",
+          "id, zona, secao, candidato_id, quantidade_votos, fiscal_nome, created_at",
+          {
+            pageSize: 1_000,
+            maxRows: 20_000,
+            timeoutMs: LIVE_FETCH_TIMEOUT_MS,
+            allowPartial: true,
+          }
+        ),
+      ]);
 
-    const have = new Set(listedCandidatos.map((c) => String(c.id)));
-    const missingIds = fullCatalog
-      ? boletins
-          .map((b) => String(b.candidato_id ?? ""))
-          .filter((id) => id && !have.has(id))
-      : [];
-    const extras =
-      missingIds.length > 0
-        ? await fetchCandidatosByIds(supabase, missingIds)
+      const have = new Set(listedCandidatos.map((c) => String(c.id)));
+      const missingIds = fullCatalog
+        ? boletins
+            .map((b) => String(b.candidato_id ?? ""))
+            .filter((id) => id && !have.has(id))
         : [];
+      const extras =
+        missingIds.length > 0
+          ? await withTimeout(
+              fetchCandidatosByIds(supabase, missingIds),
+              4_000,
+              "candidatos"
+            ).catch(() => [] as Candidato[])
+          : [];
 
-    return buildDashboardSnapshot(
-      locais,
-      mergeCandidatosForRanking(listedCandidatos, extras),
-      boletins,
-      config,
-      "supabase",
-      cargoOverride
-    );
-  });
+      return buildDashboardSnapshot(
+        locais,
+        mergeCandidatosForRanking(listedCandidatos, extras),
+        boletins,
+        config,
+        "supabase",
+        cargoOverride
+      );
+    }),
+    LIVE_FETCH_TIMEOUT_MS,
+    fullCatalog ? "ranking" : "telão"
+  );
 }
 
 export async function fetchBusRecebidas(): Promise<BusRecebidasReport> {

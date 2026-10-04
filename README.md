@@ -120,7 +120,7 @@ Paleta campanha (navy `#003B7E` / ciano `#00ADEF` / amarelo `#FFDE00`) para TV. 
 - Progress: **enviadas / faltam** (vs `secoes_esperadas` do cadastro)
 - Cards compactos: texto à esquerda, **foto proporcional à direita** (altura do card, 3:4, `object-contain`; sem foto → número). Nome em até 2 linhas. **Votos e % cabem inteiros** no miolo (não cortam no fundo do card).
 - Marcos Dep. Estadual/Federal: confete só quando o voto **cruza** o limiar ao vivo; marcos já celebrados ficam em `sessionStorage` (não repetem ao reabrir o telão)
-- Supabase Realtime when configured (one channel, reconnect with backoff). Polling 12–15s only if Realtime is down; paused while connected. `/fiscal` does not subscribe. Close extra `/telao` `/chefe` `/admin` tabs on Sunday.
+- Supabase Realtime when configured (one channel, reconnect with backoff). Polling 12–15s only if Realtime is down **and** the first fetch already succeeded; until then, retry every 4s. `/telao` and `/chefe` pintam na hora (cards/pins vazios) e o fetch tem timeout de 8s. `/fiscal` does not subscribe. Close extra `/telao` `/chefe` `/admin` tabs on Sunday.
 
 ## Deploy (Vercel + Supabase)
 

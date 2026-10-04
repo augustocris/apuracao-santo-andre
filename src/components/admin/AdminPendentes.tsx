@@ -23,7 +23,7 @@ import {
 } from "@/lib/parser/bu-qr";
 import type { BuPendente, ConfirmVoteRow, DiscoveredVote, ParsedBu } from "@/lib/types";
 
-export function AdminPendentes() {
+export function AdminPendentes({ standalone = false }: { standalone?: boolean }) {
   const [rows, setRows] = useState<BuPendente[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -142,7 +142,11 @@ export function AdminPendentes() {
     <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/60 p-4 md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-white">BUs pendentes / com erro</h2>
+          {standalone ? null : (
+            <h2 className="text-lg font-bold text-white">
+              BUs pendentes / com erro
+            </h2>
+          )}
           <p className="text-sm text-slate-400">
             QR que o parser recusou fica aqui. Reprocessar tenta de novo sem o
             fiscal voltar ao papel.
@@ -243,8 +247,8 @@ export function AdminPendentes() {
                 </Button>
               </div>
               <pre className="mt-3 max-h-32 overflow-auto rounded-lg bg-black/40 p-2 font-mono text-[10px] leading-snug text-slate-300 whitespace-pre-wrap">
-                {item.raw_text.slice(0, 2000)}
-                {item.raw_text.length > 2000 ? "…" : ""}
+                {String(item.raw_text ?? "").slice(0, 2000)}
+                {String(item.raw_text ?? "").length > 2000 ? "…" : ""}
               </pre>
             </li>
           ))}

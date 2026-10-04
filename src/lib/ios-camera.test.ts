@@ -10,6 +10,7 @@ import {
   liveScanConfig,
   LIVE_SCAN_FPS,
   qrboxForDenseTse,
+  shouldAcceptLiveDecode,
   requestCameraFromUserGesture,
   revealLiveScannerElement,
   useBarcodeDetector,
@@ -77,6 +78,39 @@ describe("iPhone / Safari camera helpers", () => {
   it("uses ZXing on Android and iPhone (BarcodeDetector misses dense TSE)", () => {
     assert.equal(useBarcodeDetector(true), false);
     assert.equal(useBarcodeDetector(false), false);
+  });
+
+  it("accepts the first live decode as soon as the session is live", () => {
+    assert.equal(
+      shouldAcceptLiveDecode({
+        handled: false,
+        busy: false,
+        sessionLive: true,
+        ignoreUntil: 0,
+        now: 1_000,
+      }),
+      true
+    );
+    assert.equal(
+      shouldAcceptLiveDecode({
+        handled: false,
+        busy: false,
+        sessionLive: false,
+        ignoreUntil: 0,
+        now: 1_000,
+      }),
+      false
+    );
+    assert.equal(
+      shouldAcceptLiveDecode({
+        handled: false,
+        busy: false,
+        sessionLive: true,
+        ignoreUntil: 1_200,
+        now: 1_000,
+      }),
+      false
+    );
   });
 
   it("scans at a high enough fps for dense TSE QR", () => {

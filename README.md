@@ -105,7 +105,7 @@ PIN por pessoa (`andre2026` = Cristiano no seed). Cadastro → **Acessos chefe**
 
 1. Abra `/fiscal` no celular (PWA). **Só QR** — sem digitação e sem colar texto. Sem telão/realtime em segundo plano. Câmera só depois de **Filmar o QR**; solta ao enviar, parar ou ir para segundo plano.
 2. Tela inicial: título **Apuração Santo André**, a linha **Clique abaixo e Filme o QRCODE da BU.** e o botão verde **Filmar o QR**. Sem badge Fonte SUPABASE/MOCK.
-3. BUs com **N QRs** (`1 de 2`, `01/04`…`04/04`, `---------- 02 / 04 ----------`, SEQL/ORQR) **não gravam** até o último. A linha diz **Falta o 2º QR** / **Falta o 3º QR** / **Falta o 4º QR**. HASH não precisa bater entre as partes.
+3. BUs com **N QRs** (`1 de 2`, `01/04`…`04/04`, `---------- 02 / 04 ----------`, SEQL/ORQR) **não gravam** até o último. A câmera **continua aberta** depois do 1º. A linha diz **Falta o 1º/2º/3º/4º QR**. Se o 2º entrar antes, fica guardado e pede o 1º. Liga por IDUE/NR_UE, não HASH. **BU errada** só quando o IDUE é de outra urna.
 4. Confirmação: **Confirme a zona = …, seção = …**, votos de **um** candidato oficial da campanha que apareceu neste BU (se nenhum dos 5, um candidato parseado). Botão **Enviar**. Opcional: **Filmar de novo**. Sem edição de votos.
 5. Depois da confirmação do servidor: **Zona … seção … enviada com sucesso. Vá para a próxima.** A tela volta sozinha ao idle em ~4 s.
 6. Duplicata `(zona, seção)` = **já enviada**. Zona fora de `zonas_config` = **Zona não é de Santo André** (não é erro de câmera; não grava). Parser recusou → texto bruto vai para `/admin/pendentes`.

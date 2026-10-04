@@ -77,6 +77,26 @@ export function cameraConstraintLadder(appleTouch: boolean): MediaTrackConstrain
 /** Dense TSE BUs need frequent frames. Keep it the same on Android and iPhone. */
 export const LIVE_SCAN_FPS = 20;
 
+/** Ignore leftover frames only after QR 1 is already in the set. First QR: 0. */
+export const NEXT_QR_IGNORE_MS = 400;
+
+/** First live decode must not wait for waitForLiveVideo / debounce. */
+export function shouldAcceptLiveDecode(opts: {
+  fromPhoto?: boolean;
+  handled: boolean;
+  busy: boolean;
+  sessionLive: boolean;
+  ignoreUntil: number;
+  now: number;
+}): boolean {
+  if (opts.handled) return false;
+  if (opts.fromPhoto) return !opts.busy;
+  if (opts.busy) return false;
+  if (!opts.sessionLive) return false;
+  if (opts.now < opts.ignoreUntil) return false;
+  return true;
+}
+
 export function liveScanConfig(_appleTouch?: boolean): {
   fps: number;
   disableFlip: true;

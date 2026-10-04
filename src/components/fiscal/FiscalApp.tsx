@@ -23,22 +23,28 @@ import {
   parseFeedback,
   qrMismatchFeedback,
   SUCCESS_CLEAR_MS,
+  waitingFirstQrLabel,
   waitingNextQrLabel,
+  wrongBuFeedback,
   zonaForaFeedback,
   type FiscalFeedback,
 } from "@/lib/fiscal-feedback";
 import {
   assertQrSetReadyToIngest,
+  backfillQrSet,
   BuParseError,
   describeQrProgress,
+  isContinuationSequence,
   isQrSetComplete,
   nextMissingQrIndex,
   parseBuQrText,
   parseFiscalQrChunk,
+  parseQrbuMeta,
   peekZonaSecao,
   SameQrRepeatError,
   SAMPLE_TSE_QR_TEXT,
   sameQrPayload,
+  WrongBuError,
 } from "@/lib/parser/bu-qr";
 import type { ConfirmVoteRow, DiscoveredVote, ParsedBu, ZonaConfigRow } from "@/lib/types";
 import { isZonaForaDaCidade } from "@/lib/zona-allowlist";
@@ -250,13 +256,18 @@ export function FiscalApp() {
           return;
         }
 
-        if (previous.length === 0 && (await urnaJaCadastrada(result.zona, result.secao))) {
+        if (
+          previous.length === 0 &&
+          result.zona &&
+          result.secao &&
+          (await urnaJaCadastrada(result.zona, result.secao))
+        ) {
           setFeedback(duplicateFeedback(result.zona, result.secao));
           setScanNonce((n) => n + 1);
           return;
         }
 
-        const nextFragments = (() => {
+        const nextFragments = backfillQrSet((() => {
           if (result.qrIndex) {
             return [
               ...previous.filter((p) => p.qrIndex !== result.qrIndex),
@@ -264,7 +275,7 @@ export function FiscalApp() {
             ];
           }
           return [...previous, result];
-        })();
+        })());
         fragmentsRef.current = nextFragments;
         writeQrSession(nextFragments);
 
@@ -272,7 +283,12 @@ export function FiscalApp() {
         setScanNonce((n) => n + 1);
 
         if (!isQrSetComplete(nextFragments)) {
-          setFeedback(null);
+          const missing = nextMissingQrIndex(nextFragments);
+          setFeedback(
+            missing === 1
+              ? waitingFirstQrLabel()
+              : null
+          );
           setConfirmOpen(false);
           return;
         }
@@ -288,10 +304,22 @@ export function FiscalApp() {
           err instanceof BuParseError ? err.debug : undefined;
         const cause =
           err instanceof Error ? err.message : "Falha ao processar o BU.";
+        const meta = parseQrbuMeta(raw);
+        if (
+          fragmentsRef.current.length === 0 &&
+          isContinuationSequence(meta) &&
+          !(err instanceof WrongBuError)
+        ) {
+          setFeedback(waitingFirstQrLabel());
+          setScanNonce((n) => n + 1);
+          return;
+        }
         setFeedback(
-          /outra urna|não combina/i.test(cause)
-            ? qrMismatchFeedback(debug ?? "")
-            : parseFeedback(cause, debug)
+          err instanceof WrongBuError || /outra urna/i.test(cause)
+            ? wrongBuFeedback(debug ?? "")
+            : /não combina/i.test(cause)
+              ? qrMismatchFeedback(debug ?? "")
+              : parseFeedback(cause, debug)
         );
         await persistParseFailure(raw, debug ? `${cause} ${debug}` : cause);
         setScanNonce((n) => n + 1);
@@ -443,6 +471,7 @@ export function FiscalApp() {
             busy={processing || transmitting}
             resetKey={scanNonce}
             nextQr={awaitingMore}
+            keepOpen
             ignoreExactPayloads={fragments.map((part) => part.rawText)}
             whatsapp={whatsapp}
           />

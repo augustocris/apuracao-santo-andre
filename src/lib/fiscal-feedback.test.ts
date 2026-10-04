@@ -7,8 +7,10 @@ import {
   hasWhatsappSuporte,
   isNetworkError,
   SUCCESS_CLEAR_MS,
+  waitingFirstQrLabel,
   waitingNextQrLabel,
   waitingSecondQrLabel,
+  wrongBuFeedback,
   whatsappHref,
   whatsappLabel,
   zonaForaFeedback,
@@ -47,6 +49,16 @@ describe("fiscal feedback copy", () => {
       waitingNextQrLabel("383", "0401", 4),
       "Falta o 4º QR · zona 383 seção 0401"
     );
+    assert.equal(
+      waitingNextQrLabel("383", "0401", 1),
+      "Falta o 1º QR · zona 383 seção 0401"
+    );
+    const first = waitingFirstQrLabel();
+    assert.equal(first.title, "Falta o 1º QR");
+    assert.match(first.nextStep, /1º|de cima/i);
+    const wrong = wrongBuFeedback("IDUE 11 vs 99");
+    assert.equal(wrong.title, "BU errada");
+    assert.match(wrong.nextStep, /IDUE/i);
   });
 
   it("zona fora da lista is not a camera error", () => {

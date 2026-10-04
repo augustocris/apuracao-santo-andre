@@ -91,8 +91,33 @@ export function qrReadFeedback(index: number, total = 0): FiscalFeedback {
     title: t > 1 ? `QR lido ${i}/${t}` : "QR lido",
     cause: "",
     nextStep: next
-      ? `Filme o ${next}º QR desta urna.`
+      ? `Filme ou escolha a foto do ${next}º QR desta urna.`
       : "QR aceito. Confira zona e seção se pedir.",
+  };
+}
+
+export function leftoverUrnaFeedback(
+  urnaId: string,
+  qrLabel: string
+): FiscalFeedback {
+  const idue = urnaId.trim() || "sem IDUE";
+  const qr = qrLabel.trim() || "QR";
+  return {
+    kind: "parse",
+    title: "Sobrou outra urna",
+    cause: "",
+    nextStep: `IDUE ${idue} · ${qr} ficou de fora. Tire a foto que falta desta BU, ou comece a outra.`,
+    debug: `IDUE ${idue} ${qr}`,
+  };
+}
+
+export function unreadWhatsappPhotosFeedback(failed: number): FiscalFeedback {
+  const n = Math.max(1, Math.floor(failed) || 1);
+  return {
+    kind: "parse",
+    title: n === 1 ? "Foto sem QR" : `${n} fotos sem QR`,
+    cause: "",
+    nextStep: "Escolha de novo as fotos do WhatsApp, mais perto do QR.",
   };
 }
 

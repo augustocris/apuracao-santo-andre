@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
-import { Camera, CameraOff, Download, MessageCircle, Share2 } from "lucide-react";
+import { Camera, CameraOff, Download, Images, MessageCircle, Share2 } from "lucide-react";
 import { WhatsAppSupport } from "@/components/fiscal/FiscalFeedback";
 import { Button } from "@/components/ui/button";
 import { cameraFeedback, qrReadFeedback, type FiscalFeedback } from "@/lib/fiscal-feedback";
@@ -34,6 +34,7 @@ import {
   LIVE_FRAME_INTERVAL_MS,
 } from "@/lib/live-frame-scan";
 import { parseQrbuMeta, sameQrPayload } from "@/lib/parser/bu-qr";
+import { MAX_WHATSAPP_PHOTOS } from "@/lib/parser/whatsapp-photos";
 import {
   shareBuPhoto,
   whatsappFallbackHref,
@@ -41,6 +42,8 @@ import {
 
 interface BuScannerProps {
   onScan: (text: string) => void;
+  /** Decoded QR texts from gallery stills (WhatsApp downloads), in pick order. */
+  onPhotosDecoded?: (texts: string[]) => void;
   busy?: boolean;
   /** Increment to allow another decode after the previous one. */
   resetKey?: number;
@@ -145,6 +148,7 @@ function clearScannerDecodedCache(scanner: Html5Qrcode | null) {
 
 export function BuScanner({
   onScan,
+  onPhotosDecoded,
   busy,
   resetKey = 0,
   nextQr = false,
@@ -163,6 +167,7 @@ export function BuScanner({
   const [photoBusyLabel, setPhotoBusyLabel] = useState<string | null>(null);
   const [liveReadLabel, setLiveReadLabel] = useState<string | null>(null);
   const qrFileInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const handledRef = useRef(false);
   const sessionLiveRef = useRef(false);
@@ -579,6 +584,44 @@ export function BuScanner({
     }
   }
 
+  async function handleWhatsappGallery(files: FileList | null) {
+    const picked = Array.from(files ?? [])
+      .filter((file) => file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(file.name))
+      .slice(0, MAX_WHATSAPP_PHOTOS);
+    if (picked.length === 0 || busy) return;
+    setError(null);
+    setUploading(true);
+    try {
+      await stopScanner();
+      const texts: string[] = [];
+      for (let i = 0; i < picked.length; i += 1) {
+        setPhotoBusyLabel(`Lendo foto ${i + 1}/${picked.length}…`);
+        try {
+          const text = await decodeQrFromPhoto(picked[i]);
+          texts.push(text?.trim() ? text : "");
+        } catch {
+          texts.push("");
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
+      if (onPhotosDecoded) {
+        onPhotosDecoded(texts);
+      } else {
+        const first = texts.find((t) => t.trim());
+        if (!first) throw new Error("empty qr");
+        deliverScan(first, true);
+      }
+    } catch {
+      setError(
+        "Não deu para ler o QR nestas fotos. Escolha de novo as fotos do WhatsApp."
+      );
+    } finally {
+      setUploading(false);
+      setPhotoBusyLabel(null);
+      if (galleryInputRef.current) galleryInputRef.current.value = "";
+    }
+  }
+
   async function handlePhotoForWhatsApp(file: File | undefined) {
     if (!file || busy) return;
     setError(null);
@@ -677,6 +720,25 @@ export function BuScanner({
 
       <label className="block">
         <input
+          ref={galleryInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="sr-only"
+          onChange={(e) => void handleWhatsappGallery(e.target.files)}
+        />
+        <span
+          className={`inline-flex h-16 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border-2 border-teal-800 bg-teal-700 text-lg font-bold text-white hover:bg-teal-800 ${
+            busy || uploading ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
+          <Images className="size-6" />
+          {photoBusyLabel ?? "Fotos do WhatsApp"}
+        </span>
+      </label>
+
+      <label className="block">
+        <input
           ref={qrFileInputRef}
           type="file"
           accept="image/*"
@@ -685,12 +747,12 @@ export function BuScanner({
           onChange={(e) => void handlePhotoOfQr(e.target.files?.[0])}
         />
         <span
-          className={`inline-flex h-14 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border-2 border-teal-800 bg-teal-700 text-base font-bold text-white hover:bg-teal-800 ${
+          className={`inline-flex h-14 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border-2 border-teal-700/40 bg-white text-base font-bold text-teal-900 hover:bg-teal-50 ${
             busy || uploading ? "pointer-events-none opacity-50" : ""
           }`}
         >
           <Camera className="size-5" />
-          {photoBusyLabel ?? "Foto do QR"}
+          {photoBusyLabel ? "Lendo foto…" : "Foto do QR"}
         </span>
       </label>
 

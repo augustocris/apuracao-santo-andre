@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { BuScanner } from "@/components/fiscal/BuScanner";
 import { ConfirmTransmitModal } from "@/components/fiscal/ConfirmTransmitModal";
 import { FiscalErrorCard, FiscalSuccessCard } from "@/components/fiscal/FiscalFeedback";
+import { Button } from "@/components/ui/button";
 import {
   getConfig,
   resolveBuVotes,
@@ -20,10 +21,12 @@ import {
   feedbackFromError,
   isNetworkError,
   networkFeedback,
+  leftoverUrnaFeedback,
   parseFeedback,
   qrReadFeedback,
   qrMismatchFeedback,
   SUCCESS_CLEAR_MS,
+  unreadWhatsappPhotosFeedback,
   waitingFirstQrLabel,
   waitingNextQrLabel,
   wrongBuFeedback,
@@ -47,6 +50,10 @@ import {
   sameQrPayload,
   WrongBuError,
 } from "@/lib/parser/bu-qr";
+import {
+  assembleWhatsappPhotos,
+  leftoverUrnaSummary,
+} from "@/lib/parser/whatsapp-photos";
 import type { ConfirmVoteRow, DiscoveredVote, ParsedBu, ZonaConfigRow } from "@/lib/types";
 import { isZonaForaDaCidade } from "@/lib/zona-allowlist";
 
@@ -87,11 +94,14 @@ export function FiscalApp() {
   const [rows, setRows] = useState<ConfirmVoteRow[]>([]);
   const [discovered, setDiscovered] = useState<DiscoveredVote[]>([]);
   const [fragments, setFragments] = useState<ParsedBu[]>([]);
+  const [leftover, setLeftover] = useState<ParsedBu[]>([]);
   const [scanNonce, setScanNonce] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
   const fragmentsRef = useRef<ParsedBu[]>([]);
   fragmentsRef.current = fragments;
+  const leftoverRef = useRef<ParsedBu[]>([]);
+  leftoverRef.current = leftover;
   const zonasConfigRef = useRef<ZonaConfigRow[]>([]);
   zonasConfigRef.current = zonasConfig;
 
@@ -139,11 +149,24 @@ export function FiscalApp() {
     if (!success) return;
     const timer = window.setTimeout(() => {
       setSuccess(null);
-      fragmentsRef.current = [];
-      writeQrSession([]);
-      setFragments([]);
+      const held = leftoverRef.current;
+      leftoverRef.current = [];
+      setLeftover([]);
+      fragmentsRef.current = held;
+      writeQrSession(held);
+      setFragments(held);
       setScanNonce((n) => n + 1);
-      setFeedback(null);
+      if (held.length > 0) {
+        const progress = describeQrProgress(held);
+        const missing = nextMissingQrIndex(held);
+        setFeedback(
+          missing === 1
+            ? waitingFirstQrLabel()
+            : qrReadFeedback(progress.index, progress.total)
+        );
+      } else {
+        setFeedback(null);
+      }
       setConfirmOpen(false);
       setParsed(null);
       setRows([]);
@@ -215,6 +238,59 @@ export function FiscalApp() {
       setProcessing(false);
     }
   }, [persistParseFailure]);
+
+  const applyAssembledParts = useCallback(
+    async (nextFragments: ParsedBu[], leftoverParts: ParsedBu[]) => {
+      leftoverRef.current = leftoverParts;
+      setLeftover(leftoverParts);
+
+      const donor = nextFragments.find((p) => p.zona && p.secao);
+      if (donor && isZonaForaDaCidade(donor.zona, zonasConfigRef.current)) {
+        setFeedback(zonaForaFeedback(padZona(donor.zona)));
+        fragmentsRef.current = [];
+        writeQrSession([]);
+        setFragments([]);
+        setScanNonce((n) => n + 1);
+        return;
+      }
+
+      if (
+        donor?.zona &&
+        donor.secao &&
+        (await urnaJaCadastrada(donor.zona, donor.secao))
+      ) {
+        setFeedback(duplicateFeedback(donor.zona, donor.secao));
+        setScanNonce((n) => n + 1);
+        return;
+      }
+
+      fragmentsRef.current = nextFragments;
+      writeQrSession(nextFragments);
+      setFragments(nextFragments);
+      setScanNonce((n) => n + 1);
+
+      const leftoverInfo =
+        leftoverParts.length > 0 ? leftoverUrnaSummary(leftoverParts) : null;
+
+      if (!isQrSetComplete(nextFragments)) {
+        const missing = nextMissingQrIndex(nextFragments);
+        const progress = describeQrProgress(nextFragments);
+        setFeedback(
+          leftoverInfo
+            ? leftoverUrnaFeedback(leftoverInfo.urnaId, leftoverInfo.qrLabel)
+            : missing === 1
+              ? waitingFirstQrLabel()
+              : qrReadFeedback(progress.index, progress.total)
+        );
+        setConfirmOpen(false);
+        return;
+      }
+
+      const merged = assertQrSetReadyToIngest(nextFragments);
+      await openConfirmFromMerged(merged);
+    },
+    [openConfirmFromMerged]
+  );
 
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
@@ -340,16 +416,73 @@ export function FiscalApp() {
     [openConfirmFromMerged, persistParseFailure]
   );
 
+  const handlePhotoBatch = useCallback(
+    async (texts: string[]) => {
+      setProcessing(true);
+      setSuccess(null);
+      try {
+        const batch = assembleWhatsappPhotos(texts, fragmentsRef.current);
+        if (batch.read === 0) {
+          setFeedback(
+            unreadWhatsappPhotosFeedback(batch.failed || texts.length || 1)
+          );
+          return;
+        }
+        const progress = describeQrProgress(batch.primary);
+        setFeedback(
+          qrReadFeedback(
+            batch.primary.find((p) => p.qrIndex)?.qrIndex ?? progress.index,
+            progress.total
+          )
+        );
+        await applyAssembledParts(batch.primary, batch.leftover);
+      } catch (err) {
+        const cause =
+          err instanceof Error ? err.message : "Falha ao ler as fotos do WhatsApp.";
+        setFeedback(parseFeedback(cause));
+        const joined = texts.filter((t) => t.trim()).join("\n---\n");
+        if (joined) await persistParseFailure(joined, cause);
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [applyAssembledParts, persistParseFailure]
+  );
+
   function handleCancelFragments() {
     fragmentsRef.current = [];
     writeQrSession([]);
     setFragments([]);
     setScanNonce((n) => n + 1);
-    setFeedback(null);
+    setFeedback(
+      leftoverRef.current.length > 0
+        ? leftoverUrnaFeedback(
+            leftoverUrnaSummary(leftoverRef.current).urnaId,
+            leftoverUrnaSummary(leftoverRef.current).qrLabel
+          )
+        : null
+    );
     setConfirmOpen(false);
     setParsed(null);
     setRows([]);
     setDiscovered([]);
+  }
+
+  function handleStartLeftoverBu() {
+    const held = leftoverRef.current;
+    leftoverRef.current = [];
+    setLeftover([]);
+    fragmentsRef.current = [];
+    writeQrSession([]);
+    setFragments([]);
+    void (async () => {
+      setProcessing(true);
+      try {
+        await applyAssembledParts(held, []);
+      } finally {
+        setProcessing(false);
+      }
+    })();
   }
 
   async function handleConfirm() {
@@ -421,7 +554,7 @@ export function FiscalApp() {
         </h1>
         {showIdleLine ? (
           <p className="text-lg font-bold leading-snug text-teal-900">
-            Clique abaixo e Filme o QRCODE da BU.
+            Filme o QR da BU ou escolha as Fotos do WhatsApp (todos os QRs).
           </p>
         ) : null}
       </header>
@@ -464,7 +597,9 @@ export function FiscalApp() {
         <div className="w-full space-y-3">
           {fragments.length > 0 &&
           awaitingMore &&
-          (!feedback || feedback.kind === "incomplete_qr") ? (
+          (!feedback ||
+            feedback.kind === "incomplete_qr" ||
+            feedback.title === "Sobrou outra urna") ? (
             <p
               role="status"
               className="text-base font-bold leading-snug text-teal-900"
@@ -476,8 +611,20 @@ export function FiscalApp() {
               )}
             </p>
           ) : null}
+          {leftover.length > 0 && !confirmOpen ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 w-full border-2 border-amber-500 text-base font-bold text-amber-950"
+              onClick={handleStartLeftoverBu}
+              disabled={processing || transmitting}
+            >
+              Começar a outra BU
+            </Button>
+          ) : null}
           <BuScanner
             onScan={(text) => void handleRawText(text)}
+            onPhotosDecoded={(texts) => void handlePhotoBatch(texts)}
             busy={processing || transmitting}
             resetKey={scanNonce}
             nextQr={awaitingMore}

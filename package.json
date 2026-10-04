@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 43127",
     "lint": "eslint",
-    "test": "tsx --test src/lib/parser/bu-qr.test.ts src/lib/urna-duplicate.test.ts src/lib/chapada.test.ts src/lib/urna-fotos.test.ts src/lib/chefe-favorito.test.ts src/lib/admin-pin.test.ts src/lib/bus-recebidas.test.ts src/lib/presidente-governador.test.ts src/lib/fiscal-feedback.test.ts src/lib/bu-pendente.test.ts src/lib/ios-camera.test.ts src/lib/whatsapp-share.test.ts src/lib/fiscal-confirm.test.ts src/lib/zona-allowlist.test.ts"
+    "test": "tsx --test src/lib/parser/bu-qr.test.ts src/lib/urna-duplicate.test.ts src/lib/chapada.test.ts src/lib/urna-fotos.test.ts src/lib/chefe-favorito.test.ts src/lib/admin-pin.test.ts src/lib/bus-recebidas.test.ts src/lib/presidente-governador.test.ts src/lib/fiscal-feedback.test.ts src/lib/bu-pendente.test.ts src/lib/ios-camera.test.ts src/lib/whatsapp-share.test.ts src/lib/fiscal-confirm.test.ts src/lib/zona-allowlist.test.ts src/lib/live-load.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

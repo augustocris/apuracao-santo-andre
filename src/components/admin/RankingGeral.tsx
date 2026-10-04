@@ -5,6 +5,7 @@ import { Loader2, Trophy, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CARGOS_OFICIAIS, CARGOS_RANKING_ORDEM, isFeaturedCandidato, labelCargoCurto, origemLabel } from "@/lib/cargos";
 import { fetchDashboard, subscribeDashboard } from "@/lib/data";
+import { ADMIN_POLL_MS } from "@/lib/live-load";
 import type { Candidato, CargoRanking, DashboardSnapshot } from "@/lib/types";
 import { cn, formatPercent, formatVotes } from "@/lib/utils";
 
@@ -46,7 +47,7 @@ export function RankingGeral() {
     void reload();
     return subscribeDashboard(() => {
       void reload();
-    }, 4000);
+    }, ADMIN_POLL_MS);
   }, [reload]);
 
   const groups = snapshot.rankingGeralByCargo;
